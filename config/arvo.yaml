@@ -1,0 +1,62 @@
+common:
+    lid_topic :  "/lidar_VLS128_Center_13202202695611/velodyne_points"
+    imu_topic :  " "
+    gnss_topic:  " "
+    time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
+    time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
+                                  # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
+preprocess:
+    lidar_type: 1                # 0 for hesai, 1 for Velodyne, 2 for ouster,
+    point_step : 1               # i+= point_step  (16:1),(32:2),(64:4),(128:8)
+    min_dist: 3
+    max_dist: 100
+
+mapping:
+    acc_cov: 0.1
+    gyr_cov: 0.1
+    b_acc_cov: 0.0001
+    b_gyr_cov: 0.0001
+    fov_degree:    180
+    det_range:   150.0
+    extrinsic_est_en:  true      # true: enable the online estimation of IMU-LiDAR extrinsic
+    
+    GNSS_IMU_calibration_distance: 45 #m
+    #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
+    
+    extrinsic_T: [ 0.0204, 1.7718, 1.3486 ] 
+
+    extrinsic_R: [ 0.998944485309, 0.031931394271, -0.033019711234, 
+                    -0.031931430918, 0.999489923247, 0.000526351827, 
+                    0.033019675794, 0.000528570373, 0.999454562061]
+
+    #his should be added to antena to shift to IMU
+    extrinsic_T_GNSS2IMU: [-0.348, -1.183, -1.245] 
+
+    #the above are the extrinsins - this should be known and untouched 
+    #note that the imu and lidar should be synchronised by hardware
+    #also the message times are in global frame,  while point times should be relative, starting from zero to .1 s or something 
+
+als:
+    closest_N_files: 5 # 4 #number of closest files
+    downsample: true 
+    #als_path: "/media/eugeniu/T7/NLS_las/"   # this is the ALS from NlS
+    #als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS
+    als_path: "/media/eugeniu/T7 Shield/Masalantie_data_ALS_split_las/"   # VUX  ALS
+    
+    use_gnss: false
+    #if this is not empty we'll use the postprocessed GNSS solution 
+    postprocessed_gnss_path: "" # "/media/eugeniu/T7/evo-bags/GT-MLS-25-07.txt"  
+    saveALS_NN_2_MLS: false             #MLS map update with ALS points 
+
+publish:
+    scan_publish_en:  true       # false: close all the point cloud output
+    dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
+    
+    #for the next make sure that the code is compiled with save option true
+    save_clouds: false           #if this is true it will save the point clouds and their pose
+    save_clouds_local: false    #if this is true the clouds will be in sensor frame otherwise in global frame
+    save_clouds_path: "/media/eugeniu/T7 Shield/Masalantie_MLS-ALS/clouds/"        #put here the path to save the clouds 
+
+    save_poses: false
+    poseSavePath: "/media/eugeniu/T7 Shield/Masalantie_MLS-ALS/"     #where to save the trajectory
+
