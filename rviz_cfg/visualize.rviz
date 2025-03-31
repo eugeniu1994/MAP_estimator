@@ -137,7 +137,7 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 32.45492172241211
+            Max Value: 33.63865661621094
             Min Value: -5.438982963562012
             Value: true
           Axis: Z
@@ -199,7 +199,7 @@ Visualization Manager:
             Min Value: -10
             Value: true
           Axis: Z
-          Channel Name: time
+          Channel Name: curvature
           Class: rviz/PointCloud2
           Color: 255; 255; 255
           Color Transformer: Intensity
@@ -221,13 +221,13 @@ Visualization Manager:
           Use rainbow: true
           Value: true
         - Class: rviz/Marker
-          Enabled: false
+          Enabled: true
           Marker Topic: /normals
           Name: norms_
           Namespaces:
-            {}
+            "": true
           Queue Size: 100
-          Value: false
+          Value: true
       Enabled: true
       Name: mapping
     - Class: rviz/Group
@@ -474,7 +474,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 78.28349304199219
+      Distance: 73.8708267211914
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -482,17 +482,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -7.404904842376709
-        Y: 15.566471099853516
+        X: -21.065719604492188
+        Y: 8.835714340209961
         Z: -1.2404854714986868e-05
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 1.2447967529296875
       Target Frame: global
-      Yaw: 1.5803956985473633
+      Yaw: 2.1103968620300293
     Saved: ~
 Window Geometry:
   Displays:
@@ -510,5 +510,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 2772
-  X: 211
+  X: 220
   Y: 54

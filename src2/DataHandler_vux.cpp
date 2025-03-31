@@ -569,8 +569,8 @@ void DataHandler::Subscribe()
     {
         scan_id++;
 
-        // if (scan_id < 45100) // this is only for the 0 bag
-        //     continue;
+        if (scan_id < 45100) // this is only for the 0 bag
+            continue;
 
         ros::spinOnce();
         if (flg_exit || !ros::ok())
@@ -832,10 +832,10 @@ void DataHandler::Subscribe()
             Sophus::SE3 als2mls = als_to_mls;
 
             // //put it back later
-            if (!gnss_obj->GNSS_extrinsic_init)
-                continue;
+            // if (!gnss_obj->GNSS_extrinsic_init)
+            //     continue;
 
-            als2mls = als_obj->als_to_mls;
+            // als2mls = als_obj->als_to_mls;
 
             double timestamp = Measures.lidar_end_time;
             // timestamp+=1.; //this gets vux closer
@@ -1047,7 +1047,7 @@ void DataHandler::Subscribe()
                             Sophus::SE3 interpolated_pose_ppk = interpolateSE3(gnss_vux_data, cloud_time, tmp_index, false); // interpolated from ppk-gnss
                             Sophus::SE3 interpolated_pose_mls = interpolateSE3(prev_mls, prev_mls_time, curr_mls, curr_mls_time, cloud_time);
 
-                            std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
+                            // std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
 
                             // another way for ppk gnss
                             //  Sophus::SE3 pose_local = Sophus::SE3(interpolated_pose_ppk.so3(), interpolated_pose_ppk.translation() - first_vux_pose.translation());
@@ -1215,6 +1215,7 @@ void DataHandler::Subscribe()
 
                             if (true) // I AM ON THIS PART NOW
                             {
+                                std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
                                 //---------the latest approach---------
                                 //---Get a list of scans and their init guess (ppk-gnss init, mls init)
                                 //---georeference them with the init guess   (reference mls, dense ALS, sparse ALS)
@@ -1304,18 +1305,20 @@ void DataHandler::Subscribe()
                                     bool use_GN = true;
                                     if (use_GN)
                                     {
-                                        max_iterations_ = 200; // 50;
-                                        // cost_threshold = .0001;
+                                        max_iterations_ = 200; // 50; smaller for p2plane
                                         cost_threshold = .001;
 
                                         // threshold_nn_ = 0.5 * 0.5; // very small NN threshold
                                     }
 
-                                    publishJustPoints(prev_segment, cloud_pub); // prev segment for debug
+                                    // debug of prev half segment
+                                    // publishJustPoints(prev_segment, cloud_pub); // prev segment for debug
 
 #define debug_clouds
                                     for (int iter_num = 0; iter_num < max_iterations_; iter_num++)
                                     {
+                                        // break; // do not perform init guess refinement
+
                                         if (flg_exit || !ros::ok())
                                             break;
 
@@ -1328,7 +1331,7 @@ void DataHandler::Subscribe()
                                             current_cost = scan2map_GN_omp(init_georeferenced_segment, refference_kdtree,
                                                                            reference_localMap_cloud, q, t, T_icp,
                                                                            prev_segment_init, prev_segment, kdtree_prev_segment,
-                                                                           true, true, false, threshold_nn_);
+                                                                           true, false, false, threshold_nn_);
                                         }
                                         else
                                         {
@@ -1380,8 +1383,11 @@ void DataHandler::Subscribe()
                                     {
                                         // apply the correction for each pose of the scan
                                         // line_poses_buffer[l] = coarse_delta_T * line_poses_buffer[l];
-                                        auto initial_guess = coarse_delta_T * line_poses_buffer[l];           // copy of the refined solution
+
+                                        // auto initial_guess = coarse_delta_T * line_poses_buffer[l];           // copy of the refined solution
                                         refined_line_poses_buffer[l] = coarse_delta_T * line_poses_buffer[l]; // refined pose
+
+                                        const auto &initial_guess = refined_line_poses_buffer[l];
 
                                         for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
                                         {
@@ -1411,21 +1417,91 @@ void DataHandler::Subscribe()
                                     ros::spinOnce();
                                     rate.sleep();
 
-                                    // delete half of the data not full - for overlapping section
-                                    for (int j = 0; j < mid_scan; j++)
+                                    std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
+                                    std::cout << "Segment  " << segment_id << " completed. Press Enter to continue..." << std::endl;
+                                    std::cin.get();
+                                    std::cout << "Start BA refinement..." << std::endl;
+
+                                    if (true) // pose graph here
                                     {
-                                        lines_buffer.pop_front();
-                                        line_poses_buffer.pop_front();
-                                        refined_line_poses_buffer.pop_front();
+                                        // only 1 iteration for now
+
+                                        auto rv = BA_refinement(
+                                            lines_buffer,
+                                            refined_line_poses_buffer,
+                                            refference_kdtree,
+                                            reference_localMap_cloud,
+                                            prev_segment_init,
+                                            prev_segment,
+                                            kdtree_prev_segment,
+                                            cloud_pub, normals_pub,
+                                            threshold_nn_);
+
+                                        
+                                        feats_undistort->clear();
+                                        for (int l = 0; l < lines_buffer.size(); l++) // for each line
+                                        {
+                                            const auto &initial_guess = refined_line_poses_buffer[l];
+
+                                            for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
+                                            {
+                                                V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
+                                                V3D p_transformed = initial_guess * p_src;
+
+                                                PointType p;
+                                                p.x = p_transformed.x();
+                                                p.y = p_transformed.y();
+                                                p.z = p_transformed.z();
+                                                p.intensity = l;
+                                                p.time = segment_id;
+
+                                                feats_undistort->push_back(p);
+                                            }
+                                        }
+
+                                        publish_frame_debug(pubLaserCloudDebug, feats_undistort);
+                                        ros::spinOnce();
+                                        rate.sleep();
+
+                                        // for (const auto &[index, land] : landmarks_map)
+                                        // {
+                                        //     if (land.seen > 4) // seen more than once
+                                        //     {
+                                        //         for (int i = 0; i < land.seen; i++)
+                                        //         {
+                                        //             const auto &l = land.line_idx[i];     // point from line l
+                                        //             const auto &p_idx = land.scan_idx[i]; // at index p_idx
+
+                                        //             Eigen::Quaterniond &q = q_params[l];
+                                        //             Eigen::Vector3d &t = t_params[l];
+
+                                        //             const auto &raw_point = lines_buffer[l]->points[p_idx];
+                                        //             V3D p_src(raw_point.x, raw_point.y, raw_point.z);
+                                        //             V3D p_transformed = q * p_src + t;
+
+                                        //             ceres::CostFunction *cost_function = P2Plane_global::Create(p_src, land.norm, land.negative_OA_dot_norm);
+                                        //             problem.AddResidualBlock(cost_function, loss_function, q.coeffs().data(), t.data());
+                                        //         }
+                                        //     }
+                                        // }
+
+                                        std::cout << "BA done" << std::endl;
+                                        std::cin.get();
                                     }
+
+                                    // delete half of the data not full - for overlapping section
+                                    // for (int j = 0; j < mid_scan; j++)
+                                    // {
+                                    //     lines_buffer.pop_front();
+                                    //     line_poses_buffer.pop_front();
+                                    //     refined_line_poses_buffer.pop_front();
+                                    // }
                                     segment_id++;
                                     first_segment_aligned = true;
 
-                                    std::cout << "Segment  " << segment_id << " completed. Press Enter to continue..." << std::endl;
-                                    std::cin.get();
-
-                                    // lines_buffer.clear();
-                                    // line_poses_buffer.clear();
+                                    lines_buffer.clear();
+                                    line_poses_buffer.clear();
+                                    refined_line_poses_buffer.clear();
                                 }
                             }
 

@@ -21,15 +21,7 @@ namespace Eigen
     using Vector6d = Eigen::Matrix<double, state_size, 1>;
 } // namespace Eigen
 
-struct valid_tgt
-{
-    int map_point_index;
-    V3D norm;
-    int seen;
-    double negative_OA_dot_norm;
-    std::vector<int> line_idx;
-    std::vector<int> scan_idx;
-};
+
 
 void publishPointCloudWithNormals(const pcl::PointCloud<PointType>::Ptr &cloud_with_normals,
                                   const pcl::PointCloud<pcl::Normal>::Ptr &normals,
@@ -583,6 +575,16 @@ double joint_registration(const std::vector<std::vector<V3D>> &lidar_lines,
     return summary.final_cost;
 }
 
+struct valid_tgt
+{
+    int map_point_index;
+    V3D norm;
+    int seen;
+    double negative_OA_dot_norm;
+    std::vector<int> line_idx;
+    std::vector<int> scan_idx;
+};
+
 // Bundle Adjustment: Joint Scan Registration
 double BA(const std::vector<std::vector<V3D>> &lidar_lines,
           std::vector<Eigen::Quaterniond> &q_params,
@@ -772,7 +774,7 @@ double BA(const std::vector<std::vector<V3D>> &lidar_lines,
                 Eigen::Quaterniond &q = q_params[l];
                 Eigen::Vector3d &t = t_params[l];
 
-                const auto &raw_point = lidar_lines[l][p_idx];
+                const auto &raw_point = lidar_lines[l][p_idx]; //error here - should be transformed 
 
                 if (p2p)
                 {

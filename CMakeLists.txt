@@ -196,7 +196,7 @@ SET(MAIN_SOURCE_FILES2 src2/Vux_publisher.cpp src/utils.cpp )
 
 #the code with vux
 #-----------------------------------------------------------------------------------
-SET(TARGET_LINK_LIBS3 ${TARGET_LINK_LIBS} RiVLib::scanlib )  #gtsam
+SET(TARGET_LINK_LIBS3 ${TARGET_LINK_LIBS} RiVLib::scanlib gtsam)  
 set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
 
 #for tsl map
