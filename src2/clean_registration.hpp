@@ -1112,31 +1112,6 @@ std::unordered_map<int, landmark_> get_Correspondences(
 using namespace gtsam;
 using gtsam::symbol_shorthand::X; // Pose symbols
 
-class LiDARMeasurementFactor : public gtsam::NoiseModelFactor1<gtsam::Pose3>
-{
-public:
-    gtsam::Point3 measured_;
-    gtsam::Point3 landmark_;
-
-    LiDARMeasurementFactor(gtsam::Key poseKey,
-                           const gtsam::Point3 &measured,
-                           const gtsam::Point3 &landmark,
-                           const gtsam::SharedNoiseModel &model)
-        : gtsam::NoiseModelFactor1<gtsam::Pose3>(model, poseKey),
-          measured_(measured),
-          landmark_(landmark) {}
-
-    gtsam::Vector evaluateError(const gtsam::Pose3 &pose, OptionalMatrixType H) const override
-    // gtsam::Vector evaluateError(const gtsam::Pose3 &pose, boost::optional<gtsam::Matrix &> H = boost::none) const override
-    {
-        // Transform landmark from world frame to LiDAR frame
-        gtsam::Point3 predicted = pose.transformTo(landmark_, H);
-
-        // Compute residual: measured - predicted
-        return measured_ - predicted;
-    }
-};
-
 // Custom factor for point-to-point constraints
 class PointToPointFactor : public NoiseModelFactor1<Pose3>
 {
@@ -1152,8 +1127,8 @@ public:
                        double weight,
                        const SharedNoiseModel &model) : NoiseModelFactor1<Pose3>(model, pose_key),
                                                         measured_point_(measured_point), target_point_(target_point), weight_(weight) {}
-    
-    //Vector evaluateError(const Pose3 &pose, boost::optional<Matrix &> H = boost::none) const override
+
+    // Vector evaluateError(const Pose3 &pose, boost::optional<Matrix &> H = boost::none) const override
     Vector evaluateError(const gtsam::Pose3 &pose, OptionalMatrixType H) const override
 
     {
@@ -1162,19 +1137,91 @@ public:
 
         // Calculate error vector
         Vector3 error = world_point - target_point_;
-        //error *= weight_;
+        // error *= weight_;
 
-        if (H)
-        {
-            // // Compute Jacobian if requested
-            // Matrix36 H_point_wrt_pose;
-            // pose.transformFrom(measured_point_, H_point_wrt_pose);
-            // (*H) = H_point_wrt_pose * weight_;
-        }
+        // if (H)
+        // {
+        //     // // Compute Jacobian if requested
+        //     // Matrix36 H_point_wrt_pose;
+        //     // pose.transformFrom(measured_point_, H_point_wrt_pose);
+        //     // (*H) = H_point_wrt_pose * weight_;
+        // }
+
+        /*
+        // Transform landmark from world frame to LiDAR frame
+        gtsam::Point3 predicted = pose.transformTo(target_point_, H);
+
+        // Compute residual: measured - predicted
+        return measured_point_ - predicted;
+        */
 
         return error;
     }
 };
+
+// Custom factor for point-to-plane constraints
+class PointToPlaneFactor : public NoiseModelFactor1<Pose3> {
+    private:
+        Point3 measured_point_;      // Point in sensor frame
+        Point3 plane_normal_;       // Plane normal (normalized)
+        Point3 target_point_;       // A point on the plane in world frame
+        double negative_OA_dot_norm_; // = 1 / norm.norm()
+        double weight_;
+        bool use_alternative_method_; // Flag to choose between calculation methods
+    
+    public:
+        PointToPlaneFactor(Key pose_key,
+                          const Point3& measured_point,
+                          const Point3& plane_norm,
+                          const Point3& target_point,
+                          double negative_OA_dot_norm,
+                          double weight,
+                          bool use_alternative_method,
+                          const SharedNoiseModel& model) : 
+            NoiseModelFactor1<Pose3>(model, pose_key),
+            measured_point_(measured_point),
+            plane_normal_(plane_norm),
+            target_point_(target_point),
+            negative_OA_dot_norm_(negative_OA_dot_norm),
+            weight_(weight),
+            use_alternative_method_(use_alternative_method) {}
+    
+        Vector evaluateError(const Pose3& pose, OptionalMatrixType H) const override {
+            // Transform measured point to world frame
+            Point3 p_transformed = pose.transformFrom(measured_point_, H);
+    
+            double error = 0.0;
+            
+            if (use_alternative_method_) {
+                // Method 1: residual = (p_transformed - target_point).dot(norm)
+                Point3 diff = p_transformed - target_point_;
+                error = diff.x() * plane_normal_.x() + 
+                        diff.y() * plane_normal_.y() + 
+                        diff.z() * plane_normal_.z();
+            } else {
+                // Method 0: residual = norm(0)*p_transformed.x() + norm(1)*p_transformed.y() + norm(2)*p_transformed.z() + negative_OA_dot_norm
+                error = plane_normal_.x() * p_transformed.x() + 
+                        plane_normal_.y() * p_transformed.y() + 
+                        plane_normal_.z() * p_transformed.z() + 
+                        negative_OA_dot_norm_;
+            }
+    
+            // Apply weight
+            //error *= weight_;
+    
+            // if (H) {
+            //     // Compute Jacobian if requested
+            //     Matrix36 H_point_wrt_pose;
+            //     pose.transformFrom(measured_point_, H_point_wrt_pose);
+                
+            //     // The Jacobian is the plane normal (transposed) multiplied by the point Jacobian
+            //     (*H) = (Vector(1) << plane_normal_.x(), plane_normal_.y(), plane_normal_.z())
+            //               .finished() * H_point_wrt_pose * weight_;
+            // }
+    
+            return (Vector(1) << error).finished();
+        }
+    };
 
 double BA_refinement(
     const std::deque<pcl::PointCloud<VUX_PointType>::Ptr> &lidar_lines,
@@ -1224,6 +1271,13 @@ double BA_refinement(
     NonlinearFactorGraph graph;
     Values initial_values;
 
+    // noises
+    auto prior_noise = noiseModel::Diagonal::Sigmas((Vector6() << Vector3::Constant(0.1), Vector3::Constant(.1)).finished());
+    auto odometry_noise = noiseModel::Diagonal::Sigmas((Vector6() << Vector3::Constant(0.05), Vector3::Constant(.05)).finished());
+
+    auto point_noise = noiseModel::Isotropic::Sigma(3, .1); // 3D error
+    auto plane_noise = noiseModel::Isotropic::Sigma(1, .1);
+
     // 1. Create nodes from initial odometry poses
     for (size_t i = 0; i < line_poses.size(); i++)
     {
@@ -1236,7 +1290,6 @@ double BA_refinement(
         // Add prior on the first pose to fix the coordinate frame
         if (i == 0)
         {
-            auto prior_noise = noiseModel::Diagonal::Sigmas((Vector6() << Vector3::Constant(0.1), Vector3::Constant(0.1)).finished());
             graph.addPrior(X(0), gtsam_pose, prior_noise);
         }
 
@@ -1246,28 +1299,58 @@ double BA_refinement(
             Sophus::SE3 relative_pose = line_poses[i - 1].inverse() * line_poses[i];
             Pose3 gtsam_relative(relative_pose.matrix());
 
-            auto odometry_noise = noiseModel::Diagonal::Sigmas((Vector6() << Vector3::Constant(0.05), Vector3::Constant(0.05)).finished());
             graph.emplace_shared<BetweenFactor<Pose3>>(X(i - 1), X(i), gtsam_relative, odometry_noise);
         }
     }
 
-    // //improve from here tomorrow
-    //     // Simulated measurements (3D points in the LiDAR frame)
-    //     std::vector<std::vector<gtsam::Point3>>
-    //         measurements = {
-    //             {gtsam::Point3(1.1, 2.1, 3.0), gtsam::Point3(4.0, 5.0, 6.0)}, // Pose 0
-    //             {gtsam::Point3(7.0, 8.0, 9.1), gtsam::Point3(1.1, 2.0, 3.2)}  // Pose 1
-    //         };
+    // 2. Add constraints
+    int added_constraints = 0;
+    for (const auto &[landmark_id, land] : landmarks_map)
+    {
+        if (land.seen > 2)
+        {
+            for (int i = 0; i < land.seen; i++)
+            {   
+                const auto &pose_idx = land.line_idx[i]; // point from line pose_idx
+                const auto &p_idx = land.scan_idx[i];    // at index p_idx from that scan
+                const auto &raw_point = lidar_lines[pose_idx]->points[p_idx];
+                // measured_landmar_in_sensor_frame
+                Point3 measured_point(raw_point.x, raw_point.y, raw_point.z);
 
-    // // Add measurement factors
-    // // Add measurement factors to the graph
-    // for (size_t i = 0; i < lidar_poses.size(); ++i)
-    // {
-    //     for (size_t j = 0; j < measurements[i].size(); ++j)
-    //     {
-    //         graph.emplace_shared<LiDARMeasurementFactor>(X(i + 1), measurements[i][j], landmarks[j], meas_noise);
-    //     }
-    // }
+
+                Point3 target_point(reference_localMap_cloud->points[land.map_point_index].x,
+                                    reference_localMap_cloud->points[land.map_point_index].y,
+                                    reference_localMap_cloud->points[land.map_point_index].z);
+
+                //point-to-point 
+                graph.emplace_shared<PointToPointFactor>(X(pose_idx), measured_point, target_point, land.re_proj_error, point_noise);
+                
+                //auto weighted_plane_noise = noiseModel::Isotropic::Sigma(1, 0.1/land.weight);
+                // Point3 plane_norm(land.norm.x(), land.norm.y(), land.norm.z());
+                // bool use_alternative_method = true; 
+                // graph.emplace_shared<PointToPlaneFactor>(X(pose_idx), measured_point,plane_norm,target_point,land.negative_OA_dot_norm,
+                //                                             land.re_proj_error,use_alternative_method,plane_noise);
+
+                
+                added_constraints++;
+            }
+        }
+    }
+
+    for (const auto& [landmark_id, landmark] : landmarks_map) {
+        
+        
+        
+        
+        
+                             
+        
+        
+        
+        
+    }
+
+    std::cout << "added_constraints:" << added_constraints << std::endl;
 
     // Set optimization parameters
     // LevenbergMarquardtParams params;

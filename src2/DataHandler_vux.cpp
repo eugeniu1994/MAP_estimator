@@ -1282,11 +1282,11 @@ void DataHandler::Subscribe()
 
                                     // init_georeferenced_segment is in the frame of the line_poses_buffer[0]
                                     // shift it to the frame of the prev estimated pose
-
+                                    
                                     // publish_frame_debug(pubLaserCloudDebug, feats_undistort);
                                     // ros::spinOnce();
                                     // rate.sleep();
-
+                                    
                                     // std::cout << "Init guess Press Enter to continue..." << std::endl;
                                     // std::cin.get();
 
@@ -1312,7 +1312,7 @@ void DataHandler::Subscribe()
                                     }
 
                                     // debug of prev half segment
-                                    // publishJustPoints(prev_segment, cloud_pub); // prev segment for debug
+                                    publishJustPoints(prev_segment, cloud_pub); // prev segment for debug
 
 #define debug_clouds
                                     for (int iter_num = 0; iter_num < max_iterations_; iter_num++)
@@ -1425,7 +1425,6 @@ void DataHandler::Subscribe()
                                     if (true) // pose graph here
                                     {
                                         // only 1 iteration for now
-
                                         auto rv = BA_refinement(
                                             lines_buffer,
                                             refined_line_poses_buffer,
@@ -1437,7 +1436,6 @@ void DataHandler::Subscribe()
                                             cloud_pub, normals_pub,
                                             threshold_nn_);
 
-                                        
                                         feats_undistort->clear();
                                         for (int l = 0; l < lines_buffer.size(); l++) // for each line
                                         {
@@ -1463,488 +1461,29 @@ void DataHandler::Subscribe()
                                         ros::spinOnce();
                                         rate.sleep();
 
-                                        // for (const auto &[index, land] : landmarks_map)
-                                        // {
-                                        //     if (land.seen > 4) // seen more than once
-                                        //     {
-                                        //         for (int i = 0; i < land.seen; i++)
-                                        //         {
-                                        //             const auto &l = land.line_idx[i];     // point from line l
-                                        //             const auto &p_idx = land.scan_idx[i]; // at index p_idx
-
-                                        //             Eigen::Quaterniond &q = q_params[l];
-                                        //             Eigen::Vector3d &t = t_params[l];
-
-                                        //             const auto &raw_point = lines_buffer[l]->points[p_idx];
-                                        //             V3D p_src(raw_point.x, raw_point.y, raw_point.z);
-                                        //             V3D p_transformed = q * p_src + t;
-
-                                        //             ceres::CostFunction *cost_function = P2Plane_global::Create(p_src, land.norm, land.negative_OA_dot_norm);
-                                        //             problem.AddResidualBlock(cost_function, loss_function, q.coeffs().data(), t.data());
-                                        //         }
-                                        //     }
-                                        // }
+                                        
 
                                         std::cout << "BA done" << std::endl;
                                         std::cin.get();
                                     }
 
                                     // delete half of the data not full - for overlapping section
-                                    // for (int j = 0; j < mid_scan; j++)
-                                    // {
-                                    //     lines_buffer.pop_front();
-                                    //     line_poses_buffer.pop_front();
-                                    //     refined_line_poses_buffer.pop_front();
-                                    // }
+                                    for (int j = 0; j < mid_scan; j++)
+                                    {
+                                        lines_buffer.pop_front();
+                                        line_poses_buffer.pop_front();
+                                        refined_line_poses_buffer.pop_front();
+                                    }
                                     segment_id++;
                                     first_segment_aligned = true;
 
-                                    lines_buffer.clear();
-                                    line_poses_buffer.clear();
-                                    refined_line_poses_buffer.clear();
+                                    // lines_buffer.clear();
+                                    // line_poses_buffer.clear();
+                                    // refined_line_poses_buffer.clear();
                                 }
                             }
 
-                            if (false)
-                            {
-                                // make it more optimal - maybe use only Eigen points
-                                // One scan is warking
-                                // try several scans
-                                if (false) // only 1 scan registration for debug reasons
-                                {
-                                    auto source = downsampled_line;       // copy of the current scan
-                                    auto initial_guess = T_to_be_refined; // copy of the init guess
-                                    Sophus::SE3 T_icp = Sophus::SE3();
-                                    for (int i = 0; i < source->size(); i++) // apply init guess T
-                                    {
-                                        V3D p_src(source->points[i].x, source->points[i].y, source->points[i].z);
-                                        V3D p_transformed = initial_guess * p_src;
-                                        source->points[i].x = p_transformed.x();
-                                        source->points[i].y = p_transformed.y();
-                                        source->points[i].z = p_transformed.z();
-                                    }
-
-                                    int max_iterations = 100;
-                                    for (int iter_num = 0; iter_num < max_iterations; iter_num++)
-                                    {
-                                        std::cout << "\nIteration " << iter_num << std::endl;
-                                        if (flg_exit || !ros::ok())
-                                            break;
-
-                                        // global variables
-                                        Eigen::MatrixXd H;
-                                        Eigen::VectorXd g;
-                                        int num_scans = 1;
-                                        H = Eigen::MatrixXd::Zero(6 * num_scans, 6 * num_scans);
-                                        g = Eigen::VectorXd::Zero(6 * num_scans);
-
-                                        // can be done in parallel
-                                        // for every point search tgt via NN - compute the residual and hesians
-
-                                        Eigen::Matrix6d JTJ_private; // state_size x state_size  (6x6)
-                                        Eigen::Vector6d JTr_private; // state_size x 1           (6x1)
-
-                                        feats_undistort->clear();
-                                        for (int i = 0; i < source->size(); i++) // apply init guess T
-                                        {
-                                            V3D p_transformed(source->points[i].x, source->points[i].y, source->points[i].z);
-                                            PointType search_point;
-                                            search_point.x = p_transformed.x();
-                                            search_point.y = p_transformed.y();
-                                            search_point.z = p_transformed.z();
-                                            search_point.time = 1;
-                                            feats_undistort->push_back(search_point); // this cannot be done in parallel - or make it without push
-                                        }
-                                        publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-
-                                        int nn_found = computeScanDerivatives(source, reference_localMap_cloud, refference_kdtree,
-                                                                              threshold_nn, JTJ_private, JTr_private);
-
-                                        if (nn_found > 0)
-                                        {
-                                            // Insert into global Hessian
-                                            H.block<6, 6>(0, 0) = JTJ_private;
-                                            g.segment<6>(0) = JTr_private;
-
-                                            // Solve the system H * deltaT = -g
-                                            Eigen::VectorXd deltaT = H.ldlt().solve(-g); // 6*num_scans   X   1
-                                            Eigen::VectorXd dx = deltaT.segment<6>(0);   // Eigen::Vector6d
-
-                                            // const Eigen::Vector6d dx = JTJ_private.ldlt().solve(-JTr_private); // translation and rotation perturbations
-
-                                            const Sophus::SE3 estimation = Sophus::SE3::exp(dx); // this is in local-align init guess to map
-
-                                            T_icp = estimation * T_icp;
-
-                                            std::cout << "dx.norm():" << dx.norm() << std::endl;
-                                            if (dx.norm() < .001 || iter_num >= max_iterations - 2)
-                                            {
-                                                std::cout << "Points registered with src:" << source->size() << " in " << iter_num << " iterations " << std::endl;
-                                                break;
-                                            }
-
-                                            for (int i = 0; i < source->size(); i++) // apply init guess T
-                                            {
-                                                V3D p_src(source->points[i].x, source->points[i].y, source->points[i].z);
-                                                V3D p_transformed = estimation * p_src;
-                                                source->points[i].x = p_transformed.x();
-                                                source->points[i].y = p_transformed.y();
-                                                source->points[i].z = p_transformed.z();
-                                            }
-                                        }
-                                        else
-                                        {
-                                            break;
-                                        }
-                                    }
-
-                                    T_to_be_refined = T_icp * T_to_be_refined;
-                                }
-
-                                // co-register every line independently
-                                if (lines_buffer.size() > 50) // or difference between the first and the last line pose is big enough
-                                {
-                                    // drop old scan and pose
-                                    lines_buffer.pop_front();
-                                    line_poses_buffer.pop_front();
-
-                                    auto original_T_to_be_refined = T_to_be_refined;
-
-                                    lines_buffer.push_back(downsampled_line);
-                                    line_poses_buffer.push_back(original_T_to_be_refined);
-
-                                    int max_iterations = 100;
-                                    // do work here
-                                    if (false)
-                                    {
-
-                                        double kernel = 2.0;
-                                        auto Weight = [&](double residual2)
-                                        {
-                                            return square(kernel) / square(kernel + residual2);
-                                        };
-
-                                        // std::deque<pcl::PointCloud<VUX_PointType>::Ptr> lines_buffer;
-                                        std::vector<std::vector<V3D>> eigen_lines;
-                                        std::deque<Sophus::SE3> line_poses_buffer_copy;
-
-                                        Sophus::SE3 T_icp = Sophus::SE3();
-
-                                        // apply init guess T for every line in a buffer
-                                        for (int l = 0; l < lines_buffer.size(); l++)
-                                        {
-                                            auto initial_guess = line_poses_buffer[l]; // copy of the init guess
-                                            std::vector<V3D> curr_line;
-                                            for (int i = 0; i < lines_buffer[l]->size(); i++)
-                                            {
-                                                V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
-                                                V3D p_transformed = initial_guess * p_src;
-                                                curr_line.push_back(p_transformed);
-                                            }
-
-                                            eigen_lines.push_back(curr_line);
-
-                                            Sophus::SE3 T_icp = Sophus::SE3();
-                                            line_poses_buffer_copy.push_back(T_icp);
-                                        }
-
-                                        if (true)
-                                        {
-                                            for (int iter_num = 0; iter_num < max_iterations; iter_num++)
-                                            {
-                                                if (flg_exit || !ros::ok())
-                                                    break;
-
-                                                feats_undistort->clear();
-
-                                                // global variables
-                                                Eigen::MatrixXd H;
-                                                Eigen::VectorXd g;
-
-                                                int num_scans = eigen_lines.size();
-                                                H = Eigen::MatrixXd::Zero(6 * num_scans, 6 * num_scans);
-                                                g = Eigen::VectorXd::Zero(6 * num_scans);
-                                                int total_points_found = 0;
-                                                double total_error = 0.0;
-                                                // for every line/scan
-                                                for (int l = 0; l < eigen_lines.size(); l++)
-                                                {
-                                                    Eigen::Matrix6d JTJ_private; // state_size x state_size  (6x6)
-                                                    Eigen::Vector6d JTr_private; // state_size x 1           (6x1)
-                                                    JTJ_private.setZero();
-                                                    JTr_private.setZero();
-
-                                                    int nn_found = 0;
-                                                    for (const auto &raw_point : eigen_lines[l])
-                                                    {
-                                                        PointType search_point; // I think this requires to be transformed to global - modify it
-                                                        search_point.x = raw_point.x();
-                                                        search_point.y = raw_point.y();
-                                                        search_point.z = raw_point.z();
-                                                        search_point.time = l;
-
-                                                        feats_undistort->push_back(search_point); // this cannot be done in parallel - or make it without push
-
-                                                        bool p2plane = false;
-                                                        if (p2plane)
-                                                        {
-                                                            // to be implemented
-                                                        }
-                                                        else
-                                                        {
-                                                            std::vector<int> point_idx(1);
-                                                            std::vector<float> point_dist(1);
-                                                            if (refference_kdtree->nearestKSearch(search_point, 1, point_idx, point_dist) > 0) // there are neighbours
-                                                            {
-                                                                if (point_dist[0] < threshold_nn) // 1
-                                                                {
-                                                                    V3D src = raw_point; //(raw_point.x, raw_point.y, raw_point.z);
-
-                                                                    V3D tgt(reference_localMap_cloud->points[point_idx[0]].x, reference_localMap_cloud->points[point_idx[0]].y, reference_localMap_cloud->points[point_idx[0]].z);
-
-                                                                    const V3D residual = src - tgt;
-                                                                    Eigen::Matrix3_6d J_r;
-                                                                    J_r.block<3, 3>(0, 0) = Eye3d;                        // df/dt
-                                                                    J_r.block<3, 3>(0, 3) = -1.0 * Sophus::SO3::hat(src); // df/dR
-
-                                                                    // double w = 1.; // to be handled later
-                                                                    double w = Weight(residual.squaredNorm());
-
-                                                                    JTJ_private.noalias() += J_r.transpose() * w * J_r;
-                                                                    JTr_private.noalias() += J_r.transpose() * w * residual;
-
-                                                                    nn_found++;
-                                                                    total_error += residual.norm();
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    // std::cout << "Found " << nn_found << "/" << lines_buffer_global[l]->size() << " neighbours" << std::endl;
-                                                    total_points_found += nn_found;
-                                                    if (nn_found > 0)
-                                                    {
-                                                        // Insert into global Hessian
-                                                        H.block<6, 6>(l * 6, l * 6) = JTJ_private;
-                                                        g.segment<6>(l * 6) = JTr_private;
-                                                    }
-                                                    else
-                                                    {
-                                                        std::cout << "didn;t find any points" << std::endl;
-                                                    }
-                                                }
-
-                                                std::cout << "\n Iteration " << iter_num << " total_error:" << total_error << std::endl;
-                                                std::cout << "num_scans:" << num_scans << ", total_points_found:" << total_points_found << std::endl;
-                                                // const Eigen::Vector6d dx = JTJ_private.ldlt().solve(-JTr_private); // translation and rotation perturbations
-
-                                                // Eigen::VectorXd deltaT = -H.ldlt().solve(g);
-                                                // Solve the system H * deltaT = -g
-                                                Eigen::VectorXd deltaT = H.ldlt().solve(-g); // 6*num_scans   X   1
-
-                                                // std::cout << "deltaT Number of rows: " << deltaT.rows() << std::endl;
-                                                // std::cout << "deltaT Number of columns: " << deltaT.cols() << std::endl;
-
-                                                // apply the correction
-                                                for (size_t l = 0; l < num_scans; l++)
-                                                {
-                                                    Eigen::VectorXd dTi = deltaT.segment<6>(l * 6);       // Eigen::Vector6d
-                                                    const Sophus::SE3 estimation = Sophus::SE3::exp(dTi); // this is in local-align init guess to map
-
-                                                    // T_icp = estimation * T_icp;
-                                                    T_icp = estimation * T_icp;
-
-                                                    line_poses_buffer_copy[l] = estimation * line_poses_buffer_copy[l];
-
-                                                    // SE3 delta = SE3::exp(dTi);
-                                                    // scans[i].initial_guess = delta * scans[i].initial_guess;
-                                                }
-
-                                                // publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-
-                                                double update_norm = deltaT.norm();
-
-                                                double max_update = 0.0;
-                                                for (int l = 0; l < num_scans; l++)
-                                                {
-                                                    double scan_update = deltaT.segment<6>(l * 6).norm();
-                                                    max_update = std::max(max_update, scan_update);
-                                                }
-                                                // if (max_update < 0.001) break;
-
-                                                if (max_update < .01 || iter_num >= max_iterations - 1)
-                                                {
-                                                    std::cout << "Points registered with src:" << feats_undistort->size() << " in " << iter_num << " iterations " << std::endl;
-                                                    break;
-                                                }
-
-                                                // apply the corrections
-                                                for (int l = 0; l < num_scans; l++)
-                                                {
-                                                    Eigen::VectorXd dTi = deltaT.segment<6>(l * 6); // Eigen::Vector6d
-                                                    Sophus::SE3 estimation = Sophus::SE3::exp(dTi);
-
-                                                    for (int i = 0; i < eigen_lines[l].size(); i++)
-                                                    {
-                                                        V3D p_src = eigen_lines[l][i];
-                                                        // V3D p_transformed = estimation * initial_guess * p_src;
-                                                        eigen_lines[l][i] = estimation * p_src;
-                                                    }
-                                                }
-                                                std::cout << "line_poses_buffer_copy:" << line_poses_buffer_copy.size() << std::endl;
-
-                                                // T_to_be_refined = line_poses_buffer_copy[num_scans-1] * T_to_be_refined;
-                                                // T_to_be_refined = T_icp * T_to_be_refined;
-                                            }
-
-                                            publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-                                        }
-                                    }
-                                    // auto original_T_to_be_refined = T_to_be_refined;
-
-                                    // lines_buffer.push_back(downsampled_line);
-                                    // line_poses_buffer.push_back(original_T_to_be_refined); // this one here should be refined
-
-                                    //     // publish_refined_ppk_gnss(T_to_be_refined, cloud_time);
-
-                                    // ceres approach
-                                    if (true)
-                                    {
-                                        max_iterations = 5; // 10;
-                                        threshold_nn = 1;   // 3 * 3; // use 3 m away points
-
-                                        std::vector<std::vector<V3D>> eigen_lines;
-
-                                        bool local_error = false;
-                                        bool p2p = true;
-
-                                        // apply init guess T for every line in a buffer
-                                        for (int l = 0; l < lines_buffer.size(); l++)
-                                        {
-                                            auto initial_guess = line_poses_buffer[l]; // copy of the init guess
-                                            std::vector<V3D> curr_line;
-                                            for (int i = 0; i < lines_buffer[l]->size(); i++)
-                                            {
-                                                V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
-                                                V3D p_transformed = initial_guess * p_src;
-
-                                                if (local_error)
-                                                    curr_line.push_back(p_transformed); // point transformed to globa via init guess
-                                                else
-                                                    curr_line.push_back(p_src); // point local
-                                            }
-
-                                            eigen_lines.push_back(curr_line); // point is transformed to global already
-                                        }
-
-                                        // Initial Poses: Quaternion + Translation per scan
-                                        // Create q_params and t_params from SE3 poses
-                                        std::vector<Eigen::Quaterniond> q_params;
-                                        std::vector<V3D> t_params;
-                                        for (const auto &pose : line_poses_buffer)
-                                        {
-                                            if (local_error)
-                                            {
-                                                // this will refine locally
-                                                q_params.push_back(Eigen::Quaterniond::Identity());
-                                                t_params.push_back(V3D::Zero());
-                                            }
-                                            else
-                                            { // this will refine global values
-                                                q_params.push_back(pose.unit_quaternion());
-                                                t_params.push_back(pose.translation());
-                                            }
-                                        }
-
-                                        double prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
-                                        double current_cost = prev_cost;
-                                        double cost_threshold = .01; // Threshold for stopping criterion
-
-                                        for (int iter_num = 0; iter_num < max_iterations; iter_num++)
-                                        {
-                                            if (flg_exit || !ros::ok())
-                                                break;
-
-                                            feats_undistort->clear();
-
-                                            // current_cost = joint_registration(eigen_lines, q_params, t_params, refference_kdtree, reference_localMap_cloud, threshold_nn, p2p, local_error);
-
-                                            std::vector<valid_tgt> landmarks;
-                                            current_cost = BA(eigen_lines, q_params, t_params, refference_kdtree, reference_localMap_cloud, landmarks, threshold_nn, p2p, local_error);
-
-                                            cloud_with_normals->clear();
-                                            for (const auto &land : landmarks)
-                                            {
-                                                pcl::PointNormal pt;
-                                                pt.x = reference_localMap_cloud->points[land.map_point_index].x;
-                                                pt.y = reference_localMap_cloud->points[land.map_point_index].y;
-                                                pt.z = reference_localMap_cloud->points[land.map_point_index].z;
-
-                                                pt.normal_x = land.norm.x();
-                                                pt.normal_y = land.norm.y();
-                                                pt.normal_z = land.norm.z();
-
-                                                pt.curvature = land.seen;
-                                                // pt.curvature = land.line_idx.size();
-
-                                                cloud_with_normals->push_back(pt);
-
-                                                if (land.seen > 1) // seen more than once
-                                                {
-                                                    for (int i = 0; i < land.seen; i++)
-                                                    {
-                                                        const auto &l = land.line_idx[i];     // point from line l
-                                                        const auto &p_idx = land.scan_idx[i]; // at index p_idx
-
-                                                        Eigen::Quaterniond &q = q_params[l];
-                                                        Eigen::Vector3d &t = t_params[l];
-
-                                                        const auto &raw_point = eigen_lines[l][p_idx];
-                                                        V3D p_transformed = q * raw_point + t;
-
-                                                        // Nearest neighbor search
-                                                        PointType search_point;
-                                                        search_point.x = p_transformed.x();
-                                                        search_point.y = p_transformed.y();
-                                                        search_point.z = p_transformed.z();
-
-                                                        search_point.time = l;
-
-                                                        feats_undistort->push_back(search_point);
-                                                    }
-                                                }
-                                            }
-
-                                            // publishPointCloudWithNormals(cloud_with_normals, cloud_pub, normals_pub);
-                                            // publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-
-                                            // break;
-
-                                            std::cout << "Iteration " << iter_num << " - Cost: " << current_cost << " \n\n"
-                                                      << std::endl;
-                                            if (std::abs(prev_cost - current_cost) < cost_threshold) // Check if the cost function change is small enough to stop
-                                            {
-                                                std::cout << "Stopping optimization: Cost change below threshold.\n";
-                                                break;
-                                            }
-
-                                            prev_cost = current_cost;
-                                        }
-
-                                        publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-                                        ros::spinOnce();
-                                    }
-
-                                    vux_scan_id++;
-                                }
-                                else
-                                {
-                                    // saving the data - the initial map will be based on the init guess
-                                    lines_buffer.push_back(downsampled_line);
-                                    line_poses_buffer.push_back(T_to_be_refined);
-                                }
-                                std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
-                            }
-
+                            
                             for (size_t i = 0; i < transformed_cloud->size(); i++)
                             {
                                 V3D point_scanner(transformed_cloud->points[i].x, transformed_cloud->points[i].y, transformed_cloud->points[i].z);
