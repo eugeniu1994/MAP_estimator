@@ -578,8 +578,8 @@ void DataHandler::Subscribe()
     {
         scan_id++;
 
-        // if (scan_id < 45100) // this is only for the 0 bag
-        //     continue;
+        if (scan_id < 45100) // this is only for the 0 bag
+            continue;
 
         ros::spinOnce();
         if (flg_exit || !ros::ok())
@@ -1065,8 +1065,11 @@ void DataHandler::Subscribe()
                             // PPK/GNSS pose as init guess---- first extrinsic, then georeference, then transform to als - //ppk-gnss
                             Sophus::SE3 pose4georeference = als2mls * interpolated_pose_ppk * vux2imu_extrinsics; // this does not have the extrinsics for mls
 
+                            //the above has an issue with sparse ALS data
+                            //its about the hight - not the same - so shoft everything in the origin of first pose 
+
                             // MLS pose as init guess ---- first extrinsics, then georeference  // mls pose
-                            // pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
+                            pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
 
                             publish_refined_ppk_gnss(pose4georeference, cloud_time);
 
@@ -1467,6 +1470,7 @@ void DataHandler::Subscribe()
                                                 prev_segment,
                                                 kdtree_prev_segment,
                                                 cloud_pub, normals_pub,
+                                                2,//run_iterations
                                                 total_scans - mid_scan, 
                                                 threshold_nn_, false, true);
 

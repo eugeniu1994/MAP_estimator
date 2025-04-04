@@ -1092,7 +1092,7 @@ void debug_CloudWithNormals(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud_
     normals_marker.action = visualization_msgs::Marker::ADD;
     normals_marker.scale.x = 0.05; // Line width
     normals_marker.color.a = 1.0;  // Full opacity
-    double normal_length = 2.;//5.;     // Length of normal lines
+    double normal_length = 2.;     // 5.;     // Length of normal lines
 
     for (const auto &point : cloud_with_normals->points)
     {
@@ -1119,9 +1119,9 @@ void debug_CloudWithNormals(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud_
         // }
         // else
         // {
-            color.r = 0.0;
-            color.g = 1.0; // Green for high curvature
-            color.b = 0.0;
+        color.r = 0.0;
+        color.g = 1.0; // Green for high curvature
+        color.b = 0.0;
         //}
         color.a = 1.0; // Full opacity
 
@@ -1521,7 +1521,7 @@ auto sigma_point = 1; // 100cm standard deviation (3σ ≈ 3m allowed)
 auto sigma_plane = 1; // 100cm standard deviation (3σ ≈ 30cm allowed)
 
 auto sigma_odom = .02;
-auto sigma_prior = 1.0; //not sure about the prior - let it change it 
+auto sigma_prior = 1.0; // not sure about the prior - let it change it
 
 auto point_noise = gtsam::noiseModel::Robust::Create(
     gtsam::noiseModel::mEstimator::Cauchy::Create(0.5), // Robust kernel for outliers
@@ -1530,7 +1530,7 @@ auto point_noise = gtsam::noiseModel::Robust::Create(
 
 auto plane_noise = gtsam::noiseModel::Robust::Create(
     gtsam::noiseModel::mEstimator::Tukey::Create(0.1), // Very aggressive outlier rejection
-    //gtsam::noiseModel::mEstimator::Cauchy::Create(0.5),
+    // gtsam::noiseModel::mEstimator::Cauchy::Create(0.5),
     gtsam::noiseModel::Isotropic::Sigma(1, sigma_plane));
 
 auto odometry_noise = gtsam::noiseModel::Diagonal::Sigmas(
@@ -1912,7 +1912,8 @@ void mergeXandZGraphs(NonlinearFactorGraph &merged_graph, Values &merged_values,
 }
 
 bool useX = true; // Set this flag to false to use Z instead of X
-double BA_refinement_merge_graph(
+
+void buildGraph(
     const std::deque<pcl::PointCloud<VUX_PointType>::Ptr> &lidar_lines,
     std::deque<Sophus::SE3> &line_poses,
     const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
@@ -1921,10 +1922,10 @@ double BA_refinement_merge_graph(
     const pcl::PointCloud<PointType>::Ptr &prev_segment,
     const pcl::KdTreeFLANN<PointType>::Ptr &kdtree_prev_segment,
     const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
+    NonlinearFactorGraph &graph, Values &initial_values,
     int overlap_size = 50,
     double threshold_nn = 1.0, bool p2p = true, bool p2plane = false)
 {
-
     std::cout << "Run BA_refinement_merge_graph..." << std::endl;
     if (p2plane && p2p)
     {
@@ -1939,9 +1940,9 @@ double BA_refinement_merge_graph(
         std::cout << "Perform p2p" << std::endl;
     }
 
-    //double planarity = 0.1;
-    double planarity = .05; //5cm allowed
-    //double planarity = .02;   //2 cm allowed
+    // double planarity = 0.1;
+    double planarity = .05; // 5cm allowed
+    // double planarity = .02;   //2 cm allowed
 
     std::unordered_map<int, landmark_> landmarks_map = get_Correspondences(
         lidar_lines,
@@ -1966,7 +1967,7 @@ double BA_refinement_merge_graph(
             pt.normal_y = land.norm.y();
             pt.normal_z = land.norm.z();
 
-            //pt.curvature = land.seen;
+            // pt.curvature = land.seen;
             pt.curvature = land.re_proj_error;
             // pt.curvature = land.line_idx.size();
 
@@ -1976,11 +1977,6 @@ double BA_refinement_merge_graph(
         debug_CloudWithNormals(cloud_with_normals, cloud_pub, normals_pub);
     }
 
-    NonlinearFactorGraph graph;
-    Values initial_values;
-    useX = !useX;
-
-    std::cout << "For current graph useX:" << useX << std::endl;
     // 1. Create nodes from initial odometry poses
     for (size_t i = 0; i < line_poses.size(); i++)
     {
@@ -2067,6 +2063,23 @@ double BA_refinement_merge_graph(
 
     std::cout << "added_constraints:" << added_constraints << std::endl;
     std::cout << "constraints_to_ref_map:" << constraints_to_ref_map << ", constraints_to_prev:" << constraints_to_prev << std::endl;
+}
+
+double BA_refinement_merge_graph(
+    const std::deque<pcl::PointCloud<VUX_PointType>::Ptr> &lidar_lines,
+    std::deque<Sophus::SE3> &line_poses,
+    const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
+    const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud,
+    const bool &prev_segment_init,
+    const pcl::PointCloud<PointType>::Ptr &prev_segment,
+    const pcl::KdTreeFLANN<PointType>::Ptr &kdtree_prev_segment,
+    const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
+    int run_iterations = 1,
+    int overlap_size = 50,
+    double threshold_nn = 1.0, bool p2p = true, bool p2plane = false)
+{
+    useX = !useX;
+    std::cout << "For current graph useX:" << useX << std::endl;
 
     // Set optimization parameters
     LevenbergMarquardtParams params;
@@ -2074,8 +2087,19 @@ double BA_refinement_merge_graph(
     params.setRelativeErrorTol(1e-3);
     params.setVerbosity("ERROR");
 
+    bool rv = 0.;
+
     if (!prev_graph_exist)
     {
+        NonlinearFactorGraph graph;
+        Values initial_values;
+
+        buildGraph(lidar_lines, line_poses, refference_kdtree, reference_localMap_cloud,
+                   prev_segment_init, prev_segment, kdtree_prev_segment,
+                   cloud_pub, normals_pub,
+                   graph, initial_values,
+                   overlap_size, threshold_nn, p2p, p2plane);
+
         // Optimize the graph
         LevenbergMarquardtOptimizer optimizer(graph, initial_values, params); //
         Values optimized_values = optimizer.optimize();
@@ -2098,63 +2122,84 @@ double BA_refinement_merge_graph(
         prev_optimized_values = optimized_values; // keep the optimized values
         prev_graph = graph;
 
-        return optimizer.error();
+        rv = optimizer.error();
+
+        return rv;
     }
     else
     {
         // int prev_last_idx = line_poses.size();
         // std::cout << "Use the prev values with size:" << overlap_size << ", prev_last_idx:" << prev_last_idx << std::endl;
 
-        NonlinearFactorGraph merged_graph;
-        Values merged_values;
+        NonlinearFactorGraph graph;
+        Values initial_values;
 
-        std::cout << "mergeXandZGraphs" << std::endl;
-        int total_poses = line_poses.size();
-        mergeXandZGraphs(merged_graph, merged_values,
-                         prev_graph, prev_optimized_values,
-                         graph, initial_values,
-                         useX, overlap_size, total_poses);
+        for (int iter = 0; iter < run_iterations; iter++)
+        {
+            std::cout << "Runt iteration " << iter << std::endl;
+            graph.resize(0);        // Clears all factors from the graph
+            initial_values.clear(); // Clears all values
+
+            buildGraph(lidar_lines, line_poses, refference_kdtree, reference_localMap_cloud,
+                       prev_segment_init, prev_segment, kdtree_prev_segment,
+                       cloud_pub, normals_pub,
+                       graph, initial_values,
+                       overlap_size, threshold_nn, p2p, p2plane);
+
+            NonlinearFactorGraph merged_graph;
+            Values merged_values;
+
+            std::cout << "mergeXandZGraphs" << std::endl;
+            int total_poses = line_poses.size();
+            mergeXandZGraphs(merged_graph, merged_values,
+                             prev_graph, prev_optimized_values,
+                             graph, initial_values,
+                             useX, overlap_size, total_poses);
+
+            // Optimize the graph
+            LevenbergMarquardtOptimizer optimizer(merged_graph, merged_values, params); //
+            Values optimized_values = optimizer.optimize();
+
+            // optimized_values.print("Optimized Results:\n");
+            //  Retrieve optimized poses
+
+            // Values re_optimized_prev;
+            for (size_t i = 0; i < total_poses; i++)
+            {
+                gtsam::Key curr_pose_key = useX ? X(i) : Z(i);
+                if (optimized_values.exists(curr_pose_key))
+                {
+                    Pose3 optimized_pose = optimized_values.at<Pose3>(curr_pose_key);
+                    line_poses[i] = Sophus::SE3(optimized_pose.rotation().matrix(), optimized_pose.translation());
+                }
+                else
+                {
+                    Symbol symbol_key(curr_pose_key);
+                    std::cerr << "Optimized pose not found for key: " << symbol_key << std::endl;
+                }
+
+                // gtsam::Key prev_pose_key = useX ? Z(i) : X(i);
+                // if (optimized_values.exists(curr_pose_key))
+                // {
+                //     Pose3 prev_optimized_pose = optimized_values.at<Pose3>(prev_pose_key);
+                //     re_optimized_prev.insert(prev_pose_key, prev_optimized_pose);
+                // }
+                // else
+                // {
+                //     Symbol symbol_key(prev_pose_key);
+                //     std::cerr << "Re-Optimized pose not found for key: " << symbol_key << std::endl;
+                // }
+            }
+            // prev_optimized_values = re_optimized_prev;
+
+            // std::cout << "\bIteraion:" << iter << ", error:" << optimizer.error() << std::endl;
+            rv = optimizer.error();
+        }
 
         prev_graph_exist = true;
         prev_optimized_values = initial_values; // keep the raw data
         prev_graph = graph;
 
-        // Optimize the graph
-        LevenbergMarquardtOptimizer optimizer(merged_graph, merged_values, params); //
-        Values optimized_values = optimizer.optimize();
-
-        // optimized_values.print("Optimized Results:\n");
-        //  Retrieve optimized poses
-
-        //Values re_optimized_prev;
-        for (size_t i = 0; i < total_poses; i++)
-        {
-            gtsam::Key curr_pose_key = useX ? X(i) : Z(i);
-            if (optimized_values.exists(curr_pose_key))
-            {
-                Pose3 optimized_pose = optimized_values.at<Pose3>(curr_pose_key);
-                line_poses[i] = Sophus::SE3(optimized_pose.rotation().matrix(), optimized_pose.translation());
-            }
-            else
-            {
-                Symbol symbol_key(curr_pose_key);
-                std::cerr << "Optimized pose not found for key: " << symbol_key << std::endl;
-            }
-
-            // gtsam::Key prev_pose_key = useX ? Z(i) : X(i);
-            // if (optimized_values.exists(curr_pose_key))
-            // {
-            //     Pose3 prev_optimized_pose = optimized_values.at<Pose3>(prev_pose_key);
-            //     re_optimized_prev.insert(prev_pose_key, prev_optimized_pose);
-            // }
-            // else
-            // {
-            //     Symbol symbol_key(prev_pose_key);
-            //     std::cerr << "Re-Optimized pose not found for key: " << symbol_key << std::endl;
-            // }
-        }
-        //prev_optimized_values = re_optimized_prev;
-
-        return optimizer.error();
+        return rv;
     }
 }
