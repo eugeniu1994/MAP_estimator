@@ -123,6 +123,11 @@ void my_function()
 
 // #define compile_next
 
+
+
+
+
+
 #ifdef compile_next
 template <typename PointType, typename VUX_PointType>
 class CustomPointToPointFactor : public gtsam::NoiseModelFactor1<gtsam::Pose3>

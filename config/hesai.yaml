@@ -20,7 +20,7 @@ mapping:
     det_range:   150.0
     extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic
     
-    GNSS_IMU_calibration_distance: 2505 # 25 #m
+    GNSS_IMU_calibration_distance: 20 # 25 #m
     #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
     extrinsic_T: [ 0.009,  0.13,  0.09 ] #given by Teemu 
     extrinsic_R: [ 0, 1, 0,
@@ -34,7 +34,7 @@ mapping:
     #also the message times are in global frame,  while point times should be relative, starting from zero to .1 s or something 
 
 als:
-    closest_N_files: 2 # 4 #number of closest files
+    closest_N_files: 4 # 4 #number of closest files
     downsample: true 
     #als_path: "/media/eugeniu/T7/NLS_las/"   # this is the ALS from NlS
     als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS

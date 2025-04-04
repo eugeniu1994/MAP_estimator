@@ -60,12 +60,18 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Value: false
     - Class: rviz/TF
-      Enabled: false
+      Enabled: true
       Filter (blacklist): ""
       Filter (whitelist): ""
       Frame Timeout: 500
       Frames:
         All Enabled: false
+        MLS:
+          Value: true
+        VUX:
+          Value: true
+        world:
+          Value: true
       Marker Alpha: 1
       Marker Scale: 20
       Name: TF
@@ -73,9 +79,13 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        {}
+        world:
+          MLS:
+            {}
+          VUX:
+            {}
       Update Interval: 0
-      Value: false
+      Value: true
     - Class: rviz/Group
       Displays:
         - Alpha: 0.30000001192092896
@@ -109,16 +119,16 @@ Visualization Manager:
         - Alpha: 0.5
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 13.113626480102539
-            Min Value: -2.96528959274292
+            Max Value: -9999
+            Min Value: 9999
             Value: true
           Axis: Z
           Channel Name: z
           Class: rviz/PointCloud2
           Color: 255; 255; 255
-          Color Transformer: FlatColor
+          Color Transformer: AxisColor
           Decay Time: 1000
-          Enabled: false
+          Enabled: true
           Invert Rainbow: true
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -129,16 +139,16 @@ Visualization Manager:
           Size (Pixels): 3
           Size (m): 0.009999999776482582
           Style: Points
-          Topic: /vux_data
+          Topic: /vux_optimized
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: false
+          Value: true
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 33.63865661621094
-            Min Value: -5.438982963562012
+            Max Value: 34.21555709838867
+            Min Value: -5.96809196472168
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -162,7 +172,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-        - Alpha: 0.5
+        - Alpha: 0.4000000059604645
           Autocompute Intensity Bounds: false
           Autocompute Value Bounds:
             Max Value: 10
@@ -185,7 +195,7 @@ Visualization Manager:
           Queue Size: 10
           Selectable: true
           Size (Pixels): 1
-          Size (m): 0.05000000074505806
+          Size (m): 0.10000000149011612
           Style: Flat Squares
           Topic: /ALS_map
           Unreliable: false
@@ -204,7 +214,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: Intensity
           Decay Time: 0
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -219,15 +229,15 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Class: rviz/Marker
-          Enabled: true
+          Enabled: false
           Marker Topic: /normals
           Name: norms_
           Namespaces:
-            "": true
+            {}
           Queue Size: 100
-          Value: true
+          Value: false
       Enabled: true
       Name: mapping
     - Class: rviz/Group
@@ -273,7 +283,7 @@ Visualization Manager:
       Buffer Length: 2
       Class: rviz/Path
       Color: 25; 255; 0
-      Enabled: false
+      Enabled: true
       Head Diameter: 0
       Head Length: 0
       Length: 0.30000001192092896
@@ -292,7 +302,7 @@ Visualization Manager:
       Shaft Length: 0.4000000059604645
       Topic: /MLS/trajectory
       Unreliable: false
-      Value: false
+      Value: true
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -345,7 +355,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 114; 159; 207
-      Enabled: false
+      Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
@@ -364,7 +374,7 @@ Visualization Manager:
       Shaft Length: 0.10000000149011612
       Topic: /PPK_GNSS/trajectory
       Unreliable: false
-      Value: false
+      Value: true
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -421,14 +431,14 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 36.060516357421875
-        Min Value: -8.110854148864746
+        Max Value: 24.2432804107666
+        Min Value: -1.7257012128829956
         Value: true
       Axis: Z
       Channel Name: reflectance
       Class: rviz/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: Intensity
+      Color Transformer: AxisColor
       Decay Time: 0
       Enabled: true
       Invert Rainbow: true
@@ -474,7 +484,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 73.8708267211914
+      Distance: 108.78059387207031
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -482,17 +492,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -21.065719604492188
-        Y: 8.835714340209961
+        X: -27.79638671875
+        Y: 24.39474868774414
         Z: -1.2404854714986868e-05
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.2447967529296875
+      Pitch: 1.5697963237762451
       Target Frame: global
-      Yaw: 2.1103968620300293
+      Yaw: 2.0203969478607178
     Saved: ~
 Window Geometry:
   Displays:
@@ -510,5 +520,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 2772
-  X: 220
+  X: 120
   Y: 54

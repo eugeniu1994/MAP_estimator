@@ -112,14 +112,7 @@ void publishPointCloudWithNormals(const pcl::PointCloud<pcl::PointNormal>::Ptr &
     normals_pub.publish(normals_marker);
 }
 
-void publishJustPoints(const pcl::PointCloud<PointType>::Ptr &cloud_,const ros::Publisher &cloud_pub)
-{
-    // --- 1. Publish Point Cloud ---
-    sensor_msgs::PointCloud2 cloud_msg;
-    pcl::toROSMsg(*cloud_, cloud_msg);
-    cloud_msg.header.frame_id = "world";
-    cloud_pub.publish(cloud_msg);
-}
+
 
 struct LidarDistanceFactor
 {
