@@ -678,8 +678,8 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
     }
 
     int num_points = src->points.size();
-    std::cout<<"num_points:"<<num_points<<", reference_localMap_cloud:"<<reference_localMap_cloud->size()<<std::endl;
-    if(reference_localMap_cloud->size() == 0)
+    std::cout << "num_points:" << num_points << ", reference_localMap_cloud:" << reference_localMap_cloud->size() << std::endl;
+    if (reference_localMap_cloud->size() == 0)
     {
         throw std::runtime_error("reference_localMap_cloud not init - no points");
     }
@@ -1169,6 +1169,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
     // Containers
     std::unordered_map<int, landmark_> landmarks_map; // key is index of the point from the map
 
+//#define pca_norms
     // Loop through each scan/line
     for (size_t l = 0; l < lidar_lines.size(); l++)
     {
@@ -1191,6 +1192,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
             {
                 if (point_dist[4] < threshold_nn)
                 {
+#ifndef pca_norms
                     Eigen::Matrix<double, 5, 3> matA0;
                     Eigen::Matrix<double, 5, 1> matB0 = -1 * Eigen::Matrix<double, 5, 1>::Ones();
 
@@ -1219,9 +1221,61 @@ std::unordered_map<int, landmark_> get_Correspondences(
                         }
                         point_dist[j] = d;
                     }
+                    
+#else
+                    // Compute the centroid
+                    V3D centroid(0, 0, 0);
+                    for (int j = 0; j < 5; j++)
+                    {
+                        centroid(0) += reference_localMap_cloud->points[point_idx[j]].x;
+                        centroid(1) += reference_localMap_cloud->points[point_idx[j]].y;
+                        centroid(2) += reference_localMap_cloud->points[point_idx[j]].z;
+                    }
+                    centroid /= 5;
+
+                    // Compute covariance matrix
+                    M3D covariance;
+                    covariance.setZero();
+                    for (int j = 0; j < 5; j++)
+                    {
+                        const auto &p = reference_localMap_cloud->points[point_idx[j]];
+                        V3D diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
+                        covariance += diff * diff.transpose();
+                    }
+                    covariance /= 5;
+
+                    // Compute Eigenvalues and Eigenvectors
+                    Eigen::SelfAdjointEigenSolver<M3D> solver(covariance);
+                    V3D norm = solver.eigenvectors().col(0); // Smallest eigenvector
+                    double negative_OA_dot_norm = 1 / norm.norm();
+                    // Normalize the normal
+                    norm.normalize();
+
+                    // Compute eigenvalue ratios to assess planarity
+                    const auto &eigenvalues = solver.eigenvalues();
+                    double lambda0 = eigenvalues(0); // smallest
+                    double lambda1 = eigenvalues(1);
+                    double lambda2 = eigenvalues(2);
+
+                    // Planarity filter: reject unstable normals
+                    //double th = .3;//allow noisy data
+                    double th = .7;//good ones
+                    bool planeValid = (lambda2 > 1e-6) && ((lambda1 - lambda0) / lambda2 > th); // Tunable thresholds
+                    
+                    for (int j = 0; j < 5; j++)
+                        point_dist[j] = lambda2;
+
+#endif
 
                     if (planeValid) // found a good plane
                     {
+                        // Flip normal to point consistently toward viewpoint
+                        V3D point_on_the_plane(reference_localMap_cloud->points[point_idx[0]].x, reference_localMap_cloud->points[point_idx[0]].y, reference_localMap_cloud->points[point_idx[0]].z);
+                        if (norm.dot(T.translation() - point_on_the_plane) < 0)
+                        {
+                            norm = -norm;
+                        }
+
                         for (int j = 0; j < 5; j++) // all the points share the same normal
                         {
                             auto it = landmarks_map.find(point_idx[j]);
@@ -1525,8 +1579,8 @@ bool prev_graph_exist = false;
 auto sigma_point = 1; // 100cm standard deviation (3σ ≈ 3m allowed)
 auto sigma_plane = 1; // 100cm standard deviation (3σ ≈ 30cm allowed)
 
-//auto sigma_odom = .02; //for relative odometry - tested with skip one scan
-auto sigma_odom = .01; //for relative odometry no scan skip
+// auto sigma_odom = .02; //for relative odometry - tested with skip one scan
+auto sigma_odom = .01;  // for relative odometry no scan skip
 auto sigma_prior = 1.0; // not sure about the prior - let it change it
 
 auto point_noise = gtsam::noiseModel::Robust::Create(
@@ -1737,7 +1791,9 @@ double BA_refinement(
                 if (p2plane && p2p)
                 {
                     Point3 plane_norm(land.norm.x(), land.norm.y(), land.norm.z());
-                    bool use_alternative_method = false; // true;
+                    bool use_alternative_method = false; 
+
+                    //use_alternative_method = true; //see this 
                     graph.emplace_shared<PointToPlaneFactor>(X(pose_idx), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
                                                              land.re_proj_error, use_alternative_method, plane_noise);
 
@@ -2080,14 +2136,14 @@ double BA_refinement_merge_graph(
     const pcl::PointCloud<PointType>::Ptr &prev_segment,
     const pcl::KdTreeFLANN<PointType>::Ptr &kdtree_prev_segment,
     const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
-    int run_iterations = 1,
+    int run_iterations = 1, bool flg_exit = false,
     int overlap_size = 50,
     double threshold_nn = 1.0, bool p2p = true, bool p2plane = false)
 {
     useX = !useX;
     std::cout << "For current graph useX:" << useX << std::endl;
-    std::cout<<" reference_localMap_cloud:"<<reference_localMap_cloud->size()<<std::endl;
-    if(reference_localMap_cloud->size() == 0)
+    std::cout << " reference_localMap_cloud:" << reference_localMap_cloud->size() << std::endl;
+    if (reference_localMap_cloud->size() == 0)
     {
         throw std::runtime_error("reference_localMap_cloud not init - no points");
     }
@@ -2146,6 +2202,9 @@ double BA_refinement_merge_graph(
 
         for (int iter = 0; iter < run_iterations; iter++)
         {
+            if (flg_exit)
+                break;
+
             std::cout << "Runt iteration " << iter << std::endl;
             graph.resize(0);        // Clears all factors from the graph
             initial_values.clear(); // Clears all values

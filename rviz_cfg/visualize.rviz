@@ -60,18 +60,12 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Value: false
     - Class: rviz/TF
-      Enabled: true
+      Enabled: false
       Filter (blacklist): ""
       Filter (whitelist): ""
       Frame Timeout: 500
       Frames:
         All Enabled: false
-        MLS:
-          Value: true
-        VUX:
-          Value: true
-        world:
-          Value: true
       Marker Alpha: 1
       Marker Scale: 20
       Name: TF
@@ -79,26 +73,22 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        world:
-          MLS:
-            {}
-          VUX:
-            {}
+        {}
       Update Interval: 0
-      Value: true
+      Value: false
     - Class: rviz/Group
       Displays:
         - Alpha: 0.30000001192092896
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 10
-            Min Value: -10
+            Max Value: 24.43871307373047
+            Min Value: -26.671890258789062
             Value: true
           Axis: Z
           Channel Name: z
           Class: rviz/PointCloud2
           Color: 255; 255; 255
-          Color Transformer: FlatColor
+          Color Transformer: AxisColor
           Decay Time: 0
           Enabled: true
           Invert Rainbow: false
@@ -111,7 +101,7 @@ Visualization Manager:
           Size (Pixels): 3
           Size (m): 0.8999999761581421
           Style: Points
-          Topic: /cloud_debug
+          Topic: /cloud_registered
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
@@ -147,8 +137,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 28.524023056030273
-            Min Value: -3.5390400886535645
+            Max Value: 29.202880859375
+            Min Value: -44.98225021362305
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -156,7 +146,7 @@ Visualization Manager:
           Color: 255; 0; 0
           Color Transformer: AxisColor
           Decay Time: 0
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -171,7 +161,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Alpha: 0.4000000059604645
           Autocompute Intensity Bounds: false
           Autocompute Value Bounds:
@@ -488,7 +478,7 @@ Visualization Manager:
   Global Options:
     Background Color: 0; 0; 0
     Default Light: true
-    Fixed Frame: world
+    Fixed Frame: MLS
     Frame Rate: 10
   Name: root
   Tools:
@@ -512,7 +502,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 108.78059387207031
+      Distance: 134.887939453125
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -520,17 +510,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -27.79638671875
-        Y: 24.39474868774414
+        X: -12.67667293548584
+        Y: 55.05097579956055
         Z: -1.2404854714986868e-05
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 1.4647964239120483
       Target Frame: global
-      Yaw: 2.0203969478607178
+      Yaw: 1.570396900177002
     Saved: ~
 Window Geometry:
   Displays:

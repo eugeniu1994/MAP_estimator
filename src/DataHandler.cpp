@@ -657,6 +657,17 @@ void DataHandler::BagHandler()
 
         if (sync_packages(Measures))
         {
+            scan_id++;
+            //if (scan_id < 45100) // this is only for the 0 bag
+            //continue;
+
+            //seq 03 - 584 <= scan_id <= 1483  around 2 mins 
+            //seq 02 - scan_id <= 
+            //seq 01 - scan_id <=
+            //seq 00 - scan_id <=
+
+            std::cout<<"scan_id:"<<scan_id<<std::endl;
+
             std::cout << "\nIMU:" << imu_buffer.size() << ", GPS:" << gps_buffer.size() << ", LiDAR:" << lidar_buffer.size() << std::endl;
 
             double t00 = omp_get_wtime();
@@ -826,6 +837,8 @@ void DataHandler::BagHandler()
                 {
                     std::cout << "\n------------------ ALS update failed --------------------------------" << std::endl;
                     // TODO check here why -  there is not enough als data
+                    throw std::runtime_error("NO points -> There is no ALS data for this");
+
                 }
                 else
                 {

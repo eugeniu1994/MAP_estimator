@@ -434,7 +434,9 @@ void ALS_Handler::AddPoints_from_file(const std::string &filename)
     if (!shift_initted_)
     {
         liblas::Reader mean_reader = readerFactory.CreateWithStream(*ifs);
-        min_points_per_patch = header.GetPointRecordsCount()/5;
+        //min_points_per_patch = header.GetPointRecordsCount()/5;
+        min_points_per_patch = 1000;
+
         std::cout<<"min_points_per_patch:"<<min_points_per_patch<<", header.GetPointRecordsCount():"<<header.GetPointRecordsCount()<<std::endl;
         
         Eigen::Vector2d ref_gps = gps_origin_ENU.head<2>();
@@ -632,7 +634,10 @@ void ALS_Handler::RemovePointsFarFromLocation(const V3D &mls_position)
 }
 
 void ALS_Handler::Update(const Sophus::SE3 &mls_pose)
-{
+{   
+    //std::cout<<"Call update: motion:"<<(prev_mls_pos - mls_pose.translation()).norm()<<std::endl;
+    //std::cout<<"boxSize:"<<boxSize<<std::endl;
+
     if ((prev_mls_pos - mls_pose.translation()).norm() > boxSize / 2)
     {
         std::cout << "====================== ALS Update =======================" << std::endl;
@@ -656,7 +661,7 @@ void ALS_Handler::Update(const Sophus::SE3 &mls_pose)
 
         if (ALS_manager.nearestKSearch(curr_mls_position_enu, closest_N_files, pointIdxNKNSearch, pointNKNSquaredDistance) > 0)
         {
-            double th_sq = (2 * boxSize) * (2 * boxSize) + boxSize; // this is ugly change it
+            double th_sq = (2 * boxSize) * (2 * boxSize) + 2*boxSize; // this is ugly change it
             std::string closest_file;
             int c = boxSize / 2;
             for (size_t i = 0; i < pointIdxNKNSearch.size(); ++i)
