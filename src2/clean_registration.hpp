@@ -1169,8 +1169,8 @@ std::unordered_map<int, landmark_> get_Correspondences(
     // Containers
     std::unordered_map<int, landmark_> landmarks_map; // key is index of the point from the map
 
-//#define pca_norms
-    // Loop through each scan/line
+    // #define pca_norms
+    //  Loop through each scan/line
     for (size_t l = 0; l < lidar_lines.size(); l++)
     {
         auto &T = line_poses_[l];
@@ -1221,7 +1221,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
                         }
                         point_dist[j] = d;
                     }
-                    
+
 #else
                     // Compute the centroid
                     V3D centroid(0, 0, 0);
@@ -1258,10 +1258,10 @@ std::unordered_map<int, landmark_> get_Correspondences(
                     double lambda2 = eigenvalues(2);
 
                     // Planarity filter: reject unstable normals
-                    //double th = .3;//allow noisy data
-                    double th = .7;//good ones
+                    // double th = .3;//allow noisy data
+                    double th = .7;                                                             // good ones
                     bool planeValid = (lambda2 > 1e-6) && ((lambda1 - lambda0) / lambda2 > th); // Tunable thresholds
-                    
+
                     for (int j = 0; j < 5; j++)
                         point_dist[j] = lambda2;
 
@@ -1791,9 +1791,9 @@ double BA_refinement(
                 if (p2plane && p2p)
                 {
                     Point3 plane_norm(land.norm.x(), land.norm.y(), land.norm.z());
-                    bool use_alternative_method = false; 
+                    bool use_alternative_method = false;
 
-                    //use_alternative_method = true; //see this 
+                    // use_alternative_method = true; //see this
                     graph.emplace_shared<PointToPlaneFactor>(X(pose_idx), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
                                                              land.re_proj_error, use_alternative_method, plane_noise);
 
@@ -2272,3 +2272,110 @@ double BA_refinement_merge_graph(
         return rv;
     }
 }
+
+//------------------------------------------------------------------------------------------------------------------
+#include <cassert>
+#include <cmath>
+
+//#define use_spline
+
+#ifdef use_spline
+    
+
+// Spline basis matrix for uniform cubic B-spline
+const Eigen::Matrix4d C = (Eigen::Matrix4d() << 6. / 6., 0., 0., 0.,
+                           5. / 6., 3. / 6., -3. / 6., 1. / 6.,
+                           1. / 6., 3. / 6., 3. / 6., -2. / 6.,
+                           0., 0., 0., 1. / 6.)
+                              .finished();
+
+class CubicSpline
+{
+public:
+    using SE3Type = Sophus::SE3;
+    using SE3DerivType = Eigen::Matrix4d;
+
+    // Constructor to initialize time step and initial time
+    CubicSpline(double dt = 1.0, double t0 = 0.0) : dt_(dt), t0_(t0) {}
+
+    // Add a knot (pose) to the spline
+    void add_knot(const SE3Type &pose)
+    {
+        knots_.push_back(pose);
+    }
+
+    // Get a knot (pose) from the spline
+    SE3Type get_knot(size_t k) const
+    {
+        return knots_[k];
+    }
+
+    // Evaluate the spline at time t and compute the pose and its derivatives
+    void evaluate(double t, SE3Type &P) const; //, SE3DerivType &P_prim, SE3DerivType &P_bis
+
+private:
+    static int floor_(double x)
+    {
+        return static_cast<int>(std::floor(x));
+    }
+
+    double dt_;                  // Time step
+    double t0_;                  // Initial time
+    std::vector<SE3Type> knots_; // Vector of SE3 poses as knots
+};
+
+void CubicSpline::evaluate(double t, SE3Type &P) const //, SE3DerivType &P_prim, SE3DerivType &P_bis
+{
+    using Mat4 = Eigen::Matrix4d;
+    using Vec4 = Eigen::Matrix<double, 4, 1>;
+
+    assert(dt_ > 0.0 && "CubicSpline::evaluate: Time step (dt) must be greater than zero.");
+    assert(knots_.size() >= 4 && "CubicSpline::evaluate: There must be at least 4 knots for spline interpolation.");
+    assert(t >= t0_ + dt_ && "CubicSpline::evaluate: Time t must be greater than or equal to the time of the first knot.");
+    assert(t < t0_ + dt_ * (knots_.size() - 2) && "CubicSpline::evaluate: Time t must be less than the time of the last knot.");
+
+
+    // Compute normalized time (offset-aware)
+    double s = (t - t0_) / dt_;
+    int i = floor_(s);
+    double u = s - i;
+    int i0 = i - 1;
+
+    double u2 = u * u, u3 = u2 * u, dt_inv = 1.0 / dt_;
+    Vec4 B = C * Vec4{1.0, u, u2, u3};
+    Vec4 Bd1 = C * Vec4{0.0, 1.0, 2.0 * u, 3.0 * u2} * dt_inv;
+    Vec4 Bd2 = C * Vec4{0.0, 0.0, 2.0, 6.0 * u} * dt_inv * dt_inv;
+
+    SE3Type P0 = knots_[i0]; // First knot pose
+    P = P0;
+
+    Mat4 A[3], Ad1[3], Ad2[3];
+
+    for (int j : {1, 2, 3})
+    {
+        SE3Type knot1 = knots_[i0 + j - 1];
+        SE3Type knot2 = knots_[i0 + j];
+        auto omega = (knot1.inverse() * knot2).log();
+        Mat4 omega_hat = SE3Type::hat(omega);
+        SE3Type Aj = SE3Type::exp(B[j] * omega);
+        P = P * Aj;
+        Mat4 Ajm = Aj.matrix();
+        Mat4 Ajd1 = Ajm * omega_hat * Bd1[j];
+        Mat4 Ajd2 = Ajd1 * omega_hat * Bd1[j] + Ajm * omega_hat * Bd2[j];
+        A[j - 1] = Ajm;
+        Ad1[j - 1] = Ajd1;
+        Ad2[j - 1] = Ajd2;
+    }
+
+    // // Compute the derivatives
+    // Mat4 M1 = Ad1[0] * A[1] * A[2] + A[0] * Ad1[1] * A[2] + A[0] * A[1] * Ad1[2];
+    // Mat4 M2 = Ad2[0] * A[1] * A[2] + A[0] * Ad2[1] * A[2] + A[0] * A[1] * Ad2[2] +
+    //           2.0 * Ad1[0] * Ad1[1] * A[2] + 2.0 * Ad1[0] * A[1] * Ad1[2] +
+    //           2.0 * A[0] * Ad1[1] * Ad1[2];
+
+    // P_prim = P0.matrix() * M1;
+    // P_bis = P0.matrix() * M2;
+}
+
+
+    #endif 

@@ -5,7 +5,6 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /TF1
         - /TF1/Frames1
         - /mapping1
         - /mapping1/Georeferenced1/Autocompute Value Bounds1
@@ -81,14 +80,14 @@ Visualization Manager:
         - Alpha: 0.30000001192092896
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 24.43871307373047
-            Min Value: -26.671890258789062
+            Max Value: 28.05698013305664
+            Min Value: -3.1334476470947266
             Value: true
           Axis: Z
           Channel Name: z
           Class: rviz/PointCloud2
           Color: 255; 255; 255
-          Color Transformer: AxisColor
+          Color Transformer: FlatColor
           Decay Time: 0
           Enabled: true
           Invert Rainbow: false
@@ -101,7 +100,7 @@ Visualization Manager:
           Size (Pixels): 3
           Size (m): 0.8999999761581421
           Style: Points
-          Topic: /cloud_registered
+          Topic: /cloud_debug
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
@@ -137,8 +136,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 29.202880859375
-            Min Value: -44.98225021362305
+            Max Value: 30.678194046020508
+            Min Value: -3.9944682121276855
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -146,7 +145,7 @@ Visualization Manager:
           Color: 255; 0; 0
           Color Transformer: AxisColor
           Decay Time: 0
-          Enabled: false
+          Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -161,7 +160,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: false
+          Value: true
         - Alpha: 0.4000000059604645
           Autocompute Intensity Bounds: false
           Autocompute Value Bounds:
@@ -301,7 +300,7 @@ Visualization Manager:
       Buffer Length: 2
       Class: rviz/Path
       Color: 25; 255; 0
-      Enabled: true
+      Enabled: false
       Head Diameter: 0
       Head Length: 0
       Length: 0.30000001192092896
@@ -320,7 +319,7 @@ Visualization Manager:
       Shaft Length: 0.4000000059604645
       Topic: /MLS/trajectory
       Unreliable: false
-      Value: true
+      Value: false
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -373,7 +372,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 114; 159; 207
-      Enabled: true
+      Enabled: false
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
@@ -392,7 +391,7 @@ Visualization Manager:
       Shaft Length: 0.10000000149011612
       Topic: /PPK_GNSS/trajectory
       Unreliable: false
-      Value: true
+      Value: false
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -449,8 +448,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 24.2432804107666
-        Min Value: -1.7257012128829956
+        Max Value: 26.256519317626953
+        Min Value: -2.006304979324341
         Value: true
       Axis: Z
       Channel Name: reflectance
@@ -478,7 +477,7 @@ Visualization Manager:
   Global Options:
     Background Color: 0; 0; 0
     Default Light: true
-    Fixed Frame: MLS
+    Fixed Frame: world
     Frame Rate: 10
   Name: root
   Tools:
@@ -502,7 +501,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 134.887939453125
+      Distance: 40.230224609375
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -510,17 +509,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -12.67667293548584
-        Y: 55.05097579956055
-        Z: -1.2404854714986868e-05
+        X: 9.098873138427734
+        Y: 28.586698532104492
+        Z: -8.871657882991713e-06
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.4647964239120483
+      Pitch: 0.9297969341278076
       Target Frame: global
-      Yaw: 1.570396900177002
+      Yaw: 0.7403977513313293
     Saved: ~
 Window Geometry:
   Displays:

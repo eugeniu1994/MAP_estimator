@@ -435,7 +435,7 @@ void ALS_Handler::AddPoints_from_file(const std::string &filename)
     {
         liblas::Reader mean_reader = readerFactory.CreateWithStream(*ifs);
         //min_points_per_patch = header.GetPointRecordsCount()/5;
-        min_points_per_patch = 1000;
+        min_points_per_patch = 100;// 1000;
 
         std::cout<<"min_points_per_patch:"<<min_points_per_patch<<", header.GetPointRecordsCount():"<<header.GetPointRecordsCount()<<std::endl;
         

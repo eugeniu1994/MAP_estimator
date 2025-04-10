@@ -394,6 +394,8 @@ Sophus::SE3 interpolateSE3(const Sophus::SE3 &pose1, const double time1,
 
 #include "clean_registration.hpp"
 
+
+
 void DataHandler::Subscribe()
 {
     std::cout << "Subscribe" << std::endl;
@@ -526,18 +528,25 @@ void DataHandler::Subscribe()
         sin(angle), cos(angle), 0,
         0, 0, 1;
 
-    // THE EXTRINSICS FROM VUX TO VUX-IMU
+    M3D R_vux2mls; // from vux scanner to mls point cloud
+    R_vux2mls << 0.0064031121, -0.8606533346, -0.5091510953,
+        -0.2586398121, 0.4904106092, -0.8322276624,
+        0.9659526116, 0.1370155907, -0.2194590626;
+    V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
+
+    //old - estimated w.r.t. to reprocessor map // THE EXTRINSICS FROM VUX TO VUX-IMU
     M3D R_vux2imu;
     R_vux2imu << -0.0001486877, 0.4998181193, -0.8661303744,
         0.0006285201, 0.8661302597, 0.4998179451,
         0.9999997914, -0.0004700636, -0.0004429287;
     V3D t_vux2imu(-0.5922161686, 0.1854945762, 0.7806042559);
 
-    M3D R_vux2mls; // from vux scanner to mls point cloud
-    R_vux2mls << 0.0064031121, -0.8606533346, -0.5091510953,
-        -0.2586398121, 0.4904106092, -0.8322276624,
-        0.9659526116, 0.1370155907, -0.2194590626;
-    V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
+    // THE EXTRINSICS FROM VUX TO VUX-IMU
+    // M3D R_vux2imu;
+    // R_vux2imu << -0.0044725889,  0.4990707661, -0.8665496907,
+    // 0.0029468568,  0.8665611733,  0.4990621694,
+    // 0.9999856559, -0.0003214979, -0.0053464619;
+    // V3D t_vux2imu(-0.2908325308,  0.1877922600, -0.0640568820);
 
     // from vux to mls init guess
     // Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(Rz, V3D::Zero()) * Sophus::SE3(R_vux2imu, t_vux2imu);
@@ -564,6 +573,7 @@ void DataHandler::Subscribe()
     // cylinder buffer for vux
     std::deque<pcl::PointCloud<VUX_PointType>::Ptr> lines_buffer, original_lines;
     std::deque<Sophus::SE3> line_poses_buffer, refined_line_poses_buffer, init_guess_poses_copy;
+    std::deque<double> control_times;
 
     // pcl::KdTreeFLANN<PointType> kdtree;
     pcl::KdTreeFLANN<PointType>::Ptr kdtree(new pcl::KdTreeFLANN<PointType>());
@@ -577,6 +587,7 @@ void DataHandler::Subscribe()
     Sophus::SE3 coarse_delta_T = Sophus::SE3(); // relative correction of the segment
     Sophus::SE3 const_vel = Sophus::SE3();
     Sophus::SE3 last_refined_pose;
+    double last_refined_pose_time = 0;
 
 #define save_vux_clouds
     for (const rosbag::MessageInstance &m : view)
@@ -1059,7 +1070,7 @@ void DataHandler::Subscribe()
                         }
 
                         // const auto &cloud_time = next_line->points[0].time;
-                        const auto &cloud_time = next_line->points.back().time;
+                        const auto cloud_time = next_line->points.back().time;
 
                         // from the future w.r.t. curr gnss time
                         // Changed recently - this results in loss of some scans
@@ -1104,22 +1115,20 @@ void DataHandler::Subscribe()
 
                             if (false) // find the extrinsics vux 2 mls
                             {
-                                /*
-                                find the extrinsics vux2mls_extrinsics
-                                get the current lines
-                                define cost function that keeps interpolated_pose_mls fixed
-                                refine w.r.t. vux2mls_extrinsics
-                                */
+                                //line_poses_buffer.push_back(interpolated_pose_mls); //to find extrinsics for vux 2 hesai
+                                line_poses_buffer.push_back(als2mls * interpolated_pose_ppk); // for vux to ppk-gnss - vux in local mls frame
 
                                 lines_buffer.push_back(downsampled_line);
-                                line_poses_buffer.push_back(interpolated_pose_mls); /// save here the fixed pose
 
                                 std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
-                                if (lines_buffer.size() > 1100) // eonough lines
-                                {
+                                if (lines_buffer.size() > 3000) // enough lines
+                                {  
+                                    //the initial guess --CHANGE THIS ONE HERE
+                                    Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2imu, t_vux2imu); //this will be refined
+                                    
                                     // Initial guess for extrinsic transformation (Scanner -> IMU)
-                                    Eigen::Quaterniond q_extrinsic(vux2mls_extrinsics.so3().matrix());
-                                    V3D t_extrinsic = vux2mls_extrinsics.translation();
+                                    Eigen::Quaterniond q_extrinsic(vux2other_extrinsic.so3().matrix());
+                                    V3D t_extrinsic = vux2other_extrinsic.translation();
 
                                     double prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
                                     double current_cost = prev_cost;
@@ -1154,7 +1163,7 @@ void DataHandler::Subscribe()
                                             for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
                                             {
                                                 V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
-                                                V3D p_transformed = fixed_pose * vux2mls_extrinsics * p_src;
+                                                V3D p_transformed = fixed_pose * vux2other_extrinsic * p_src;
 
                                                 PointType search_point;
                                                 search_point.x = p_transformed.x();
@@ -1227,7 +1236,7 @@ void DataHandler::Subscribe()
                                         // Output the refined extrinsic transformation
                                         q_extrinsic = Eigen::Quaterniond(q_param[3], q_param[0], q_param[1], q_param[2]);
                                         t_extrinsic = V3D(t_param[0], t_param[1], t_param[2]);
-                                        vux2mls_extrinsics = Sophus::SE3(q_extrinsic, t_extrinsic);
+                                        vux2other_extrinsic = Sophus::SE3(q_extrinsic, t_extrinsic);
                                         std::cout << "t_extrinsic:" << t_extrinsic.transpose() << std::endl;
 
                                         // Check if the cost function change is small enough to stop
@@ -1239,12 +1248,14 @@ void DataHandler::Subscribe()
 
                                         prev_cost = current_cost;
                                     }
-                                    std::cout << "Final transform is vux2mls_extrinsics log:" << vux2mls_extrinsics.log().transpose() << std::endl;
+                                    std::cout << "Final transform is vux2other_extrinsic log:" << vux2other_extrinsic.log().transpose() << std::endl;
                                     std::cout << "Final t_extrinsic :" << t_extrinsic.transpose() << std::endl;
-                                    std::cout << "Final vux2mls_extrinsics translation  :" << vux2mls_extrinsics.translation().transpose() << std::endl;
+                                    std::cout << "Final vux2other_extrinsic translation  :" << vux2other_extrinsic.translation().transpose() << std::endl;
                                     std::cout << "Final rotation:\n"
-                                              << vux2mls_extrinsics.so3().matrix() << std::endl;
+                                              << vux2other_extrinsic.so3().matrix() << std::endl;
 
+
+                                    throw std::runtime_error("Finished the extrinsic calibration");
                                     break;
                                 }
                             }
@@ -1257,7 +1268,8 @@ void DataHandler::Subscribe()
                                 lines_buffer.push_back(downsampled_line);
                                 refined_line_poses_buffer.push_back(T_to_be_refined);
                                 line_poses_buffer.push_back(T_to_be_refined);
-
+                                control_times.push_back(cloud_time);
+                                
 #ifdef save_vux_clouds
                                 original_lines.push_back(next_line);
 #endif
@@ -1276,10 +1288,10 @@ void DataHandler::Subscribe()
 
                                 // double beucase of not skipping lines
                                 total_scans = 400; // also good
-                                mid_scan = 350;
+                                mid_scan = 350; //12.5% overlapp
+                                mid_scan = 300; //25%
 
-                                // total_scans = 60; //also good
-                                // mid_scan = 40;
+                                
                                 //  std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
 
                                 bool const_vel_model = true; // use const vel model for segments
@@ -1310,7 +1322,7 @@ void DataHandler::Subscribe()
 
                                     for (int l = 0; l < lines_buffer.size(); l++) // for each line
                                     {
-                                        // const auto &initial_guess = line_poses_buffer[l]; // copy of the init guess
+                                        const auto &initial_guess = line_poses_buffer[l]; // copy of the init guess
 
                                         if (l > 0)
                                         {
@@ -1323,9 +1335,8 @@ void DataHandler::Subscribe()
                                         {
                                             V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
 
-                                            // V3D p_transformed = initial_guess * p_src;
-
-                                            V3D p_transformed = ref_pose * p_src;
+                                            V3D p_transformed = initial_guess * p_src; //direct init guess
+                                            //V3D p_transformed = ref_pose * p_src; //relative way
 
                                             PointType p;
                                             p.x = p_transformed.x();
@@ -1477,8 +1488,7 @@ void DataHandler::Subscribe()
                                         ros::spinOnce();
                                         rate.sleep();
 
-                                        last_refined_pose = refined_line_poses_buffer.back();
-                                        std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
+                                        std::cout << "Segment:" << segment_id << " distance:" << (refined_line_poses_buffer.front().translation() - refined_line_poses_buffer.back().translation()).norm() << " m" << std::endl;
                                         std::cout << "Segment  " << segment_id << " completed. Press Enter to continue..." << std::endl;
                                         std::cin.get();
                                     }
@@ -1521,7 +1531,7 @@ void DataHandler::Subscribe()
                                                 prev_segment,
                                                 kdtree_prev_segment,
                                                 cloud_pub, normals_pub,
-                                                2, // run_iterations
+                                                3, //2, // run_iterations
                                                 flg_exit,
                                                 total_scans - mid_scan,
                                                 threshold_nn_, false, true);
@@ -1565,7 +1575,6 @@ void DataHandler::Subscribe()
                                             rate.sleep();
 
                                             std::cout << "BA done, cost:" << current_cost << std::endl;
-                                            last_refined_pose = refined_line_poses_buffer.back();
 
                                             prev_cost = current_cost;
                                             std::cin.get();
@@ -1579,6 +1588,45 @@ void DataHandler::Subscribe()
 
                                     // delete half of the data not full - for overlapping section
                                     feats_undistort->clear();
+
+                                    #ifdef use_spline
+
+                                        // Time step (dt) and initial time (t0)                                        
+                                        if(last_refined_pose_time > 0){
+                                            double t0 = control_times[0];
+                                            double t1 = control_times[1];
+                                            double dt = t1 - t0;
+                                            double dt_ = t0 - last_refined_pose_time;
+                                            std::cout<<"t0:"<<t0<<", t1:"<< t1 <<", dt:"<<dt<<", last_refined_pose_time:"<<last_refined_pose_time<<", dt_:"<<dt_<<std::endl;
+                                            
+                                            CubicSpline spline(dt, last_refined_pose_time);
+                                            spline.add_knot(last_refined_pose); 
+                                            for (int l = 0; l < mid_scan + 3; l++) {
+                                                spline.add_knot(refined_line_poses_buffer[l]);  // Add the knot (pose) to the spline
+                                            }
+
+
+                                            // Now evaluate the spline at different time points
+                                            //double tim = control_times[5];// 2.5;  // Interpolation time point
+                                            //Sophus::SE3 P;  // Interpolated pose
+                                            //Eigen::Matrix4d P_prim;  // First derivative (velocity)
+                                            //Eigen::Matrix4d P_bis;   // Second derivative (acceleration)
+
+                                            // Evaluate the spline at time t
+                                            //spline.evaluate(tim, P); //, P_prim, P_bis
+
+                                            // Print the interpolated pose, velocity, and acceleration
+                                            //std::cout << "Original     Pose at t = " << tim << ":\n" << refined_line_poses_buffer[5].log().transpose() << std::endl;
+                                            //std::cout << "Interpolated Pose at t = " << tim << ":\n" << P.log().transpose() << std::endl;
+                                            
+                                            for (int l = 0; l < mid_scan; l++) {
+                                                spline.evaluate(control_times[l], refined_line_poses_buffer[l]);
+                                            }
+                                        }
+
+                                    #endif 
+
+
                                     for (int j = 0; j < mid_scan; j++)
                                     {
                                         const auto &line = lines_buffer.front();
@@ -1615,12 +1663,13 @@ void DataHandler::Subscribe()
                                         original_lines.pop_front();
 #endif
 
-                                        // check all the raw lines  untill mid_scan
-                                        // georeference them and then remove from buffer
+                                        last_refined_pose = refined_line_poses_buffer.front();
+                                        last_refined_pose_time = control_times.front();
 
                                         lines_buffer.pop_front();
                                         line_poses_buffer.pop_front();
                                         refined_line_poses_buffer.pop_front();
+                                        control_times.pop_front();
                                     }
 
                                     if (pubOptimizedVUX.getNumSubscribers() != 0)
@@ -1630,11 +1679,12 @@ void DataHandler::Subscribe()
                                     // and the time of the original data
 
                                     segment_id++;
-                                    first_segment_aligned = true;
+                                    first_segment_aligned = true;   
 
                                     // lines_buffer.clear();
                                     // line_poses_buffer.clear();
                                     // refined_line_poses_buffer.clear();
+                                    //control_times.clear();
                                 }
                             }
 
@@ -1675,6 +1725,8 @@ void DataHandler::Subscribe()
             }
             prev_mls = Sophus::SE3(state_point.rot, state_point.pos);
             prev_mls_time = time_of_day_sec;
+
+            
         }
     }
     bag.close();
