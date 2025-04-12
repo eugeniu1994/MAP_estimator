@@ -36,21 +36,16 @@ namespace hesai_ros
 } // namespace hesai_ros
 
 POINT_CLOUD_REGISTER_POINT_STRUCT(hesai_ros::Point,
-  (float, x, x)
-  (float, y, y)
-  (float, z, z)
-  (float, intensity, intensity)
-  (double, timestamp, timestamp)
-  (uint16_t, ring, ring))
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(double, timestamp, timestamp)(uint16_t, ring, ring))
 
-//the one provided by Petri 
+// the one provided by Petri
 
 // namespace velodyne_ros
 // {
 //   struct EIGEN_ALIGN16 Point
 //   {
-//     PCL_ADD_POINT4D;   
-//     float intensity;  
+//     PCL_ADD_POINT4D;
+//     float intensity;
 //     std::uint8_t ring;
 //     std::uint32_t time; // ns from the beginning of the scan
 //     float distance;     // distance, return type coded in sign, negative -> 'last return'; positive -> 'strongest'
@@ -67,51 +62,45 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(hesai_ros::Point,
 //   (std::uint32_t, time, time)
 //   (float, distance, distance))
 
-
-namespace velodyne_ros {
-  struct EIGEN_ALIGN16 Point {
-    PCL_ADD_POINT4D;  // Always required for PCL point types
+namespace velodyne_ros
+{
+  struct EIGEN_ALIGN16 Point
+  {
+    PCL_ADD_POINT4D; // Always required for PCL point types
     float intensity;
     std::uint16_t ring;
-    double time;       // Datatype 8 corresponds to double
+    double time; // Datatype 8 corresponds to double
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   };
 }
 
 // Register the custom point type with PCL
 POINT_CLOUD_REGISTER_POINT_STRUCT(velodyne_ros::Point,
-  (float, x, x)
-  (float, y, y)
-  (float, z, z)
-  (float, intensity, intensity)
-  (std::uint16_t, ring, ring)
-  (double, time, time)
-)
-
-
-
-
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(std::uint16_t, ring, ring)(double, time, time))
 
 struct VUX_PointType
 {
-    PCL_ADD_POINT4D;
-    //float echo_range; //! echo range in units of meter
-    double time;      ////! time stamp in [s]
-    //double time_sorg; // The timestamp of the start of the rangegate (internal time).
-    //float amplitude;  //! relative amplitude in [dB]
-    float reflectance;
-    //float deviation;
-    //unsigned segment; // segment number
-    // bool is_line_end;
-    //int single_echo;
+  PCL_ADD_POINT4D;
+  
+  float range;
+  // float echo_range; //! echo range in units of meter
+  double time; ////! time stamp in [s]
+  // double time_sorg; // The timestamp of the start of the rangegate (internal time).
+  // float amplitude;  //! relative amplitude in [dB]
+  float reflectance;
+  // float deviation;
+  // unsigned segment; // segment number
+  //  bool is_line_end;
+  // int single_echo;
 
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 } EIGEN_ALIGN16; // Align the structure to 16-byte boundary for SSE optimizations
 
 // Register your custom point type with PCL's point cloud library
 POINT_CLOUD_REGISTER_POINT_STRUCT(VUX_PointType,
                                   (float, x, x)(float, y, y)(float, z, z)
+                                  (float, range, range)
                                   //(float, echo_range, echo_range)
                                   (double, time, time)
                                   //(double, time_sorg, time_sorg)
@@ -121,10 +110,6 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(VUX_PointType,
                                   //(unsigned, segment, segment)
                                   //(bool, is_line_end, is_line_end)
                                   //(int, single_echo, single_echo)
-                                ) // Register custom fields
-
-
-
-
+                                  ) // Register custom fields
 
 #endif

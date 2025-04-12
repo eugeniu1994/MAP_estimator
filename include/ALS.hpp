@@ -38,17 +38,19 @@ public:
 #endif
 
     bool init(const V3D &gps_origin_ENU_, const M3D &init_R_2_mls, const PointCloudXYZI::Ptr &mls_cloud_full);
+    bool init(const Sophus::SE3 &known_als2mls);
     void getCloud(PointCloudXYZI::Ptr &in_);
     void Update(const Sophus::SE3 &mls_pose);
 
-    bool refine_als = false;
+    bool refine_als = false, initted_ = false;
     int min_points_per_patch = 0;
+    
 
 private:
     V3D gps_origin_ENU;
     int closest_N_files = 4;
     double boxSize = 50., leaf_size = 1.0;
-    bool downsampled_ALS = false, initted_ = false, found_ALS = false;
+    bool downsampled_ALS = false, found_ALS = false;
     bool shift_initted_ = false;
     // std::string folder_root = "/media/eugeniu/T7/EVO_las/";
     std::string folder_root = "/media/eugeniu/T7/NLS_las/"; // this is the ALS from NlS

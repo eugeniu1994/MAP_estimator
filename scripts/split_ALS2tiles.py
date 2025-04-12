@@ -51,7 +51,7 @@ def split_tile(point_cloud, tile_size=50.0, target_point_format=3):
     
     return tiles
 
-def process_folder(input_folder, output_folder):
+def process_folder(input_folder, output_folder, tile_size):
     for filename in os.listdir(input_folder):
         if filename.endswith('.laz'):
             input_path = os.path.join(input_folder, filename)
@@ -63,7 +63,7 @@ def process_folder(input_folder, output_folder):
             print('pcloud:', np.shape(pcloud.x))
 
             # Split the point cloud into smaller tiles
-            tiles = split_tile(pcloud)
+            tiles = split_tile(pcloud, tile_size)
             
             # Save each tile as a .las file
             for idx, (tile_pcloud, x_start, y_start) in enumerate(tiles):
@@ -74,14 +74,18 @@ def process_folder(input_folder, output_folder):
                 tile_pcloud.write(tile_path)
                 print(f'Saved {tile_path}')
 
-tile_size = 100  # Size of each tile in meters
+tile_size = 50  # Size of each tile in meters
 
-output_directory = "/media/eugeniu/T7 Shield/Masalantie_data_ALS_split_las"
-input_laz_directory = '/media/eugeniu/T7 Shield/Masalantie_data' 
+#output_directory = "/media/eugeniu/T7 Shield/Masalantie_data_ALS_split_las"
+#input_laz_directory = '/media/eugeniu/T7 Shield/Masalantie_data' 
+
+output_directory = '/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped' 
+input_laz_directory = '/media/eugeniu/T7/Evo_drone24_from_Jesse' 
+
 laz_files = glob.glob(os.path.join(input_laz_directory, '**/*.laz'), recursive=True)
 
 print('there are {} laz_files'.format(len(laz_files)))
 
 #uncomment this 
-#process_folder(input_laz_directory, output_directory)
+process_folder(input_laz_directory, output_directory, tile_size)
 print('Processing complete!')

@@ -75,6 +75,8 @@ namespace vux
                 // transform to polar coordinates
                 double range = std::sqrt(t.vertex[0] * t.vertex[0] + t.vertex[1] * t.vertex[1] + t.vertex[2] * t.vertex[2]);
                 // if (range > numeric_limits<double>::epsilon())
+                
+                //std::cout<<"t.echo_range:"<<t.echo_range<<", range:"<<range<<std::endl;
                 if (range > 1 && range < max_range)
                 {
                     VUX_PointType point;
@@ -82,7 +84,8 @@ namespace vux
                     point.y = t.vertex[1];
                     point.z = t.vertex[2];
 
-                    // point.echo_range = t.echo_range;
+                    point.range = range;
+                    //point.echo_range = t.echo_range;
                     point.time = t.time;
                     // point.amplitude = t.amplitude;
                     point.reflectance = t.reflectance;

@@ -1394,7 +1394,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
 using namespace gtsam;
 using gtsam::symbol_shorthand::X; // Pose symbols
 using gtsam::symbol_shorthand::Z; // prev Pose symbols
-
+using gtsam::symbol_shorthand::A; // ffor anchor
 // auto robust_kernel = gtsam::noiseModel::mEstimator::Cauchy::Create(0.5);
 // auto robust_kernel = gtsam::noiseModel::mEstimator::Huber::Create(.1);
 
@@ -1858,7 +1858,8 @@ void mergeXandZGraphs(NonlinearFactorGraph &merged_graph, Values &merged_values,
                       const NonlinearFactorGraph &prev_graph, const Values &prev_values,
                       const NonlinearFactorGraph &curr_graph, const Values &curr_values,
                       const bool curr_uses_x,
-                      int overlap_size = 50, int total_poses = 100)
+                      int overlap_size = 50, int total_poses = 100,
+                      Sophus::SE3 anchor_pose = Sophus::SE3(), Sophus::SE3 anchor_delta = Sophus::SE3())
 {
     /*
     X-graph: x0 ─── x1 ─── ... ─── x49 ─── x50 ─── ... ─── x99
@@ -1874,6 +1875,8 @@ void mergeXandZGraphs(NonlinearFactorGraph &merged_graph, Values &merged_values,
     {
         return use_x ? X(i) : Z(i);
     };
+
+    
 
     // 1. Add all previous graph components
     std::cout << "\nAdd all previous graph components" << std::endl;
@@ -1971,6 +1974,27 @@ void mergeXandZGraphs(NonlinearFactorGraph &merged_graph, Values &merged_values,
         // Add the between factor
         merged_graph.emplace_shared<BetweenFactor<Pose3>>(last_prev, first_curr, relative, odometry_noise);
     }
+
+
+    //5. Add anchor - anchor_pose (fixed prior) ──(anchor_delta)──▶ first_node
+    std::cout<<"anchor_pose:"<<anchor_pose.log().transpose()<<std::endl;
+    std::cout<<"anchor_delta:"<<anchor_delta.log().transpose()<<std::endl;
+    // if(anchor_delta.log().norm() > 0){
+    //     std::cout<<"Add first anchor..."<<std::endl;
+    //     Pose3 anchor_pose(anchor_pose.matrix());
+    //     Pose3 anchor_delta(anchor_delta.matrix());
+
+    //     gtsam::Key anchor_key = A(0);  // Arbitrary high index for anchor
+
+    //     Key first_prev = prev_uses_x ? X(0) : Z(0);
+
+    //     std::cout << "Connecting A(0) with First prev pose: " << gtsam::DefaultKeyFormatter(first_prev) << "\n";
+
+    //     auto anchor_noise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3).finished()); // tight
+    //     merged_graph.add(PriorFactor<Pose3>(anchor_key, anchor_pose, anchor_noise));
+    //     merged_values.insert(anchor_key, anchor_pose);
+    //     merged_graph.add(BetweenFactor<Pose3>(anchor_key, first_prev, anchor_delta, anchor_noise));
+    // }
 }
 
 bool useX = true; // Set this flag to false to use Z instead of X
@@ -1989,6 +2013,8 @@ void buildGraph(
     double threshold_nn = 1.0, bool p2p = true, bool p2plane = false)
 {
     std::cout << "Run BA_refinement_merge_graph..." << std::endl;
+    
+
     if (p2plane && p2p)
     {
         std::cout << "Perform both p2p and p2plane" << std::endl;
@@ -2006,7 +2032,7 @@ void buildGraph(
     double planarity = .05; // 5cm allowed
     // double planarity = .02;   //2 cm allowed
 
-    std::unordered_map<int, landmark_> landmarks_map = get_Correspondences(
+    const std::unordered_map<int, landmark_> &landmarks_map = get_Correspondences(
         lidar_lines,
         line_poses,
         refference_kdtree,
@@ -2138,7 +2164,8 @@ double BA_refinement_merge_graph(
     const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
     int run_iterations = 1, bool flg_exit = false,
     int overlap_size = 50,
-    double threshold_nn = 1.0, bool p2p = true, bool p2plane = false)
+    double threshold_nn = 1.0, bool p2p = true, bool p2plane = false,
+    Sophus::SE3 anchor_pose = Sophus::SE3(), Sophus::SE3 anchor_delta = Sophus::SE3())
 {
     useX = !useX;
     std::cout << "For current graph useX:" << useX << std::endl;
@@ -2223,7 +2250,8 @@ double BA_refinement_merge_graph(
             mergeXandZGraphs(merged_graph, merged_values,
                              prev_graph, prev_optimized_values,
                              graph, initial_values,
-                             useX, overlap_size, total_poses);
+                             useX, overlap_size, total_poses,
+                             anchor_pose, anchor_delta);
 
             // Optimize the graph
             LevenbergMarquardtOptimizer optimizer(merged_graph, merged_values, params); //
@@ -2378,4 +2406,4 @@ void CubicSpline::evaluate(double t, SE3Type &P) const //, SE3DerivType &P_prim,
 }
 
 
-    #endif 
+#endif 

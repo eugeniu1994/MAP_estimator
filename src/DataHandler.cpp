@@ -618,6 +618,8 @@ void DataHandler::BagHandler()
     flg_exit = false;
     int scan_id = 0;
     std::cout << "Start reading the data..." << std::endl;
+    V3D prev_t = V3D::Zero();
+    double travelled_distance = 0.0;
     for (const rosbag::MessageInstance &m : view)
     {
         // scan_id++;
@@ -666,7 +668,7 @@ void DataHandler::BagHandler()
             //seq 01 - scan_id <=
             //seq 00 - scan_id <=
 
-            std::cout<<"scan_id:"<<scan_id<<std::endl;
+            std::cout<<"scan_id:"<<scan_id<<", travelled_distance:"<<travelled_distance<<std::endl;
 
             std::cout << "\nIMU:" << imu_buffer.size() << ", GPS:" << gps_buffer.size() << ", LiDAR:" << lidar_buffer.size() << std::endl;
 
@@ -778,6 +780,10 @@ void DataHandler::BagHandler()
 
             // Crop the local map----------------------------------------------------
             state_point = estimator_.get_x();
+            
+            travelled_distance += (state_point.pos - prev_t).norm();
+            prev_t = state_point.pos;
+
             pos_lid = state_point.pos + state_point.rot.matrix() * state_point.offset_T_L_I;
             RemovePointsFarFromLocation();
 

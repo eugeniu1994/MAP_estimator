@@ -225,6 +225,22 @@ void ALS_Handler::setupALS_Manager()
     std::cout << "\033[32mSetup ALS files successfully\033[0m" << std::endl;
 }
 
+bool ALS_Handler::init(const Sophus::SE3 &known_als2mls)
+{
+    bool rv = true;
+    std::cout << "\033[31mALS init from known T\033[0m" << std::endl;
+
+    R_to_mls = known_als2mls.so3().matrix();
+    als_to_mls = known_als2mls;
+    refine_als = true;
+    initted_ = true;
+    shift_initted_ = true;
+    if (!als_manager_setup)
+        setupALS_Manager();
+
+    return rv;
+}
+
 bool ALS_Handler::init(const V3D &gps_origin_ENU_, const M3D &init_R_2_mls, const PointCloudXYZI::Ptr &mls_cloud_full)
 {
     bool rv = false;
@@ -269,8 +285,8 @@ bool ALS_Handler::init(const V3D &gps_origin_ENU_, const M3D &init_R_2_mls, cons
     {
         std::cout << "No matching files found, closestFiles:" << closestFiles.size() << std::endl;
         std::cout<<"gps_origin_ENU:"<<gps_origin_ENU.transpose()<<std::endl;
-        throw std::runtime_error("Cannot find the right init file in las/laz for current position");
-        std::cout<<"Cannot find the right init file in las/laz for current position"<<std::endl;
+        throw std::runtime_error("init - Cannot find the right init file in las/laz for current position");
+        //std::cout<<"Cannot find the right init file in las/laz for current position"<<std::endl;
         found_ALS = false;
         return rv;
     }
@@ -684,7 +700,7 @@ void ALS_Handler::Update(const Sophus::SE3 &mls_pose)
                     else
                     {
                         std::cout << "closest_file:" << std::to_string(i) << " : " << closest_file << std::endl;
-                        throw std::runtime_error("Cannot find the right init file in las/laz");
+                        throw std::runtime_error("Update - Cannot find the right init file in las/laz");
                     }
                 }
             }

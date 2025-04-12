@@ -394,8 +394,6 @@ Sophus::SE3 interpolateSE3(const Sophus::SE3 &pose1, const double time1,
 
 #include "clean_registration.hpp"
 
-
-
 void DataHandler::Subscribe()
 {
     std::cout << "Subscribe" << std::endl;
@@ -446,6 +444,10 @@ void DataHandler::Subscribe()
 
     ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("cloud", 1);
     ros::Publisher normals_pub = nh.advertise<visualization_msgs::Marker>("normals", 1);
+
+    ros::Publisher point_cloud_pub_reference = nh.advertise<sensor_msgs::PointCloud2>("/vux_data_ref", 10000);
+
+    ros::Publisher pose_pub = nh.advertise<nav_msgs::Odometry>("/se3_pose", 100);
 
     std::ifstream file(bag_file);
     if (!file)
@@ -503,7 +505,6 @@ void DataHandler::Subscribe()
     bool do_once = true;
     int some_index = 0;
 
-    pcl::PointCloud<PointType>::Ptr original_als_cloud(new pcl::PointCloud<PointType>);
     pcl::PointCloud<PointType>::Ptr downsampled_als_cloud(new pcl::PointCloud<PointType>);
 
     // Reading the mls data - and sync with them too-------------
@@ -517,7 +518,7 @@ void DataHandler::Subscribe()
     Sophus::SO3 R_als2mls(R_);
     V3D als2mls_translation(4.181350e+06, 5.355192e+06, 2.210141e+05);
     auto als_to_mls = Sophus::SE3(R_als2mls, als2mls_translation);
-
+    Sophus::SE3 mls2als;
     pcl::VoxelGrid<VUX_PointType> downSizeFilter_vux;
     // downSizeFilter_vux.setLeafSize(filter_size_surf_min / 2, filter_size_surf_min / 2, filter_size_surf_min / 2);
     downSizeFilter_vux.setLeafSize(filter_size_surf_min, filter_size_surf_min, filter_size_surf_min);
@@ -534,7 +535,7 @@ void DataHandler::Subscribe()
         0.9659526116, 0.1370155907, -0.2194590626;
     V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
 
-    //old - estimated w.r.t. to reprocessor map // THE EXTRINSICS FROM VUX TO VUX-IMU
+    // old - estimated w.r.t. to reprocessor map // THE EXTRINSICS FROM VUX TO VUX-IMU
     M3D R_vux2imu;
     R_vux2imu << -0.0001486877, 0.4998181193, -0.8661303744,
         0.0006285201, 0.8661302597, 0.4998179451,
@@ -589,13 +590,19 @@ void DataHandler::Subscribe()
     Sophus::SE3 last_refined_pose;
     double last_refined_pose_time = 0;
 
+    int vux_cloud_id = 0;
+
+    std::string files_path = "/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped/";
+    std::shared_ptr<ALS_Handler> als_ref = std::make_shared<ALS_Handler>(files_path, downsample, closest_N_files, filter_size_surf_min);
+
+    Sophus::SE3 anchor_pose, anchor_delta;
+
 #define save_vux_clouds
     for (const rosbag::MessageInstance &m : view)
     {
-        scan_id++;
-
-        // if (scan_id < 45100) // this is only for the 0 bag
-        //     continue;
+        // scan_id++;
+        //  if (scan_id < 45100) // this is only for the 0 bag
+        //      continue;
 
         ros::spinOnce();
         if (flg_exit || !ros::ok())
@@ -631,6 +638,13 @@ void DataHandler::Subscribe()
 
         if (sync_packages(Measures))
         {
+            scan_id++;
+            std::cout << "scan_id:" << scan_id << std::endl;
+            if (scan_id > 1000) // 1400
+            {
+                std::cout << "Stop here... enough data" << std::endl;
+            }
+
             // hesai-mls registration
             if (perform_mls_registration)
             {
@@ -863,7 +877,7 @@ void DataHandler::Subscribe()
             als2mls = als_obj->als_to_mls;
 
             if (!this->downsample) // if it is sparse ALS data from NLS
-            {   
+            {
                 V3D t = als2mls.translation();
                 t.z() += -20.;
                 als2mls = Sophus::SE3(als2mls.so3().matrix(), t);
@@ -885,6 +899,7 @@ void DataHandler::Subscribe()
 
             if (!vux_mls_time_aligned)
             {
+                mls2als = als2mls.inverse();
                 if (!raw_vux_imu_time_aligned)
                 {
                     double first_vux_time = 0;
@@ -1021,6 +1036,98 @@ void DataHandler::Subscribe()
                 curr_mls = Sophus::SE3(state_point.rot, state_point.pos);
                 curr_mls_time = time_of_day_sec;
 
+                if (do_once ) //&& false
+                {
+                    if (false) // this will load the reprocessor generated map
+                    {
+                        do_once = false;
+                        // work with sensor B
+                        std::string f1 = "/media/eugeniu/T7/roamer/09_Export/VUX-1HA-22-2022-B/240725_092351_v12.las";
+                        std::istream *ifs = liblas::Open(f1, std::ios::in | std::ios::binary);
+                        if (!ifs)
+                        {
+                            std::cerr << "Cannot open " << f1 << " for read.  Exiting..." << std::endl;
+                            throw std::invalid_argument("Cannot open the las/laz file");
+                        }
+
+                        if (!ifs->good())
+                            throw std::runtime_error("Reading went wrong!");
+
+                        liblas::ReaderFactory readerFactory;
+                        liblas::Reader reader = readerFactory.CreateWithStream(*ifs);
+                        liblas::Header const &header = reader.GetHeader();
+
+                        std::cout << "Compressed: " << (header.Compressed() == true) ? "true" : "false";
+                        std::cout << " Signature: " << header.GetFileSignature() << '\n';
+                        std::cout << "Start reading the data" << std::endl;
+                        V3D offset_ = V3D(header.GetOffsetX(), header.GetOffsetY(), header.GetOffsetZ());
+                        std::cout << "offset_:" << offset_.transpose() << std::endl;
+                        std::cout << "GetPointRecordsCount:" << header.GetPointRecordsCount() << std::endl;
+
+                        PointType point;
+                        pcl::PointCloud<PointType>::Ptr original_als_cloud(new pcl::PointCloud<PointType>);
+                        original_als_cloud->resize(header.GetPointRecordsCount());
+                        size_t index = 0;
+                        double max_length = 150 * 150;
+
+                        while (reader.ReadNextPoint())
+                        {
+                            liblas::Point const &p = reader.GetPoint();
+
+                            // V3D cloudPoint = V3D(p.GetX(), p.GetY(), p.GetZ()) - offset_;
+                            V3D cloudPoint = als_to_mls * V3D(p.GetX(), p.GetY(), p.GetZ()); // align to als
+
+                            if (cloudPoint.squaredNorm() > max_length)
+                                continue;
+
+                            point.x = cloudPoint.x();
+                            point.y = cloudPoint.y();
+                            point.z = cloudPoint.z();
+
+                            point.time = p.GetTime();
+                            // point.reflectance = index; // p.GetReflectance();
+
+                            original_als_cloud->points[index] = point;
+                            index++;
+                            // if (index > 500000)
+                            // {
+                            //      break;
+                            // }
+                        }
+                        original_als_cloud->resize(index);
+
+                        std::cout << "original_als_cloud:" << original_als_cloud->points.size() << std::endl;
+
+                        pcl::VoxelGrid<PointType> downSizeFilter_;
+                        downSizeFilter_.setLeafSize(filter_size_surf_min, filter_size_surf_min, filter_size_surf_min);
+                        downSizeFilter_.setInputCloud(original_als_cloud);
+                        downSizeFilter_.filter(*downsampled_als_cloud);
+
+                        //*downsampled_als_cloud = *original_als_cloud;
+
+                        std::cout << "downsampled_als_cloud:" << downsampled_als_cloud->size() << std::endl;
+
+                        publishPointCloud(downsampled_als_cloud, point_cloud_pub_reference);
+                    }
+                    else
+                    { // get the data from the reference set
+                        // do_once = false;
+                        if (point_cloud_pub_reference.getNumSubscribers() != 0)
+                        {
+                            if (!als_ref->initted_)
+                                als_ref->init(als2mls);
+
+                            als_ref->Update(Sophus::SE3(state_point.rot, state_point.pos));
+
+                            als_ref->getCloud(downsampled_als_cloud);
+
+                            // do one icp here just for refinement to put ref into evaluation or other way arround
+
+                            publishPointCloud(downsampled_als_cloud, point_cloud_pub_reference);
+                        }
+                    }
+                }
+
                 // bool use_mls_ref = true;
                 // if (use_mls_ref)
                 //{
@@ -1056,7 +1163,7 @@ void DataHandler::Subscribe()
                     tmp_index++;
                     rate.sleep();
 
-                    //continue; // remove this later
+                    continue; // remove this later
 
                     while (readVUX.next(next_line))
                     {
@@ -1071,14 +1178,6 @@ void DataHandler::Subscribe()
 
                         // const auto &cloud_time = next_line->points[0].time;
                         const auto cloud_time = next_line->points.back().time;
-
-                        // from the future w.r.t. curr gnss time
-                        // Changed recently - this results in loss of some scans
-                        // if (cloud_time > gnss_vux_data[tmp_index].gps_tod){
-                        //     std::cout<<"\nCloud time in the future - this will drop a scan "<<std::endl;
-                        //     std::cout<<"cloud_time:"<<cloud_time<<", gnss_vux_data:"<<gnss_vux_data[tmp_index].gps_tod<<std::endl;
-                        //     break;
-                        // }
 
                         some_index++;
 
@@ -1103,11 +1202,8 @@ void DataHandler::Subscribe()
                             // PPK/GNSS pose as init guess---- first extrinsic, then georeference, then transform to als - //ppk-gnss
                             Sophus::SE3 pose4georeference = als2mls * interpolated_pose_ppk * vux2imu_extrinsics; // this does not have the extrinsics for mls
 
-                            // the above has an issue with sparse ALS data
-                            // its about the hight - not the same - so shoft everything in the origin of first pose
-
                             // MLS pose as init guess ---- first extrinsics, then georeference  // mls pose
-                            // pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
+                            //pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
 
                             publish_refined_ppk_gnss(pose4georeference, cloud_time);
 
@@ -1115,17 +1211,17 @@ void DataHandler::Subscribe()
 
                             if (false) // find the extrinsics vux 2 mls
                             {
-                                //line_poses_buffer.push_back(interpolated_pose_mls); //to find extrinsics for vux 2 hesai
+                                // line_poses_buffer.push_back(interpolated_pose_mls); //to find extrinsics for vux 2 hesai
                                 line_poses_buffer.push_back(als2mls * interpolated_pose_ppk); // for vux to ppk-gnss - vux in local mls frame
 
                                 lines_buffer.push_back(downsampled_line);
 
                                 std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
                                 if (lines_buffer.size() > 3000) // enough lines
-                                {  
-                                    //the initial guess --CHANGE THIS ONE HERE
-                                    Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2imu, t_vux2imu); //this will be refined
-                                    
+                                {
+                                    // the initial guess --CHANGE THIS ONE HERE
+                                    Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2imu, t_vux2imu); // this will be refined
+
                                     // Initial guess for extrinsic transformation (Scanner -> IMU)
                                     Eigen::Quaterniond q_extrinsic(vux2other_extrinsic.so3().matrix());
                                     V3D t_extrinsic = vux2other_extrinsic.translation();
@@ -1254,223 +1350,131 @@ void DataHandler::Subscribe()
                                     std::cout << "Final rotation:\n"
                                               << vux2other_extrinsic.so3().matrix() << std::endl;
 
-
                                     throw std::runtime_error("Finished the extrinsic calibration");
                                     break;
                                 }
                             }
 
-                            if (true) // I AM ON THIS PART NOW
+                            bool refine_init = false; // true;
+                            bool save_georeferenced_vux = false;  //will be taken in the release mode only 
+
+                            bool debug = true;
+                            bool release = false;
+
+                            if (debug) // I AM ON THIS PART NOW
                             {
-                                // std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
+                                // std::cout<<"In Debug..."<<std::endl;
+                                //  std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
 
-                                // saving the data - the initial map will be based on the init guess
-                                lines_buffer.push_back(downsampled_line);
-                                refined_line_poses_buffer.push_back(T_to_be_refined);
-                                line_poses_buffer.push_back(T_to_be_refined);
-                                control_times.push_back(cloud_time);
-                                
-#ifdef save_vux_clouds
-                                original_lines.push_back(next_line);
-#endif
-                                //  if (!prev_segment_init) // first scan
-                                //  {
-                                //      total_scans = 500; // use 500
-                                //  }
-                                int total_scans = 100;
-                                int mid_scan = total_scans / 2;
-                                // mid_scan = total_scans; //this will not do anything
-                                mid_scan = 75;
-                                mid_scan = 50; // if (l >= mid_scan) prev scan
-
-                                total_scans = 200; // also good
-                                mid_scan = 150;
-
-                                // double beucase of not skipping lines
-                                total_scans = 400; // also good
-                                mid_scan = 350; //12.5% overlapp
-                                mid_scan = 300; //25%
-
-                                
-                                //  std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
-
-                                bool const_vel_model = true; // use const vel model for segments
-#define debug_clouds
-
-                                if (lines_buffer.size() >= total_scans) // we have a list of scans
+                                if (!refine_init)
                                 {
-                                    init_guess_poses_copy = line_poses_buffer;
-                                    if (const_vel_model)
+                                    if (pubOptimizedVUX.getNumSubscribers() != 0)
                                     {
-                                        for (int l = 0; l < lines_buffer.size(); l++) // for each line
+                                        feats_undistort->clear();
+                                        for (int i = 0; i < downsampled_line->size(); i++) // for each point in the line
                                         {
-                                            line_poses_buffer[l] = const_vel * line_poses_buffer[l];
-                                        }
-                                    }
-
-                                    std::cout << "original_lines:" << original_lines.size() << ", lines_buffer:" << lines_buffer.size() << std::endl;
-
-                                    feats_undistort->clear();
-                                    // create the initial segment with init guess
-                                    // std::vector<V3D> init_georeferenced_segment;
-                                    pcl::PointCloud<PointType>::Ptr init_georeferenced_segment(new pcl::PointCloud<PointType>);
-
-                                    Sophus::SE3 ref_pose = line_poses_buffer[0]; // starting of the segment
-                                    // ref_pose = refined_line_poses_buffer[0]; //this contains the refined solution,  use that as init guess
-
-                                    Sophus::SE3 relative = ref_pose.inverse() * ref_pose; // identity
-
-                                    for (int l = 0; l < lines_buffer.size(); l++) // for each line
-                                    {
-                                        const auto &initial_guess = line_poses_buffer[l]; // copy of the init guess
-
-                                        if (l > 0)
-                                        {
-                                            // take velocity - rel transform from the original odom
-                                            relative = line_poses_buffer[l - 1].inverse() * line_poses_buffer[l];
-                                        }
-                                        ref_pose = ref_pose * relative;
-
-                                        for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
-                                        {
-                                            V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
-
-                                            V3D p_transformed = initial_guess * p_src; //direct init guess
-                                            //V3D p_transformed = ref_pose * p_src; //relative way
+                                            V3D p_src(downsampled_line->points[i].x, downsampled_line->points[i].y, downsampled_line->points[i].z);
+                                            V3D p_transformed = T_to_be_refined * p_src;
 
                                             PointType p;
                                             p.x = p_transformed.x();
                                             p.y = p_transformed.y();
                                             p.z = p_transformed.z();
-                                            p.intensity = l;
-                                            p.time = segment_id;
-                                            init_georeferenced_segment->push_back(p);
 
-                                            // feats_undistort->push_back(p);
+                                            feats_undistort->push_back(p);
                                         }
+                                        publish_frame_debug(pubOptimizedVUX, feats_undistort);
                                     }
 
-// init_georeferenced_segment is in the frame of the line_poses_buffer[0]
-// shift it to the frame of the prev estimated pose
-#ifdef debug_clouds
-                                    publish_frame_debug(pubLaserCloudDebug, init_georeferenced_segment);
-                                    ros::spinOnce();
-                                    rate.sleep();
-                                    std::cout << "Init guess Press Enter to continue..." << std::endl;
-                                    std::cin.get();
-#endif
-                                    // publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-                                    // ros::spinOnce();
-                                    // rate.sleep();
-                                    // std::cout << "Init guess Press Enter to continue..." << std::endl;
-                                    // std::cin.get();
-
-                                    // Coarse register init_georeferenced_segment to map------------------
-                                    int max_iterations_ = 20;
-                                    double threshold_nn_ = 1.; // set init to 1 for init guess
-
-                                    double prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
-                                    double current_cost = prev_cost;
-                                    double cost_threshold = .01; // Threshold for stopping criterion
-
-                                    Eigen::Quaterniond q = Eigen::Quaterniond::Identity();
-                                    V3D t = V3D::Zero();
-
-                                    Sophus::SE3 T_icp = Sophus::SE3();
-                                    bool use_GN = true;
-                                    if (use_GN)
+                                    if (pubOptimizedVUX2.getNumSubscribers() != 0)
                                     {
-                                        // with points only
-                                        max_iterations_ = 100;
-                                        cost_threshold = .001;
-
-                                        max_iterations_ = 200;
-                                        // with planes
-                                        // max_iterations_ = 50;
-                                        // cost_threshold = .02;
-                                    }
-
-                                    // debug of prev half segment
-                                    publishJustPoints(prev_segment, cloud_pub); // prev segment for debug
-
-                                    //
-                                    bool coarse_register = true;
-                                    if (coarse_register)
-                                    { //&& !first_segment_aligned
-
-                                        for (int iter_num = 0; iter_num < max_iterations_; iter_num++)
+                                        for (int i = 0; i < next_line->size(); i++) // for each point in the line
                                         {
-                                            // break; // do not perform init guess refinement
+                                            V3D p_src(next_line->points[i].x, next_line->points[i].y, next_line->points[i].z);
+                                            V3D p_transformed = T_to_be_refined * p_src;
 
-                                            if (flg_exit || !ros::ok())
-                                                break;
-
-                                            if (use_GN)
-                                            {
-                                                // current_cost = scan2map_GN(init_georeferenced_segment, refference_kdtree,
-                                                //                            reference_localMap_cloud, q, t, T_icp,
-                                                //                            true, true, false, threshold_nn_);
-
-                                                current_cost = scan2map_GN_omp(init_georeferenced_segment, refference_kdtree,
-                                                                               reference_localMap_cloud, q, t, T_icp,
-                                                                               false, prev_segment, kdtree_prev_segment,
-                                                                               true, false, false, threshold_nn_);
-                                            }
-                                            else
-                                            {
-                                                current_cost = scan2map_ceres(init_georeferenced_segment, refference_kdtree,
-                                                                              reference_localMap_cloud, q, t,
-                                                                              false, prev_segment, kdtree_prev_segment,
-                                                                              false, true, false, threshold_nn_);
-                                            }
-
-                                            std::cout << "\nIteration " << iter_num << " - Cost: " << current_cost << ", dCost:" << std::abs(prev_cost - current_cost) << " \n\n"
-                                                      << std::endl;
-                                            coarse_delta_T = Sophus::SE3(q, t); // from init guess to the map
-                                            std::cout << "coarse_delta_T:" << coarse_delta_T.log().transpose() << std::endl;
-
-#ifdef debug_clouds
-                                            feats_undistort->clear();
-                                            for (const auto &raw_point : init_georeferenced_segment->points) // for each point in the segment
-                                            {
-                                                V3D p_src(raw_point.x, raw_point.y, raw_point.z);
-                                                V3D p_transformed = coarse_delta_T * p_src;
-                                                PointType p;
-                                                p.x = p_transformed.x();
-                                                p.y = p_transformed.y();
-                                                p.z = p_transformed.z();
-                                                // p.intensity = l;
-                                                p.time = segment_id;
-                                                feats_undistort->push_back(p);
-                                            }
-                                            publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-                                            ros::spinOnce();
-                                            rate.sleep();
-#endif
-                                            if (std::abs(prev_cost - current_cost) < cost_threshold || current_cost < cost_threshold) // Check if the cost function change is small enough to stop
-                                            {
-                                                std::cout << "Stopping optimization: Cost change below threshold.\n";
-                                                break;
-                                            }
-
-                                            prev_cost = current_cost;
+                                            next_line->points[i].x = p_transformed.x();
+                                            next_line->points[i].y = p_transformed.y();
+                                            next_line->points[i].z = p_transformed.z();
                                         }
+
+                                        publishPointCloud_vux(next_line, pubOptimizedVUX2);
+                                    }
+                                }
+                                else
+                                {
+                                    // saving the data - the initial map will be based on the init guess
+                                    lines_buffer.push_back(downsampled_line);
+                                    refined_line_poses_buffer.push_back(T_to_be_refined);
+                                    line_poses_buffer.push_back(T_to_be_refined);
+                                    control_times.push_back(cloud_time);
+
+#ifdef save_vux_clouds
+                                    original_lines.push_back(next_line);
+#endif
+                                    //  if (!prev_segment_init) // first scan
+                                    //  {
+                                    //      total_scans = 500; // use 500
+                                    //  }
+                                    int total_scans = 100;
+                                    int mid_scan = total_scans / 2;
+                                    // mid_scan = total_scans; //this will not do anything
+                                    mid_scan = 75;
+                                    mid_scan = 50; // if (l >= mid_scan) prev scan
+
+                                    total_scans = 200; // also good
+                                    mid_scan = 150;
+
+                                    // double beucase of not skipping lines
+                                    total_scans = 400; // also good
+                                    mid_scan = 350;    // 12.5% overlapp
+                                    mid_scan = 300;    // 25%
+
+                                    //  std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
+
+                                    bool const_vel_model = true; // use const vel model for segments
+#define debug_clouds
+
+                                    if (lines_buffer.size() >= total_scans) // we have a list of scans
+                                    {
+                                        init_guess_poses_copy = line_poses_buffer;
+                                        if (const_vel_model)
+                                        {
+                                            for (int l = 0; l < lines_buffer.size(); l++) // for each line
+                                            {
+                                                line_poses_buffer[l] = const_vel * line_poses_buffer[l];
+                                            }
+                                        }
+
+                                        std::cout << "original_lines:" << original_lines.size() << ", lines_buffer:" << lines_buffer.size() << std::endl;
 
                                         feats_undistort->clear();
+                                        // create the initial segment with init guess
+                                        // std::vector<V3D> init_georeferenced_segment;
+                                        pcl::PointCloud<PointType>::Ptr init_georeferenced_segment(new pcl::PointCloud<PointType>);
 
-                                        const_vel = coarse_delta_T * const_vel;
+                                        Sophus::SE3 ref_pose = line_poses_buffer[0]; // starting of the segment
+                                        // ref_pose = refined_line_poses_buffer[0]; //this contains the refined solution,  use that as init guess
+
+                                        Sophus::SE3 relative = ref_pose.inverse() * ref_pose; // identity
 
                                         for (int l = 0; l < lines_buffer.size(); l++) // for each line
                                         {
-                                            refined_line_poses_buffer[l] = coarse_delta_T * line_poses_buffer[l]; // refined pose
+                                            const auto &initial_guess = line_poses_buffer[l]; // copy of the init guess
 
-                                            const auto &initial_guess = refined_line_poses_buffer[l];
+                                            if (l > 0)
+                                            {
+                                                // take velocity - rel transform from the original odom
+                                                relative = line_poses_buffer[l - 1].inverse() * line_poses_buffer[l];
+                                            }
+                                            ref_pose = ref_pose * relative;
 
                                             for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
                                             {
                                                 V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
-                                                //  // for debug only
-                                                V3D p_transformed = initial_guess * p_src;
+
+                                                V3D p_transformed = initial_guess * p_src; // direct init guess
+                                                // V3D p_transformed = ref_pose * p_src; //relative way
 
                                                 PointType p;
                                                 p.x = p_transformed.x();
@@ -1478,74 +1482,132 @@ void DataHandler::Subscribe()
                                                 p.z = p_transformed.z();
                                                 p.intensity = l;
                                                 p.time = segment_id;
+                                                init_georeferenced_segment->push_back(p);
 
-                                                feats_undistort->push_back(p);
+                                                // feats_undistort->push_back(p);
                                             }
                                         }
 
-                                        publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-
+// init_georeferenced_segment is in the frame of the line_poses_buffer[0]
+// shift it to the frame of the prev estimated pose
+#ifdef debug_clouds
+                                        publish_frame_debug(pubLaserCloudDebug, init_georeferenced_segment);
                                         ros::spinOnce();
                                         rate.sleep();
-
-                                        std::cout << "Segment:" << segment_id << " distance:" << (refined_line_poses_buffer.front().translation() - refined_line_poses_buffer.back().translation()).norm() << " m" << std::endl;
-                                        std::cout << "Segment  " << segment_id << " completed. Press Enter to continue..." << std::endl;
+                                        std::cout << "Init guess Press Enter to continue..." << std::endl;
                                         std::cin.get();
-                                    }
+#endif
+                                        // publish_frame_debug(pubLaserCloudDebug, feats_undistort);
+                                        // ros::spinOnce();
+                                        // rate.sleep();
+                                        // std::cout << "Init guess Press Enter to continue..." << std::endl;
+                                        // std::cin.get();
 
-                                    bool BA_refine = true; // false;
-                                    if (BA_refine)         // pose graph here
-                                    {
-                                        std::cout << "Start BA refinement..." << std::endl;
-                                        // only 1 iteration for now
-                                        prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
-                                        current_cost = prev_cost;
+                                        // Coarse register init_georeferenced_segment to map------------------
+                                        int max_iterations_ = 20;
+                                        double threshold_nn_ = 1.; // set init to 1 for init guess
 
-                                        // threshold_nn_ = .5 * .5; // make is smaller for refinement
+                                        double prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
+                                        double current_cost = prev_cost;
+                                        double cost_threshold = .01; // Threshold for stopping criterion
 
-                                        // for (int ba_iter = 0; ba_iter < 2; ba_iter++)
+                                        Eigen::Quaterniond q = Eigen::Quaterniond::Identity();
+                                        V3D t = V3D::Zero();
+
+                                        Sophus::SE3 T_icp = Sophus::SE3();
+                                        bool use_GN = true;
+                                        if (use_GN)
                                         {
-                                            // if (flg_exit || !ros::ok())
-                                            //     break;
+                                            // with points only
+                                            max_iterations_ = 100;
+                                            cost_threshold = .001;
 
-                                            // std::cout << "BA " << std::endl;
-                                            // current_cost = BA_refinement(
-                                            //     lines_buffer,
-                                            //     refined_line_poses_buffer,
-                                            //     refference_kdtree,
-                                            //     reference_localMap_cloud,
-                                            //     prev_segment_init,
-                                            //     prev_segment,
-                                            //     kdtree_prev_segment,
-                                            //     cloud_pub, normals_pub,
-                                            //     total_scans - mid_scan,
-                                            //     threshold_nn_, true, true);
+                                            max_iterations_ = 200;
+                                            // with planes
+                                            // max_iterations_ = 50;
+                                            // cost_threshold = .02;
+                                        }
 
-                                            std::cout << "BA_refinement_merge_graph" << std::endl;
-                                            current_cost = BA_refinement_merge_graph(
-                                                lines_buffer,
-                                                refined_line_poses_buffer,
-                                                refference_kdtree,
-                                                reference_localMap_cloud,
-                                                prev_segment_init,
-                                                prev_segment,
-                                                kdtree_prev_segment,
-                                                cloud_pub, normals_pub,
-                                                3, //2, // run_iterations
-                                                flg_exit,
-                                                total_scans - mid_scan,
-                                                threshold_nn_, false, true);
+                                        // debug of prev half segment
+                                        publishJustPoints(prev_segment, cloud_pub); // prev segment for debug
+
+                                        //
+                                        bool coarse_register = true;
+                                        if (coarse_register)
+                                        { //&& !first_segment_aligned
+
+                                            for (int iter_num = 0; iter_num < max_iterations_; iter_num++)
+                                            {
+                                                // break; // do not perform init guess refinement
+
+                                                if (flg_exit || !ros::ok())
+                                                    break;
+
+                                                if (use_GN)
+                                                {
+                                                    // current_cost = scan2map_GN(init_georeferenced_segment, refference_kdtree,
+                                                    //                            reference_localMap_cloud, q, t, T_icp,
+                                                    //                            true, true, false, threshold_nn_);
+
+                                                    current_cost = scan2map_GN_omp(init_georeferenced_segment, refference_kdtree,
+                                                                                   reference_localMap_cloud, q, t, T_icp,
+                                                                                   false, prev_segment, kdtree_prev_segment,
+                                                                                   true, false, false, threshold_nn_);
+                                                }
+                                                else
+                                                {
+                                                    current_cost = scan2map_ceres(init_georeferenced_segment, refference_kdtree,
+                                                                                  reference_localMap_cloud, q, t,
+                                                                                  false, prev_segment, kdtree_prev_segment,
+                                                                                  false, true, false, threshold_nn_);
+                                                }
+
+                                                std::cout << "\nIteration " << iter_num << " - Cost: " << current_cost << ", dCost:" << std::abs(prev_cost - current_cost) << " \n\n"
+                                                          << std::endl;
+                                                coarse_delta_T = Sophus::SE3(q, t); // from init guess to the map
+                                                std::cout << "coarse_delta_T:" << coarse_delta_T.log().transpose() << std::endl;
+
+#ifdef debug_clouds
+                                                feats_undistort->clear();
+                                                for (const auto &raw_point : init_georeferenced_segment->points) // for each point in the segment
+                                                {
+                                                    V3D p_src(raw_point.x, raw_point.y, raw_point.z);
+                                                    V3D p_transformed = coarse_delta_T * p_src;
+                                                    PointType p;
+                                                    p.x = p_transformed.x();
+                                                    p.y = p_transformed.y();
+                                                    p.z = p_transformed.z();
+                                                    // p.intensity = l;
+                                                    p.time = segment_id;
+                                                    feats_undistort->push_back(p);
+                                                }
+                                                publish_frame_debug(pubLaserCloudDebug, feats_undistort);
+                                                ros::spinOnce();
+                                                rate.sleep();
+#endif
+                                                if (std::abs(prev_cost - current_cost) < cost_threshold || current_cost < cost_threshold) // Check if the cost function change is small enough to stop
+                                                {
+                                                    std::cout << "Stopping optimization: Cost change below threshold.\n";
+                                                    break;
+                                                }
+
+                                                prev_cost = current_cost;
+                                            }
 
                                             feats_undistort->clear();
-                                            prev_segment->clear();
+
+                                            const_vel = coarse_delta_T * const_vel;
 
                                             for (int l = 0; l < lines_buffer.size(); l++) // for each line
                                             {
+                                                refined_line_poses_buffer[l] = coarse_delta_T * line_poses_buffer[l]; // refined pose
+
                                                 const auto &initial_guess = refined_line_poses_buffer[l];
 
                                                 for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
                                                 {
                                                     V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
+                                                    //  // for debug only
                                                     V3D p_transformed = initial_guess * p_src;
 
                                                     PointType p;
@@ -1556,158 +1618,541 @@ void DataHandler::Subscribe()
                                                     p.time = segment_id;
 
                                                     feats_undistort->push_back(p);
-
-                                                    if (l >= mid_scan)
-                                                    {
-                                                        prev_segment->push_back(p);
-                                                    }
                                                 }
                                             }
-
-                                            // // kdtree_prev_segment->setInputCloud(prev_segment); // the prev segment
-                                            // // prev_segment_init = true;
-
-                                            std::cout << "Prev segment:" << prev_segment->size() << std::endl;
 
                                             publish_frame_debug(pubLaserCloudDebug, feats_undistort);
 
                                             ros::spinOnce();
                                             rate.sleep();
 
-                                            std::cout << "BA done, cost:" << current_cost << std::endl;
-
-                                            prev_cost = current_cost;
+                                            std::cout << "Segment:" << segment_id << " distance:" << (refined_line_poses_buffer.front().translation() - refined_line_poses_buffer.back().translation()).norm() << " m" << std::endl;
+                                            std::cout << "Segment  " << segment_id << " completed. Press Enter to continue..." << std::endl;
                                             std::cin.get();
                                         }
-                                    }
 
-                                    if (const_vel_model)
-                                    {
-                                        line_poses_buffer = init_guess_poses_copy;
-                                    }
+                                        bool BA_refine = true; // false;
+                                        if (BA_refine)         // pose graph here
+                                        {
+                                            std::cout << "Start BA refinement..." << std::endl;
+                                            // only 1 iteration for now
+                                            prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
+                                            current_cost = prev_cost;
 
-                                    // delete half of the data not full - for overlapping section
-                                    feats_undistort->clear();
+                                            // threshold_nn_ = .5 * .5; // make is smaller for refinement
 
-                                    #ifdef use_spline
+                                            // for (int ba_iter = 0; ba_iter < 2; ba_iter++)
+                                            {
+                                                // if (flg_exit || !ros::ok())
+                                                //     break;
 
-                                        // Time step (dt) and initial time (t0)                                        
-                                        if(last_refined_pose_time > 0){
+                                                // std::cout << "BA " << std::endl;
+                                                // current_cost = BA_refinement(
+                                                //     lines_buffer,
+                                                //     refined_line_poses_buffer,
+                                                //     refference_kdtree,
+                                                //     reference_localMap_cloud,
+                                                //     prev_segment_init,
+                                                //     prev_segment,
+                                                //     kdtree_prev_segment,
+                                                //     cloud_pub, normals_pub,
+                                                //     total_scans - mid_scan,
+                                                //     threshold_nn_, true, true);
+
+                                                std::cout << "BA_refinement_merge_graph" << std::endl;
+                                                current_cost = BA_refinement_merge_graph(
+                                                    lines_buffer,
+                                                    refined_line_poses_buffer,
+                                                    refference_kdtree,
+                                                    reference_localMap_cloud,
+                                                    prev_segment_init,
+                                                    prev_segment,
+                                                    kdtree_prev_segment,
+                                                    cloud_pub, normals_pub,
+                                                    3, // 2, // run_iterations
+                                                    flg_exit,
+                                                    total_scans - mid_scan,
+                                                    threshold_nn_, false, true,
+                                                    anchor_pose, anchor_delta);
+
+                                                feats_undistort->clear();
+                                                prev_segment->clear();
+
+                                                for (int l = 0; l < lines_buffer.size(); l++) // for each line
+                                                {
+                                                    const auto &initial_guess = refined_line_poses_buffer[l];
+
+                                                    for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
+                                                    {
+                                                        V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
+                                                        V3D p_transformed = initial_guess * p_src;
+
+                                                        PointType p;
+                                                        p.x = p_transformed.x();
+                                                        p.y = p_transformed.y();
+                                                        p.z = p_transformed.z();
+                                                        p.intensity = l;
+                                                        p.time = segment_id;
+
+                                                        feats_undistort->push_back(p);
+
+                                                        if (l >= mid_scan)
+                                                        {
+                                                            prev_segment->push_back(p);
+                                                        }
+                                                    }
+                                                }
+
+                                                // // kdtree_prev_segment->setInputCloud(prev_segment); // the prev segment
+                                                // // prev_segment_init = true;
+
+                                                std::cout << "Prev segment:" << prev_segment->size() << std::endl;
+
+                                                publish_frame_debug(pubLaserCloudDebug, feats_undistort);
+
+                                                ros::spinOnce();
+                                                rate.sleep();
+
+                                                std::cout << "BA done, cost:" << current_cost << std::endl;
+
+                                                prev_cost = current_cost;
+                                                std::cin.get();
+                                            }
+                                        }
+
+                                        if (const_vel_model)
+                                        {
+                                            line_poses_buffer = init_guess_poses_copy;
+                                        }
+
+                                        // delete half of the data not full - for overlapping section
+                                        feats_undistort->clear();
+
+#ifdef use_spline
+
+                                        // Time step (dt) and initial time (t0)
+                                        if (last_refined_pose_time > 0)
+                                        {
                                             double t0 = control_times[0];
                                             double t1 = control_times[1];
                                             double dt = t1 - t0;
                                             double dt_ = t0 - last_refined_pose_time;
-                                            std::cout<<"t0:"<<t0<<", t1:"<< t1 <<", dt:"<<dt<<", last_refined_pose_time:"<<last_refined_pose_time<<", dt_:"<<dt_<<std::endl;
-                                            
+                                            std::cout << "t0:" << t0 << ", t1:" << t1 << ", dt:" << dt << ", last_refined_pose_time:" << last_refined_pose_time << ", dt_:" << dt_ << std::endl;
+
                                             CubicSpline spline(dt, last_refined_pose_time);
-                                            spline.add_knot(last_refined_pose); 
-                                            for (int l = 0; l < mid_scan + 3; l++) {
-                                                spline.add_knot(refined_line_poses_buffer[l]);  // Add the knot (pose) to the spline
+                                            spline.add_knot(last_refined_pose);
+                                            for (int l = 0; l < mid_scan + 3; l++)
+                                            {
+                                                spline.add_knot(refined_line_poses_buffer[l]); // Add the knot (pose) to the spline
                                             }
 
-
                                             // Now evaluate the spline at different time points
-                                            //double tim = control_times[5];// 2.5;  // Interpolation time point
-                                            //Sophus::SE3 P;  // Interpolated pose
-                                            //Eigen::Matrix4d P_prim;  // First derivative (velocity)
-                                            //Eigen::Matrix4d P_bis;   // Second derivative (acceleration)
+                                            // double tim = control_times[5];// 2.5;  // Interpolation time point
+                                            // Sophus::SE3 P;  // Interpolated pose
+                                            // Eigen::Matrix4d P_prim;  // First derivative (velocity)
+                                            // Eigen::Matrix4d P_bis;   // Second derivative (acceleration)
 
                                             // Evaluate the spline at time t
-                                            //spline.evaluate(tim, P); //, P_prim, P_bis
+                                            // spline.evaluate(tim, P); //, P_prim, P_bis
 
                                             // Print the interpolated pose, velocity, and acceleration
-                                            //std::cout << "Original     Pose at t = " << tim << ":\n" << refined_line_poses_buffer[5].log().transpose() << std::endl;
-                                            //std::cout << "Interpolated Pose at t = " << tim << ":\n" << P.log().transpose() << std::endl;
-                                            
-                                            for (int l = 0; l < mid_scan; l++) {
+                                            // std::cout << "Original     Pose at t = " << tim << ":\n" << refined_line_poses_buffer[5].log().transpose() << std::endl;
+                                            // std::cout << "Interpolated Pose at t = " << tim << ":\n" << P.log().transpose() << std::endl;
+
+                                            for (int l = 0; l < mid_scan; l++)
+                                            {
                                                 spline.evaluate(control_times[l], refined_line_poses_buffer[l]);
                                             }
                                         }
 
-                                    #endif 
-
-
-                                    for (int j = 0; j < mid_scan; j++)
-                                    {
-                                        const auto &line = lines_buffer.front();
-                                        const auto &T = refined_line_poses_buffer.front();
-
-                                        for (int i = 0; i < line->size(); i++) // for each point in the line
-                                        {
-                                            V3D p_src(line->points[i].x, line->points[i].y, line->points[i].z);
-                                            V3D p_transformed = T * p_src;
-
-                                            PointType p;
-                                            p.x = p_transformed.x();
-                                            p.y = p_transformed.y();
-                                            p.z = p_transformed.z();
-
-                                            feats_undistort->push_back(p);
-                                        }
-#ifdef save_vux_clouds
-                                        auto &original_line = original_lines.front();
-                                        for (int i = 0; i < original_line->size(); i++) // for each point in the line
-                                        {
-                                            V3D p_src(original_line->points[i].x, original_line->points[i].y, original_line->points[i].z);
-                                            V3D p_transformed = T * p_src;
-
-                                            original_line->points[i].x = p_transformed.x();
-                                            original_line->points[i].y = p_transformed.y();
-                                            original_line->points[i].z = p_transformed.z();
-                                        }
-                                        // option to save the line and trajectory here - TODO
-
-                                        if (pubOptimizedVUX2.getNumSubscribers() != 0)
-                                            publishPointCloud_vux(original_line, pubOptimizedVUX2);
-
-                                        original_lines.pop_front();
 #endif
 
-                                        last_refined_pose = refined_line_poses_buffer.front();
-                                        last_refined_pose_time = control_times.front();
+                                        if (mid_scan > 0 && mid_scan < total_scans - 1)
+                                        {
+                                            // last fixed pose & and delta
+                                            anchor_pose = refined_line_poses_buffer[mid_scan - 1]; // last added pose
+                                            anchor_delta = line_poses_buffer[mid_scan - 1].inverse() * line_poses_buffer[mid_scan];
+                                        }
 
-                                        lines_buffer.pop_front();
-                                        line_poses_buffer.pop_front();
-                                        refined_line_poses_buffer.pop_front();
-                                        control_times.pop_front();
+                                        for (int j = 0; j < mid_scan; j++)
+                                        {
+                                            const auto &line = lines_buffer.front();
+                                            const auto &T = refined_line_poses_buffer.front();
+
+                                            for (int i = 0; i < line->size(); i++) // for each point in the line
+                                            {
+                                                V3D p_src(line->points[i].x, line->points[i].y, line->points[i].z);
+                                                V3D p_transformed = T * p_src;
+
+                                                PointType p;
+                                                p.x = p_transformed.x();
+                                                p.y = p_transformed.y();
+                                                p.z = p_transformed.z();
+
+                                                feats_undistort->push_back(p);
+                                            }
+#ifdef save_vux_clouds
+                                            auto &original_line = original_lines.front();
+                                            for (int i = 0; i < original_line->size(); i++) // for each point in the line
+                                            {
+                                                V3D p_src(original_line->points[i].x, original_line->points[i].y, original_line->points[i].z);
+                                                V3D p_transformed = T * p_src;
+
+                                                original_line->points[i].x = p_transformed.x();
+                                                original_line->points[i].y = p_transformed.y();
+                                                original_line->points[i].z = p_transformed.z();
+                                            }
+                                            // option to save the line and trajectory here - TODO
+
+                                            if (pubOptimizedVUX2.getNumSubscribers() != 0)
+                                                publishPointCloud_vux(original_line, pubOptimizedVUX2);
+
+                                            original_lines.pop_front();
+
+                                            if (j % 20 == 0)
+                                            {
+                                                nav_msgs::Odometry pose_msg;
+                                                pose_msg.header.frame_id = "world"; // Fixed/world/global frame
+                                                // pose_msg.child_frame_id = "MLS";     // Your moving platform
+                                                pose_msg.header.stamp = ros::Time().fromSec(cloud_time);
+
+                                                Eigen::Vector3d trans = T.translation();
+                                                pose_msg.pose.pose.position.x = trans.x();
+                                                pose_msg.pose.pose.position.y = trans.y();
+                                                pose_msg.pose.pose.position.z = trans.z();
+
+                                                Eigen::Quaterniond q(T.so3().matrix());
+                                                pose_msg.pose.pose.orientation.x = q.x();
+                                                pose_msg.pose.pose.orientation.y = q.y();
+                                                pose_msg.pose.pose.orientation.z = q.z();
+                                                pose_msg.pose.pose.orientation.w = q.w();
+
+                                                pose_pub.publish(pose_msg);
+                                            }
+#endif
+
+                                            last_refined_pose = refined_line_poses_buffer.front();
+                                            last_refined_pose_time = control_times.front();
+
+                                            lines_buffer.pop_front();
+                                            line_poses_buffer.pop_front();
+                                            refined_line_poses_buffer.pop_front();
+                                            control_times.pop_front();
+                                        }
+
+                                        if (pubOptimizedVUX.getNumSubscribers() != 0)
+                                            publish_frame_debug(pubOptimizedVUX, feats_undistort);
+
+                                        // publish the time of the optmized values
+                                        // and the time of the original data
+
+                                        segment_id++;
+                                        first_segment_aligned = true;
+
+                                        // lines_buffer.clear();
+                                        // line_poses_buffer.clear();
+                                        // refined_line_poses_buffer.clear();
+                                        // control_times.clear();
+                                    }
+                                }
+                            }
+
+                            //---------------------------------------------------------------------
+
+                            if (release) // I AM ON THIS PART NOW
+                            {
+                                if (!refine_init)
+                                {
+                                    for (int i = 0; i < next_line->size(); i++) // for each point in the line
+                                    {
+                                        V3D p_src(next_line->points[i].x, next_line->points[i].y, next_line->points[i].z);
+                                        V3D p_transformed = T_to_be_refined * p_src;
+
+                                        next_line->points[i].x = p_transformed.x();
+                                        next_line->points[i].y = p_transformed.y();
+                                        next_line->points[i].z = p_transformed.z();
                                     }
 
-                                    if (pubOptimizedVUX.getNumSubscribers() != 0)
-                                        publish_frame_debug(pubOptimizedVUX, feats_undistort);
+                                    if (pubOptimizedVUX2.getNumSubscribers() != 0)
+                                        publishPointCloud_vux(next_line, pubOptimizedVUX2);
 
-                                    // publish the time of the optmized values
-                                    // and the time of the original data
+                                    if (save_georeferenced_vux)
+                                    { // if (save_clouds)
+                                        std::string filename = "/home/eugeniu/vux_save_clouds/vux_" + std::to_string(vux_cloud_id) + "_cloud.pcd";
 
-                                    segment_id++;
-                                    first_segment_aligned = true;   
+                                        pcl::io::savePCDFile(filename, *next_line, true); // Binary format
 
-                                    // lines_buffer.clear();
-                                    // line_poses_buffer.clear();
-                                    // refined_line_poses_buffer.clear();
-                                    //control_times.clear();
+                                        std::cout << "Saved cloud " << filename << std::endl;
+                                        vux_cloud_id++;
+                                    }
                                 }
-                            }
-
-                            for (size_t i = 0; i < transformed_cloud->size(); i++)
-                            {
-                                V3D point_scanner(transformed_cloud->points[i].x, transformed_cloud->points[i].y, transformed_cloud->points[i].z);
-
-                                V3D point_global;
-                                if (true)
+                                else
                                 {
-                                    // with our refinement
-                                    point_global = T_to_be_refined * point_scanner;
+                                    // std::cout<<"In Release..."<<std::endl;
+                                    //  saving the data - the initial map will be based on the init guess
+                                    lines_buffer.push_back(downsampled_line);
+                                    refined_line_poses_buffer.push_back(T_to_be_refined);
+                                    line_poses_buffer.push_back(T_to_be_refined);
+                                    control_times.push_back(cloud_time);
 
-                                    // point_global = coarse_delta_T * point_global; //const vel
+#ifdef save_vux_clouds
+                                    original_lines.push_back(next_line);
+#endif
+
+                                    int total_scans = 400;
+                                    int mid_scan = 300; // 25%
+                                    // mid_scan = 200;
+
+                                    bool const_vel_model = true; // use const vel model for segments
+
+                                    if (lines_buffer.size() >= total_scans) // we have a list of scans
+                                    {
+                                        init_guess_poses_copy = line_poses_buffer;
+                                        if (const_vel_model)
+                                        {
+                                            for (int l = 0; l < lines_buffer.size(); l++) // for each line
+                                            {
+                                                line_poses_buffer[l] = const_vel * line_poses_buffer[l];
+                                            }
+                                        }
+
+                                        pcl::PointCloud<PointType>::Ptr init_georeferenced_segment(new pcl::PointCloud<PointType>);
+                                        for (int l = 0; l < lines_buffer.size(); l++) // for each line
+                                        {
+                                            const auto &initial_guess = line_poses_buffer[l]; // copy of the init guess
+                                            for (int i = 0; i < lines_buffer[l]->size(); i++) // for each point in the line
+                                            {
+                                                V3D p_src(lines_buffer[l]->points[i].x, lines_buffer[l]->points[i].y, lines_buffer[l]->points[i].z);
+                                                V3D p_transformed = initial_guess * p_src; // direct init guess
+
+                                                PointType p;
+                                                p.x = p_transformed.x();
+                                                p.y = p_transformed.y();
+                                                p.z = p_transformed.z();
+                                                p.intensity = l;
+                                                p.time = segment_id;
+                                                init_georeferenced_segment->push_back(p);
+                                            }
+                                        }
+
+                                        // Coarse register init_georeferenced_segment to map------------------
+                                        int max_iterations_ = 20;
+                                        double threshold_nn_ = 1.; // set init to 1 for init guess
+
+                                        double prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
+                                        double current_cost = prev_cost;
+                                        double cost_threshold = .01; // Threshold for stopping criterion
+
+                                        Eigen::Quaterniond q = Eigen::Quaterniond::Identity();
+                                        V3D t = V3D::Zero();
+
+                                        Sophus::SE3 T_icp = Sophus::SE3();
+                                        bool use_GN = true;
+                                        if (use_GN)
+                                        {
+                                            // with points only
+                                            max_iterations_ = 200;
+                                            cost_threshold = .001;
+
+                                            // with planes
+                                            // max_iterations_ = 50;
+                                            // cost_threshold = .02;
+                                        }
+
+                                        bool coarse_register = true;
+                                        if (coarse_register)
+                                        {
+                                            for (int iter_num = 0; iter_num < max_iterations_; iter_num++)
+                                            {
+                                                if (flg_exit || !ros::ok())
+                                                    break;
+
+                                                current_cost = scan2map_GN_omp(init_georeferenced_segment, refference_kdtree,
+                                                                               reference_localMap_cloud, q, t, T_icp,
+                                                                               false, prev_segment, kdtree_prev_segment,
+                                                                               true, false, false, threshold_nn_);
+
+                                                coarse_delta_T = Sophus::SE3(q, t); // from init guess to the map
+
+                                                if (std::abs(prev_cost - current_cost) < cost_threshold || current_cost < cost_threshold) // Check if the cost function change is small enough to stop
+                                                {
+                                                    std::cout << "Stopping optimization: Cost change below threshold.\n";
+                                                    break;
+                                                }
+
+                                                prev_cost = current_cost;
+                                            }
+
+                                            const_vel = coarse_delta_T * const_vel;
+                                            for (int l = 0; l < lines_buffer.size(); l++) // for each line
+                                            {
+                                                refined_line_poses_buffer[l] = coarse_delta_T * line_poses_buffer[l]; // refined pose
+                                            }
+                                        }
+
+                                        bool BA_refine = true; // false;
+                                        if (BA_refine)         // pose graph here
+                                        {
+                                            // only 1 iteration for now
+                                            prev_cost = std::numeric_limits<double>::max(); // Initialize with a large value
+                                            current_cost = prev_cost;
+
+                                            // threshold_nn_ = .5 * .5; // make is smaller for refinement
+
+                                            current_cost = BA_refinement_merge_graph(
+                                                lines_buffer,
+                                                refined_line_poses_buffer,
+                                                refference_kdtree,
+                                                reference_localMap_cloud,
+                                                prev_segment_init,
+                                                prev_segment,
+                                                kdtree_prev_segment,
+                                                cloud_pub, normals_pub,
+                                                3, // 2, // run_iterations
+                                                flg_exit,
+                                                total_scans - mid_scan,
+                                                threshold_nn_, false, true);
+                                        }
+
+                                        if (const_vel_model)
+                                        {
+                                            line_poses_buffer = init_guess_poses_copy;
+                                        }
+
+                                        feats_undistort->clear();
+
+#ifdef use_spline
+
+                                        // // Time step (dt) and initial time (t0)
+                                        // if (last_refined_pose_time > 0)
+                                        // {
+                                        //     double t0 = control_times[0];
+                                        //     double t1 = control_times[1];
+                                        //     double dt = t1 - t0;
+                                        //     double dt_ = t0 - last_refined_pose_time;
+                                        //     std::cout << "t0:" << t0 << ", t1:" << t1 << ", dt:" << dt << ", last_refined_pose_time:" << last_refined_pose_time << ", dt_:" << dt_ << std::endl;
+
+                                        //     CubicSpline spline(dt, last_refined_pose_time);
+                                        //     spline.add_knot(last_refined_pose);
+                                        //     for (int l = 0; l < mid_scan + 3; l++)
+                                        //     {
+                                        //         spline.add_knot(refined_line_poses_buffer[l]); // Add the knot (pose) to the spline
+                                        //     }
+
+                                        //     for (int l = 0; l < mid_scan; l++)
+                                        //     {
+                                        //         spline.evaluate(control_times[l], refined_line_poses_buffer[l]);
+                                        //     }
+                                        // }
+
+#endif
+
+                                        for (int j = 0; j < mid_scan; j++)
+                                        {
+                                            const auto &line = lines_buffer.front();
+                                            const auto &T = refined_line_poses_buffer.front();
+
+                                            for (int i = 0; i < line->size(); i++) // for each point in the line
+                                            {
+                                                V3D p_src(line->points[i].x, line->points[i].y, line->points[i].z);
+                                                V3D p_transformed = T * p_src;
+
+                                                PointType p;
+                                                p.x = p_transformed.x();
+                                                p.y = p_transformed.y();
+                                                p.z = p_transformed.z();
+
+                                                feats_undistort->push_back(p);
+                                            }
+#ifdef save_vux_clouds
+                                            auto &original_line = original_lines.front();
+                                            for (int i = 0; i < original_line->size(); i++) // for each point in the line
+                                            {
+                                                V3D p_src(original_line->points[i].x, original_line->points[i].y, original_line->points[i].z);
+                                                V3D p_transformed = T * p_src; // it will be mls line
+
+                                                // to put in ALS frame
+                                                // p_transformed = mls2als * p_transformed;
+
+                                                original_line->points[i].x = p_transformed.x();
+                                                original_line->points[i].y = p_transformed.y();
+                                                original_line->points[i].z = p_transformed.z();
+                                            }
+                                            // option to save the line and trajectory here - TODO
+                                            if (save_georeferenced_vux)
+                                            { // if (save_clouds)
+                                                std::string filename = "/home/eugeniu/vux_save_clouds/vux_" + std::to_string(vux_cloud_id) + "_cloud.pcd";
+
+                                                pcl::io::savePCDFile(filename, *original_line, true); // Binary format
+
+                                                std::cout << "Saved cloud " << filename << std::endl;
+                                                vux_cloud_id++;
+                                            }
+
+                                            if (pubOptimizedVUX2.getNumSubscribers() != 0)
+                                                publishPointCloud_vux(original_line, pubOptimizedVUX2);
+
+                                            original_lines.pop_front();
+
+                                            if (j % 20 == 0)
+                                            {
+                                                nav_msgs::Odometry pose_msg;
+                                                pose_msg.header.frame_id = "world"; // Fixed/world/global frame
+                                                // pose_msg.child_frame_id = "MLS";     // Your moving platform
+                                                pose_msg.header.stamp = ros::Time().fromSec(cloud_time);
+
+                                                Eigen::Vector3d trans = T.translation();
+                                                pose_msg.pose.pose.position.x = trans.x();
+                                                pose_msg.pose.pose.position.y = trans.y();
+                                                pose_msg.pose.pose.position.z = trans.z();
+
+                                                Eigen::Quaterniond q(T.so3().matrix());
+                                                pose_msg.pose.pose.orientation.x = q.x();
+                                                pose_msg.pose.pose.orientation.y = q.y();
+                                                pose_msg.pose.pose.orientation.z = q.z();
+                                                pose_msg.pose.pose.orientation.w = q.w();
+
+                                                pose_pub.publish(pose_msg);
+                                            }
+#endif
+
+                                            last_refined_pose = refined_line_poses_buffer.front();
+                                            last_refined_pose_time = control_times.front();
+
+                                            lines_buffer.pop_front();
+                                            line_poses_buffer.pop_front();
+                                            refined_line_poses_buffer.pop_front();
+                                            control_times.pop_front();
+                                        }
+
+                                        if (pubOptimizedVUX.getNumSubscribers() != 0)
+                                            publish_frame_debug(pubOptimizedVUX, feats_undistort);
+
+                                        segment_id++;
+                                        first_segment_aligned = true;
+                                    }
                                 }
-
-                                transformed_cloud->points[i].x = point_global.x();
-                                transformed_cloud->points[i].y = point_global.y();
-                                transformed_cloud->points[i].z = point_global.z();
                             }
 
-                            // this will pub the init guess
-                            publishPointCloud_vux(transformed_cloud, point_cloud_pub);
+                            //---------------------------------------------------------------------
+
+                            if (point_cloud_pub.getNumSubscribers() != 0)
+                            {
+                                for (size_t i = 0; i < transformed_cloud->size(); i++)
+                                {
+                                    V3D point_scanner(transformed_cloud->points[i].x, transformed_cloud->points[i].y, transformed_cloud->points[i].z);
+
+                                    V3D point_global = T_to_be_refined * point_scanner;
+                                    // point_global = coarse_delta_T * point_global; //const vel
+
+                                    transformed_cloud->points[i].x = point_global.x();
+                                    transformed_cloud->points[i].y = point_global.y();
+                                    transformed_cloud->points[i].z = point_global.z();
+                                }
+
+                                // this will pub the init guess
+                                publishPointCloud_vux(transformed_cloud, point_cloud_pub);
+                            }
                         }
 
                         // added it here to prevent it
@@ -1725,8 +2170,6 @@ void DataHandler::Subscribe()
             }
             prev_mls = Sophus::SE3(state_point.rot, state_point.pos);
             prev_mls_time = time_of_day_sec;
-
-            
         }
     }
     bag.close();

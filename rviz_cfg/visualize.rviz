@@ -10,9 +10,9 @@ Panels:
         - /mapping1/Georeferenced1/Autocompute Value Bounds1
         - /Odometry1
         - /Odometry1/Odometry1/Shape1
-        - /Odometry1/Odometry1/Covariance1
         - /Odometry1/Odometry1/Covariance1/Position1
         - /Odometry1/Odometry1/Covariance1/Orientation1
+        - /Refined-vux1/Shape1
       Splitter Ratio: 0.5546624064445496
     Tree Height: 1653
   - Class: rviz/Selection
@@ -108,8 +108,8 @@ Visualization Manager:
         - Alpha: 0.5
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: -9999
-            Min Value: 9999
+            Max Value: 29.57546615600586
+            Min Value: -2.530606269836426
             Value: true
           Axis: Z
           Channel Name: z
@@ -136,8 +136,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 30.678194046020508
-            Min Value: -3.9944682121276855
+            Max Value: 30.67083740234375
+            Min Value: -4.0073747634887695
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -173,7 +173,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: FlatColor
           Decay Time: 0
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Max Intensity: 83
@@ -190,7 +190,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -239,7 +239,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: AxisColor
           Decay Time: 1000
-          Enabled: true
+          Enabled: false
           Invert Rainbow: true
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -254,7 +254,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
       Enabled: true
       Name: mapping
     - Class: rviz/Group
@@ -276,14 +276,14 @@ Visualization Manager:
               Scale: 1
               Value: true
             Value: true
-          Enabled: false
+          Enabled: true
           Keep: 1
           Name: Odometry
           Position Tolerance: 0.0010000000474974513
-          Queue Size: 10
+          Queue Size: 100
           Shape:
             Alpha: 1
-            Axes Length: 1
+            Axes Length: 10
             Axes Radius: 0.20000000298023224
             Color: 255; 85; 0
             Head Length: 0
@@ -293,7 +293,7 @@ Visualization Manager:
             Value: Axes
           Topic: /Odometry
           Unreliable: false
-          Value: false
+          Value: true
       Enabled: false
       Name: Odometry
     - Alpha: 0
@@ -448,8 +448,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 26.256519317626953
-        Min Value: -2.006304979324341
+        Max Value: 27.832059860229492
+        Min Value: -1.2903541326522827
         Value: true
       Axis: Z
       Channel Name: reflectance
@@ -472,6 +472,71 @@ Visualization Manager:
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
+      Value: true
+    - Alpha: 0.20000000298023224
+      Autocompute Intensity Bounds: false
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 255; 0; 0
+      Color Transformer: ""
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 83
+      Min Color: 0; 0; 0
+      Min Intensity: 9
+      Name: Ref-ALS
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 1
+      Size (m): 0.10000000149011612
+      Style: Flat Squares
+      Topic: /vux_data_ref
+      Unreliable: false
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Angle Tolerance: 0.009999999776482582
+      Class: rviz/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: false
+      Enabled: true
+      Keep: 100
+      Name: Refined-vux
+      Position Tolerance: 0.0010000000474974513
+      Queue Size: 1000
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.05000000074505806
+        Color: 255; 85; 0
+        Head Length: 0
+        Head Radius: 0
+        Shaft Length: 0.05000000074505806
+        Shaft Radius: 0.05000000074505806
+        Value: Axes
+      Topic: /se3_pose
+      Unreliable: false
       Value: true
   Enabled: true
   Global Options:
@@ -501,7 +566,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 40.230224609375
+      Distance: 50.45566940307617
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -509,17 +574,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 9.098873138427734
-        Y: 28.586698532104492
-        Z: -8.871657882991713e-06
+        X: -0.037421226501464844
+        Y: 29.736177444458008
+        Z: -1.0473148904566187e-05
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9297969341278076
+      Pitch: 0.9847970008850098
       Target Frame: global
-      Yaw: 0.7403977513313293
+      Yaw: 1.1703985929489136
     Saved: ~
 Window Geometry:
   Displays:
@@ -537,5 +602,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 2772
-  X: 120
+  X: 468
   Y: 54
