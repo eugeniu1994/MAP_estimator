@@ -1166,7 +1166,7 @@ void debug_CloudWithNormals(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud_
     normals_marker.action = visualization_msgs::Marker::ADD;
     normals_marker.scale.x = 0.05; // Line width
     normals_marker.color.a = 1.0;  // Full opacity
-    double normal_length = 2.;     // 5.;     // Length of normal lines
+    double normal_length = 3.;     // 5.;     // Length of normal lines
 
     for (const auto &point : cloud_with_normals->points)
     {

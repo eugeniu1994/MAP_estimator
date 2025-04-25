@@ -85,7 +85,10 @@ for label, folder in methods.items():
         if fname.endswith('.txt'):
             file_path = os.path.join(folder, fname)
             scan_data = np.loadtxt(file_path)
+            
             valid_rows = (scan_data[:, 0] >= 0) # Filter out invalid rows (p2plane_error == -1)
+            valid_rows = ((scan_data[:, 0] >= 0) & (scan_data[:, 3] > 0.0001))            
+            
             all_data.append(scan_data[valid_rows])
 
             # scans-=1
@@ -143,8 +146,8 @@ def show_stats():
         plt.ylabel(metric_name)
         #plt.title(f'Distribution of {metric_name}')
         plt.xticks(np.arange(1, len(labels) + 1), labels)
-        plt.legend(handles=legend_handles, title="Method")
-        #plt.grid(True, linestyle='--', alpha=0.5)
+        plt.legend(handles=legend_handles, title="Method", loc='best')
+        plt.grid(False)
         plt.tight_layout()
         plt.xticks(rotation=90)
         plt.xticks([])
@@ -172,30 +175,29 @@ def show_stats():
         plt.ylabel(metric_name)
         #plt.title(f'Statistics for {metric_name}')
         plt.xticks(x, stat_keys)
-        plt.legend(title="Method")
+        plt.legend(title="Method", loc='best')
         plt.tight_layout()
-        #plt.grid(True)
+        plt.grid(False)
         plt.draw()
         #plt.show()
 
     
-    # # KDE plots for distribution
-    # print('draw KDE')
-    # for metric_name, col_idx in metrics.items():
-    #     plt.figure(figsize=(10, 5))
-    #     for label in data:
-    #         sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.5)
-    #     plt.title(f'Distribution of {metric_name}')
-    #     plt.xlabel(metric_name)
-    #     plt.ylabel("Density")
-    #     plt.legend(title="Method")
-    #     plt.grid(True)
-    #     plt.tight_layout()
-    #     plt.draw()
+    # KDE plots for distribution
+    print('draw KDE')
+    for metric_name, col_idx in metrics.items():
+        plt.figure(figsize=(10, 5))
+        for label in data:
+            sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.5)
+        plt.title(f'Distribution of {metric_name}')
+        plt.xlabel(metric_name)
+        plt.ylabel("Density")
+        plt.legend(title="Method", loc='best')
+        plt.grid(False)
+        plt.tight_layout()
+        plt.draw()
 
-    #     break
+        break
 
-    # plt.draw()
 
     # Cumulative Distribution (CDF) plots for each metric
     print('draw CDF')
@@ -209,8 +211,8 @@ def show_stats():
         #plt.title(f'Cumulative Distribution of {metric_name}')
         plt.xlabel(metric_name)
         plt.ylabel("Cumulative Probability")
-        plt.legend(title="Method")
-        #plt.grid(True)
+        plt.legend(title="Method", loc='best')
+        plt.grid(False)
         plt.tight_layout()
         plt.draw()
 
@@ -228,7 +230,7 @@ def show_correlation():
         c = colors[color_index]
         color_index += 1
         #plt.figure(figsize=(10, 6))
-        errors = d[:, 0]  # Point-to-plane error 
+        errors = d[:, 0]  # Point-to-surface error 
 
         # # Bootstrap resampling
         # bootstrap_means = np.array([
@@ -245,7 +247,7 @@ def show_correlation():
         # print(f"Mean: {mean:.4f}, 95% CI: ({lower:.4f}, {upper:.4f})")
         # print(f"Mean: {mean:.4f} ± {ci_half_width:.4f} (95% CI)")
 
-        x = d[::30, 0]  # Point-to-plane error 
+        x = d[::30, 0]  # Point-to-surface error 
         y = d[::30, 3]  # Curvature
 
         
@@ -267,8 +269,8 @@ def show_correlation():
         # #plt.title('Curvature vs Point-to-surface error')
         # plt.xlabel('Point-to-surface error')
         # plt.ylabel('Curvature')
-        # plt.legend(title="Method")
-        # #plt.grid(True)
+        # plt.legend(title="Method", loc='best')
+        # #plt.grid(False)
         # plt.tight_layout()
         # plt.draw()
 
@@ -281,8 +283,8 @@ def show_correlation():
         # Add correlation in the title or label if desired
         r = np.corrcoef(x, y)[0, 1]
         #plt.title(f'{label} (r = {r:.2f})')
-        #plt.legend(title="Method")
-        plt.xlabel('Point-to-plane error')
+        #plt.legend(title="Method", loc='best')
+        plt.xlabel('Point-to-surface error')
         plt.ylabel('Curvature')
         plt.draw()
 

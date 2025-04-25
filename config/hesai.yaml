@@ -20,7 +20,7 @@ mapping:
     det_range:   150.0
     extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic
     
-    GNSS_IMU_calibration_distance: 30 # 25 #m
+    GNSS_IMU_calibration_distance: 14 # 30 # 25 #m
     #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
     extrinsic_T: [ 0.009,  0.13,  0.09 ] #given by Teemu 
     extrinsic_R: [ 0, 1, 0,
@@ -57,7 +57,7 @@ publish:
     poseSavePath: "/media/eugeniu/T7/roamer/mls-gt/"     #where to save the trajectory
 
 eval:
-    #vux_eval_path: "/home/eugeniu/vux-georeferenced/No_refinement/hesai0/"
-    
-    vux_eval_path: "/home/eugeniu/vux_save_clouds/"
+    #vux_eval_path: "/home/eugeniu/vux-georeferenced/No_refinement/gnss-imu0/"
+    #vux_eval_path: "/home/eugeniu/vux_save_clouds/"
+    vux_eval_path: "/home/eugeniu/vux-georeferenced/No_refinement/hesai0/"
     

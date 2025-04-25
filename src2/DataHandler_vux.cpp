@@ -558,19 +558,25 @@ void DataHandler::Subscribe()
         0.9659526116, 0.1370155907, -0.2194590626;
     V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
 
-    // old - estimated w.r.t. to reprocessor map // THE EXTRINSICS FROM VUX TO VUX-IMU
-    M3D R_vux2imu;
+    //just a bad test for calibration testing
+    // R_vux2mls << -0.136285, -0.879451, -0.457906,
+    //           -0.329196, 0.476152, -0.816509,
+    //           0.934552, 0.008724, -0.355700;
+
+    // V3D t_vux2mls(1.77614194, 1.48755013, 0.69483733);
+
+
+    //  - estimated w.r.t. to reprocessor map // THE EXTRINSICS FROM VUX TO VUX-IMU
+    M3D R_vux2imu; // these we used for testing
     R_vux2imu << -0.0001486877, 0.4998181193, -0.8661303744,
         0.0006285201, 0.8661302597, 0.4998179451,
         0.9999997914, -0.0004700636, -0.0004429287;
     V3D t_vux2imu(-0.5922161686, 0.1854945762, 0.7806042559);
 
-    // THE EXTRINSICS FROM VUX TO VUX-IMU
-    // M3D R_vux2imu;
-    // R_vux2imu << -0.0044725889,  0.4990707661, -0.8665496907,
-    // 0.0029468568,  0.8665611733,  0.4990621694,
-    // 0.9999856559, -0.0003214979, -0.0053464619;
-    // V3D t_vux2imu(-0.2908325308,  0.1877922600, -0.0640568820);
+    
+    
+
+
 
     // from vux to mls init guess
     // Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(Rz, V3D::Zero()) * Sophus::SE3(R_vux2imu, t_vux2imu);
@@ -815,9 +821,9 @@ void DataHandler::Subscribe()
 #define save_vux_clouds
     for (const rosbag::MessageInstance &m : view)
     {
-        // scan_id++;
-        //  if (scan_id < 45100) // this is only for the 0 bag
-        //      continue;
+        scan_id++;
+         if (scan_id < 45100) // this is only for the 0 bag
+             continue;
 
         ros::spinOnce();
         if (flg_exit || !ros::ok())
@@ -853,13 +859,13 @@ void DataHandler::Subscribe()
 
         if (sync_packages(Measures))
         {
-            scan_id++;
-            std::cout << "scan_id:" << scan_id << std::endl;
-            if (scan_id > 1000) // 1400
-            {
-                std::cout << "Stop here... enough data" << std::endl;
-                break;
-            }
+            // scan_id++;
+            // std::cout << "scan_id:" << scan_id << std::endl;
+            // if (scan_id > 1000) // 1400
+            // {
+            //     std::cout << "Stop here... enough data" << std::endl;
+            //     break;
+            // }
 
             // hesai-mls registration
             if (perform_mls_registration)
@@ -1087,10 +1093,10 @@ void DataHandler::Subscribe()
             Sophus::SE3 als2mls = als_to_mls;
 
             // //put it back later
-            if (!gnss_obj->GNSS_extrinsic_init)
-                continue;
+            // if (!gnss_obj->GNSS_extrinsic_init)
+            //     continue;
 
-            als2mls = als_obj->als_to_mls;
+            // als2mls = als_obj->als_to_mls;
 
             if (!saved_mls2als_transform)
             {
@@ -1447,24 +1453,26 @@ void DataHandler::Subscribe()
                             Sophus::SE3 pose4georeference = als2mls * interpolated_pose_ppk * vux2imu_extrinsics; // this does not have the extrinsics for mls
 
                             // MLS pose as init guess ---- first extrinsics, then georeference  // mls pose
-                            // pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
+                            //pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
+
 
                             publish_refined_ppk_gnss(pose4georeference, cloud_time);
 
                             Sophus::SE3 T_to_be_refined = pose4georeference; // ppk-gnss
 
-                            if (false) // find the extrinsics vux 2 mls
+                            if (true) // find the extrinsics vux 2 mls
                             {
-                                // line_poses_buffer.push_back(interpolated_pose_mls); //to find extrinsics for vux 2 hesai
-                                line_poses_buffer.push_back(als2mls * interpolated_pose_ppk); // for vux to ppk-gnss - vux in local mls frame
+                                line_poses_buffer.push_back(interpolated_pose_mls); //to find extrinsics for vux 2 hesai
+                                //line_poses_buffer.push_back(als2mls * interpolated_pose_ppk); // for vux to ppk-gnss - vux in local mls frame
 
                                 lines_buffer.push_back(downsampled_line);
 
                                 std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
-                                if (lines_buffer.size() > 1500) // enough lines
+                                if (lines_buffer.size() > 3000) // enough lines
                                 {
                                     // the initial guess --CHANGE THIS ONE HERE
-                                    Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2imu, t_vux2imu); // this will be refined
+                                    //Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2imu, t_vux2imu); // this will be refined
+                                    Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2mls, t_vux2mls); // this will be refined
 
                                     // Initial guess for extrinsic transformation (Scanner -> IMU)
                                     Eigen::Quaterniond q_extrinsic(vux2other_extrinsic.so3().matrix());
@@ -1605,7 +1613,7 @@ void DataHandler::Subscribe()
                             bool debug = false;
                             bool release = false;
 
-                            bool eval = false;
+                            bool eval = false;// true;
 
                             int BA_iterations = 2; // 3;
                             if (debug)             // I AM ON THIS PART NOW
@@ -2625,6 +2633,13 @@ void DataHandler::Subscribe()
 
                                                         error = fabs((source_point - centroid).dot(norm));
 
+                                                        //change the orientation of the normals for visualization 
+                                                        Eigen::Vector3d earth_normal(0.0, 0.0, 1.0);  // ENU upward direction
+                                                        if (norm.dot(earth_normal) > 0) {
+                                                        //if (norm.dot(state_point.pos) > 0) {
+                                                            norm = -norm;
+                                                        }
+
                                                         RefPointType p;
                                                         p.x = centroid[0];
                                                         p.y = centroid[1];
@@ -2641,7 +2656,7 @@ void DataHandler::Subscribe()
 
                                         feats_undistort->points[i].intensity = error;
 
-                                        if (true)
+                                        if (false) //uncomment to save the data
                                         {
                                             std::ofstream ofs(output_file, std::ios::app); // 'app' mode to append
                                             if (!ofs.is_open())
@@ -2663,6 +2678,7 @@ void DataHandler::Subscribe()
                                     rate.sleep();
 
                                     std::cout << "Found " << good_planes->size() << "/" << feats_undistort->size() << " good_planes" << std::endl;
+                                    
                                     if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
                                         debug_CloudWithNormals(good_planes, cloud_pub, normals_pub);
                                 }
@@ -2674,7 +2690,7 @@ void DataHandler::Subscribe()
                                 if (vux_cloud_next_id > 20699)
                                 {
                                     std::cout << "THe end of the georeferenced files..." << std::endl;
-                                    throw std::runtime_error("Stop here.");
+                                    throw std::runtime_error("Stop here."); //uncomment this
                                 }
                             }
 

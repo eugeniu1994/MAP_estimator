@@ -105,19 +105,19 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-        - Alpha: 0.5
+        - Alpha: 0.6000000238418579
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 23.025266647338867
-            Min Value: -0.8154500722885132
+            Max Value: 21.655517578125
+            Min Value: -3.492093086242676
             Value: true
           Axis: Z
           Channel Name: z
           Class: rviz/PointCloud2
           Color: 255; 255; 255
-          Color Transformer: AxisColor
+          Color Transformer: Intensity
           Decay Time: 1000
-          Enabled: true
+          Enabled: false
           Invert Rainbow: true
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -132,12 +132,40 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
+        - Alpha: 0.5
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 34.27679443359375
+            Min Value: -5.95332670211792
+            Value: true
+          Axis: Z
+          Channel Name: z
+          Class: rviz/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: Intensity
+          Decay Time: 1000
+          Enabled: false
+          Invert Rainbow: true
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: Georeferenced-Hesai
+          Position Transformer: XYZ
+          Queue Size: 100000
+          Selectable: true
+          Size (Pixels): 2
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic: /cloud_registered
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 30.66175079345703
-            Min Value: -4.021385669708252
+            Max Value: 30.41697120666504
+            Min Value: -4.005991458892822
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -164,8 +192,8 @@ Visualization Manager:
         - Alpha: 0.30000001192092896
           Autocompute Intensity Bounds: false
           Autocompute Value Bounds:
-            Max Value: 10
-            Min Value: -10
+            Max Value: 77.4544448852539
+            Min Value: -6.277024745941162
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -173,7 +201,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: FlatColor
           Decay Time: 0
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Max Intensity: 83
@@ -190,7 +218,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -227,11 +255,11 @@ Visualization Manager:
             {}
           Queue Size: 100
           Value: false
-        - Alpha: 0.10000000149011612
+        - Alpha: 0.5
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 29.818973541259766
-            Min Value: -2.058032751083374
+            Max Value: 17.074674606323242
+            Min Value: -2.7451725006103516
             Value: true
           Axis: Z
           Channel Name: z
@@ -448,8 +476,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 30.789974212646484
-        Min Value: -0.6017117500305176
+        Max Value: 17.074674606323242
+        Min Value: -2.744762659072876
         Value: true
       Axis: Z
       Channel Name: reflectance
@@ -476,8 +504,8 @@ Visualization Manager:
     - Alpha: 0.10000000149011612
       Autocompute Intensity Bounds: false
       Autocompute Value Bounds:
-        Max Value: 30.405000686645508
-        Min Value: -1.9299999475479126
+        Max Value: 34.368980407714844
+        Min Value: -39.42258834838867
         Value: true
       Axis: Z
       Channel Name: intensity
@@ -485,7 +513,7 @@ Visualization Manager:
       Color: 255; 0; 0
       Color Transformer: AxisColor
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 83
@@ -502,7 +530,7 @@ Visualization Manager:
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
     - Angle Tolerance: 0.009999999776482582
       Class: rviz/Odometry
       Covariance:
@@ -520,7 +548,7 @@ Visualization Manager:
           Scale: 1
           Value: true
         Value: false
-      Enabled: true
+      Enabled: false
       Keep: 100
       Name: Refined-vux
       Position Tolerance: 0.0010000000474974513
@@ -537,7 +565,7 @@ Visualization Manager:
         Value: Axes
       Topic: /se3_pose
       Unreliable: false
-      Value: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -566,7 +594,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 118.70620727539062
+      Distance: 110.6890640258789
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -574,24 +602,24 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 19.52949333190918
-        Y: 64.1895751953125
-        Z: -2.3023276298772544e-05
+        X: 8.23844051361084
+        Y: 45.720436096191406
+        Z: -9.489617696090136e-06
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.0997968912124634
+      Pitch: 1.1297967433929443
       Target Frame: global
-      Yaw: 1.1253985166549683
+      Yaw: 1.4254016876220703
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
   Height: 2025
   Hide Left Dock: false
-  Hide Right Dock: false
+  Hide Right Dock: true
   QMainWindow State: 000000ff00000000fd000000040000000000000315000006e3fc020000000dfb0000001200530065006c0065006300740069006f006e00000001e10000009b000000b000fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000b0fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000006e000006e30000018200fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000000a0049006d0061006700650000000297000001dc0000000000000000fb0000000a0049006d0061006700650000000394000001600000000000000000fb0000000a0049006d00610067006501000002c5000000c70000000000000000fb0000000a0049006d00610067006501000002c5000000c70000000000000000fb0000000a0049006d00610067006501000002c5000000c700000000000000000000000100000220000006e3fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000006e000006e30000013200fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e1000001970000000300000ad40000005efc0100000002fb0000000800540069006d0065010000000000000ad4000006dc00fffffffb0000000800540069006d00650100000000000004500000000000000000000007b3000006e300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
@@ -600,7 +628,7 @@ Window Geometry:
   Tool Properties:
     collapsed: false
   Views:
-    collapsed: false
+    collapsed: true
   Width: 2772
   X: 202
   Y: 54
