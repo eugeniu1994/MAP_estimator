@@ -220,6 +220,7 @@ public:
         nh.param<std::string>("als/postprocessed_gnss_path", postprocessed_gnss_path, "");
 
 #ifdef SAVE_DATA
+        std::cout<<"Built with save mode on..."<<std::endl;
         nh.param<bool>("publish/save_clouds", save_clouds, false);
         nh.param<bool>("publish/save_clouds_local", save_clouds_local, false);
         if (save_clouds)
@@ -235,6 +236,7 @@ public:
                 std::cout << "\033[32mSave the clouds:\033[0m" << save_clouds_path << std::endl;
             }
         }
+        
         nh.param<bool>("publish/save_poses", save_poses, false);
         if(save_poses)
         {
@@ -246,7 +248,17 @@ public:
             }
             else
             {
-                std::cout << "\033[32mSave the poses:\033[0m" << poseSavePath << std::endl;
+                // Check if directory exists
+                struct stat info;
+                if (stat(poseSavePath.c_str(), &info) != 0 || !(info.st_mode & S_IFDIR))
+                {
+                    save_poses = false;
+                    std::cout << "\033[31mDirectory does not exist: " << poseSavePath << "\033[0m" << std::endl;
+                }
+                else
+                {
+                    std::cout << "\033[32mSave the poses to: " << poseSavePath << "\033[0m" << std::endl;
+                }
             }
         }
 #endif

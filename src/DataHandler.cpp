@@ -668,6 +668,13 @@ void DataHandler::BagHandler()
             //seq 01 - scan_id <=
             //seq 00 - scan_id <=
 
+            std::cout << "scan_id:" << scan_id << std::endl;
+            // if (scan_id > 1000) // 1400
+            // {
+            //     std::cout << "Stop here... enough data" << std::endl;
+            //     break;
+            // }
+
             std::cout<<"scan_id:"<<scan_id<<", travelled_distance:"<<travelled_distance<<std::endl;
 
             std::cout << "\nIMU:" << imu_buffer.size() << ", GPS:" << gps_buffer.size() << ", LiDAR:" << lidar_buffer.size() << std::endl;
@@ -1058,7 +1065,7 @@ void DataHandler::BagHandler()
                     // foutMLS.setf(std::ios::scientific, std::ios::floatfield);
                     foutMLS.setf(std::ios::fixed, std::ios::floatfield);
                     foutMLS.precision(20);
-                    // # ' id tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds, translation and rotation quaternion)
+                    // # ' id time tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds, translation and rotation quaternion)
                     foutMLS << pcd_index << " " << std::to_string(lidar_end_time) << " " << t_model(0) << " " << t_model(1) << " " << t_model(2) << " "
                     << q_model.x() << " " << q_model.y() << " " << q_model.z() << " " << q_model.w() << std::endl;
                     foutMLS.close();

@@ -4,28 +4,39 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import linregress
 import matplotlib.patches as mpatches
+import re
 
 colors = ['lightblue', 'lightgoldenrodyellow', 'skyblue', 'lightcoral', 'lightgreen', 'khaki', 'plum', 'lightgray', 'orange', 'skyblue', 'lightcoral']
 colors = ['tab:blue', 'tab:orange', 'tab:red', 'tab:purple', 'tab:cyan', 'tab:brown', 'skyblue', 'lightgoldenrodyellow', ]
 
+font = 18
 
-plt.rcParams.update({'font.size': 16})
+
+plt.rcParams.update({'font.size': font})
 sns.set(style="whitegrid")
-sns.set_context("notebook", font_scale=1.3)  # 1.6 × base font size (~10 by default)
+sns.set_context("notebook", font_scale=1.4)  # 1.6 × base font size (~10 by default)
 
 # p2plane error, furtherst_d, closest_d, curvature, neighbours in a radius ball 
 methods = {
-    'GNSS-IMU 0': '/home/eugeniu/vux-georeferenced/No_refinement/gnss-imu0/surface-eval',
-    'GNSS-IMU 1': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu1/surface-eval",
-    'GNSS-IMU 2': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu2/surface-eval",
-    'GNSS-IMU 3': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu3/surface-eval",
+    # 'GNSS-IMU 0': '/home/eugeniu/vux-georeferenced/No_refinement/gnss-imu0/surface-eval',
+    # 'GNSS-IMU 1': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu1/surface-eval",
+    # 'GNSS-IMU 2': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu2/surface-eval",
+    # 'GNSS-IMU 3': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu3/surface-eval",
 
-    'Hesai 0': '/home/eugeniu/vux-georeferenced/No_refinement/hesai0/surface-eval',
-    'Hesai 1': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai1/surface-eval",
-    'Hesai 2': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai2/surface-eval",
-    'Hesai 3': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai3/surface-eval",
+    # 'Hesai 0': '/home/eugeniu/vux-georeferenced/No_refinement/hesai0/surface-eval',
+    # 'Hesai 1': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai1/surface-eval",
+    # 'Hesai 2': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai2/surface-eval",
+    # 'Hesai 3': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai3/surface-eval",
     
+    'GNSS-IMU 0_': '/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu0/surface-eval2',
+    'GNSS-IMU 1_': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu1/surface-eval2",
+    'GNSS-IMU 2_': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu2/surface-eval2",
+    'GNSS-IMU 3_': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu3/surface-eval2",
 
+    'Hesai 0': '/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai0/surface-eval2',
+    'Hesai 1': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai1/surface-eval2",
+    'Hesai 2': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai2/surface-eval2",
+    'Hesai 3': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai3/surface-eval2",
 
 
     
@@ -77,16 +88,24 @@ WE STICK WITH 2BA METHOD
 n_bootstrap = 10000
 rng = np.random.default_rng(seed=42)  # reproducible
 
+
+def natural_sort_key(path):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', os.path.splitext(path)[0])]
+
 data = {}
 for label, folder in methods.items():
     all_data = []
     scans = 500
-    for fname in sorted(os.listdir(folder)):
+
+    all_files = sorted(os.listdir(folder), key=natural_sort_key)
+        
+    for fname in all_files: # sorted(os.listdir(folder)):
         if fname.endswith('.txt'):
             file_path = os.path.join(folder, fname)
+            #print('file_path:',file_path)
             scan_data = np.loadtxt(file_path)
             
-            valid_rows = (scan_data[:, 0] >= 0) # Filter out invalid rows (p2plane_error == -1)
+            #valid_rows = (scan_data[:, 0] >= 0) # Filter out invalid rows (p2plane_error == -1)
             valid_rows = ((scan_data[:, 0] >= 0) & (scan_data[:, 3] > 0.0001))            
             
             all_data.append(scan_data[valid_rows])
@@ -117,6 +136,7 @@ def compute_stats(arr):
 def show_stats():
     print('\nshow_stats')
 
+    first_got_legend = False
     print('draw box plots')
     for metric_name, col_idx in metrics.items():
         plt.figure(figsize=(10, 6))
@@ -151,6 +171,12 @@ def show_stats():
         plt.tight_layout()
         plt.xticks(rotation=90)
         plt.xticks([])
+        if first_got_legend:
+            plt.legend().set_visible(False)
+            
+            
+        first_got_legend = True
+
         plt.draw()
 
         #break
@@ -158,6 +184,7 @@ def show_stats():
     plt.draw()
 
     print('draw bar plots')
+    
     for metric_name, col_idx in metrics.items():
         plt.figure(figsize=(10, 6))
 
@@ -175,28 +202,45 @@ def show_stats():
         plt.ylabel(metric_name)
         #plt.title(f'Statistics for {metric_name}')
         plt.xticks(x, stat_keys)
+        print('first_got_legend ',first_got_legend)
         plt.legend(title="Method", loc='best')
+
+        
         plt.tight_layout()
         plt.grid(False)
+        
+
         plt.draw()
         #plt.show()
 
     
-    # KDE plots for distribution
-    print('draw KDE')
-    for metric_name, col_idx in metrics.items():
-        plt.figure(figsize=(10, 5))
-        for label in data:
-            sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.5)
-        plt.title(f'Distribution of {metric_name}')
-        plt.xlabel(metric_name)
-        plt.ylabel("Density")
-        plt.legend(title="Method", loc='best')
-        plt.grid(False)
-        plt.tight_layout()
-        plt.draw()
+    # for label in data:
+    #     plt.figure(figsize=(10, 6))
+    #     #values = np.sort(data[label][:, col_idx])
+    #     values = data[label][:, 0]
 
-        break
+    #     cdf = np.linspace(0, 1, len(values))
+    #     plt.scatter(cdf, values, s=1, alpha=0.5, label=label)
+    #     plt.legend(title="Method", loc='best')
+    #     plt.title(f'Point to plane errorors for {metric_name}')
+    #     plt.draw()
+
+    
+    # KDE plots for distribution
+    # print('draw KDE')
+    # for metric_name, col_idx in metrics.items():
+    #     plt.figure(figsize=(10, 5))
+    #     for label in data:
+    #         sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.5)
+    #     plt.title(f'Distribution of {metric_name}')
+    #     plt.xlabel(metric_name)
+    #     plt.ylabel("Density")
+    #     plt.legend(title="Method", loc='best')
+    #     plt.grid(False)
+    #     plt.tight_layout()
+    #     plt.draw()
+
+    #     break
 
 
     # Cumulative Distribution (CDF) plots for each metric

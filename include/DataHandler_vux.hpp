@@ -131,7 +131,7 @@ public:
 
     LiDAR_Type lidar_type = DataHandler::Hesai; // Member variable to hold the LIDAR type
     std::string bag_file = "";
-    std::string vux_eval_path = "";
+    std::string vux_eval_path = "", tree_file = "";
 
     template <typename T>
     void set_posestamp(T &out)
@@ -225,6 +225,8 @@ public:
         nh.param<std::string>("als/postprocessed_gnss_path", postprocessed_gnss_path, "");
 
         nh.param<std::string>("eval/vux_eval_path", vux_eval_path, "");
+        nh.param<std::string>("eval/tree_file", tree_file, "");
+
 #ifdef SAVE_DATA
         nh.param<bool>("publish/save_clouds", save_clouds, false);
         nh.param<bool>("publish/save_clouds_local", save_clouds_local, false);
@@ -241,6 +243,7 @@ public:
                 std::cout << "\033[32mSave the clouds:\033[0m" << save_clouds_path << std::endl;
             }
         }
+        
         nh.param<bool>("publish/save_poses", save_poses, false);
         if(save_poses)
         {
@@ -252,7 +255,17 @@ public:
             }
             else
             {
-                std::cout << "\033[32mSave the poses:\033[0m" << poseSavePath << std::endl;
+                // Check if directory exists
+                struct stat info;
+                if (stat(poseSavePath.c_str(), &info) != 0 || !(info.st_mode & S_IFDIR))
+                {
+                    save_poses = false;
+                    std::cout << "\033[31mDirectory does not exist: " << poseSavePath << "\033[0m" << std::endl;
+                }
+                else
+                {
+                    std::cout << "\033[32mSave the poses to: " << poseSavePath << "\033[0m" << std::endl;
+                }
             }
         }
 #endif

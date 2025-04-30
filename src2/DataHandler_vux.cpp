@@ -59,7 +59,7 @@ void publishPointCloud_vux(pcl::PointCloud<VUX_PointType>::Ptr &cloud, const ros
     if (point_cloud_pub.getNumSubscribers() == 0)
     {
         return;
-    }   
+    }
 
     if (cloud->empty())
     {
@@ -413,6 +413,136 @@ Sophus::SE3 interpolateSE3(const Sophus::SE3 &pose1, const double time1,
 #include <pcl/features/normal_3d.h>
 #include <pcl/features/normal_3d_omp.h>
 
+struct Tree_
+{
+    double x; // East
+    double y; // North
+    double z; // Ground level (can be 0)
+    V3D pos;
+    double dbh; // In meters
+};
+
+std::vector<Tree_> readTreeFile(const std::string &filename, const Sophus::SE3 &als2mls)
+{
+    std::vector<Tree_> trees;
+    std::ifstream file(filename);
+
+    std::string line;
+    int line_count = 0;
+
+    while (std::getline(file, line))
+    {
+        if (++line_count <= 2)
+            continue; // skip headers
+
+        std::istringstream iss(line);
+        int ws_label, index;
+        double x, y, dbh_cm;
+
+        // Skip unused columns
+        double skip1, skip2, skip3, skip4, skip5, skip6;
+
+        if (!(iss >> ws_label >> index >> x >> y >> dbh_cm >> skip1 >> skip2 >> skip3 >> skip4 >> skip5))
+            continue;
+
+        Tree_ t;
+        t.x = x;
+        t.y = y;
+        t.z = 0.0; // Optional, if ground-based
+        t.pos = V3D(x, y, 0);
+        t.dbh = dbh_cm / 100.0;
+
+        t.dbh *= 3;
+
+        std::cout << "\n before:"<< t.x << ", " << t.y << ", " << t.dbh << std::endl;
+
+        if (true) // put in mls
+        {
+            t.pos = als2mls * t.pos;
+            t.x = t.pos[0];
+            t.y = t.pos[1];
+        }
+
+        trees.push_back(t);
+        std::cout << "\n after:"<< t.x << ", " << t.y << ", " << t.dbh << std::endl;
+    }
+
+    return trees;
+}
+
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
+
+void publishMarkers(const std::vector<Tree_> &trees, ros::Publisher &pub, ros::Publisher &cloudPub)
+{
+    // Define point cloud
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    cloud->height = 1;
+
+    for (size_t i = 0; i < trees.size(); ++i)
+    {
+        visualization_msgs::Marker marker;
+
+        // Marker header (CRITICAL: use current time and correct frame_id)
+        marker.header.frame_id = "world";
+        marker.header.stamp = ros::Time::now();
+
+        // Unique namespace and ID for each tree
+        marker.ns = "trees";
+        marker.id = i; // Must be unique per marker
+
+        // Marker type (CYLINDER for tree trunks)
+        marker.type = visualization_msgs::Marker::CYLINDER;
+        marker.action = visualization_msgs::Marker::ADD;
+
+        marker.pose.position.x = trees[i].x;
+        marker.pose.position.y = trees[i].y;
+        marker.pose.position.z = trees[i].z + 0.5; 
+
+        // Orientation (identity quaternion for upright cylinders)
+        marker.pose.orientation.w = 1.0;
+
+        // Scale (dbh is diameter, so use for x/y dimensions)
+        marker.scale.x = trees[i].dbh; // Diameter (x-axis)
+        marker.scale.y = trees[i].dbh; // Diameter (y-axis)
+        marker.scale.z = .5;          // Height (z-axis)
+
+        // Color (green for trees)
+        marker.color.r = 0.0;
+        marker.color.g = 1.0;
+        marker.color.b = 0.0;
+        marker.color.a = 1.0;// 0.8; // Slightly transparent
+
+        // Marker lifetime (0 means never auto-delete)
+        marker.lifetime = ros::Duration();
+
+        // Publish the marker
+        pub.publish(marker);
+
+        // Small delay to ensure RViz processes each marker
+        ros::Duration(0.01).sleep();
+
+        pcl::PointXYZ pt;
+        pt.x = trees[i].x;
+        pt.y = trees[i].y;
+        pt.z = trees[i].z + 1.; 
+        cloud->points.push_back(pt);
+    }
+    std::cout << "published trees: " << trees.size() << std::endl;
+    // if (pub.getNumSubscribers() != 0)
+    // {
+    //     pub.publish(marker);
+    //
+    // }
+    cloud->width = cloud->points.size();
+
+    sensor_msgs::PointCloud2 cloud_msg;
+    pcl::toROSMsg(*cloud, cloud_msg);
+    cloud_msg.header.stamp = ros::Time::now();
+    cloud_msg.header.frame_id = "world";
+    cloudPub.publish(cloud_msg);
+}
+
 void DataHandler::Subscribe()
 {
     std::cout << "Subscribe" << std::endl;
@@ -558,13 +688,12 @@ void DataHandler::Subscribe()
         0.9659526116, 0.1370155907, -0.2194590626;
     V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
 
-    //just a bad test for calibration testing
-    // R_vux2mls << -0.136285, -0.879451, -0.457906,
-    //           -0.329196, 0.476152, -0.816509,
-    //           0.934552, 0.008724, -0.355700;
+    // just a bad test for calibration testing
+    //  R_vux2mls << -0.136285, -0.879451, -0.457906,
+    //            -0.329196, 0.476152, -0.816509,
+    //            0.934552, 0.008724, -0.355700;
 
     // V3D t_vux2mls(1.77614194, 1.48755013, 0.69483733);
-
 
     //  - estimated w.r.t. to reprocessor map // THE EXTRINSICS FROM VUX TO VUX-IMU
     M3D R_vux2imu; // these we used for testing
@@ -572,11 +701,6 @@ void DataHandler::Subscribe()
         0.0006285201, 0.8661302597, 0.4998179451,
         0.9999997914, -0.0004700636, -0.0004429287;
     V3D t_vux2imu(-0.5922161686, 0.1854945762, 0.7806042559);
-
-    
-    
-
-
 
     // from vux to mls init guess
     // Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(Rz, V3D::Zero()) * Sophus::SE3(R_vux2imu, t_vux2imu);
@@ -818,12 +942,31 @@ void DataHandler::Subscribe()
 
     // return ; //------------------------------------------------------------
 
+    std::vector<Tree_> trees;
+    ros::Publisher pub_trees = nh.advertise<visualization_msgs::Marker>("tree_markers", 10);
+    ros::Publisher pub_tree_center = nh.advertise<sensor_msgs::PointCloud2>("tree_center", 10);
+
+    bool load_trees = true;
+
+    Eigen::Matrix3d R_mls2als;
+    R_mls2als << -0.7835042222,  0.6210372458,  0.0208296231,
+         -0.6213649391, -0.7833157670, -0.0179449592,
+          0.0051716842, -0.0270027488,  0.9996219812;
+
+    Eigen::Vector3d t_mls2als(398269.3431620710,
+                      6786162.6317833420,
+                      150.9315546684);
+
+    Sophus::SE3 T_mls2als(R_mls2als, t_mls2als);  // Construct the SE3 transformation
+    //T_mls2als = T_mls2als.inverse();
+
+
 #define save_vux_clouds
     for (const rosbag::MessageInstance &m : view)
     {
-        scan_id++;
-         if (scan_id < 45100) // this is only for the 0 bag
-             continue;
+        // scan_id++;
+        //  if (scan_id < 45100) // this is only for the 0 bag
+        //      continue;
 
         ros::spinOnce();
         if (flg_exit || !ros::ok())
@@ -859,13 +1002,13 @@ void DataHandler::Subscribe()
 
         if (sync_packages(Measures))
         {
-            // scan_id++;
-            // std::cout << "scan_id:" << scan_id << std::endl;
-            // if (scan_id > 1000) // 1400
-            // {
-            //     std::cout << "Stop here... enough data" << std::endl;
-            //     break;
-            // }
+            scan_id++;
+            std::cout << "scan_id:" << scan_id << std::endl;
+            if (scan_id > 1310) // 1000 before tests done with 1000
+            {
+                std::cout << "Stop here... enough data" << std::endl;
+                break;
+            }
 
             // hesai-mls registration
             if (perform_mls_registration)
@@ -1093,10 +1236,45 @@ void DataHandler::Subscribe()
             Sophus::SE3 als2mls = als_to_mls;
 
             // //put it back later
-            // if (!gnss_obj->GNSS_extrinsic_init)
-            //     continue;
+            if (!gnss_obj->GNSS_extrinsic_init)
+                continue;
 
-            // als2mls = als_obj->als_to_mls;
+            als2mls = als_obj->als_to_mls;
+
+            if (load_trees)
+            {
+                load_trees = false;
+                //trees = readTreeFile(tree_file, als2mls);
+                trees = readTreeFile(tree_file, T_mls2als.inverse());
+                
+
+                // Tree_ t1;
+                // t1.x = 1.0;
+                // t1.y = 25.0;
+                // t1.z = 0;
+                // t1.dbh = 4.3;
+                // trees.push_back(t1);
+                // Tree_ t2;
+                // t2.x = 5.0;
+                // t2.y = 10.0;
+                // t2.z = 0;
+                // t2.dbh = 5.3;
+                // trees.push_back(t2);
+                // Tree_ t3;
+                // t3.x = 20.0;
+                // t3.y = 3.0;
+                // t3.z = 0;
+                // t3.dbh = 4.3;
+                // trees.push_back(t3);
+
+                std::cout << "trees:" << trees.size() << std::endl;
+                const auto &first_tree = trees[0];
+                std::cout << "first_tree:" << first_tree.x << ", " << first_tree.y;
+
+                publishMarkers(trees, pub_trees, pub_tree_center);
+                ros::spinOnce();
+                rate.sleep();
+            }
 
             if (!saved_mls2als_transform)
             {
@@ -1286,13 +1464,17 @@ void DataHandler::Subscribe()
                 curr_mls = Sophus::SE3(state_point.rot, state_point.pos);
                 curr_mls_time = time_of_day_sec;
 
-                if (do_once && false) //&& false
+                if (do_once) //&& false
                 {
-                    if (false) // this will load the reprocessor generated map
+                    if (true) // this will load the reprocessor generated map
                     {
                         do_once = false;
                         // work with sensor B
                         std::string f1 = "/media/eugeniu/T7/roamer/09_Export/VUX-1HA-22-2022-B/240725_092351_v12.las";
+
+                        //our example of generated vux
+                        f1 = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_1/segment_1.las";
+
                         std::istream *ifs = liblas::Open(f1, std::ios::in | std::ios::binary);
                         if (!ifs)
                         {
@@ -1325,7 +1507,7 @@ void DataHandler::Subscribe()
                             liblas::Point const &p = reader.GetPoint();
 
                             // V3D cloudPoint = V3D(p.GetX(), p.GetY(), p.GetZ()) - offset_;
-                            V3D cloudPoint = als_to_mls * V3D(p.GetX(), p.GetY(), p.GetZ()); // align to als
+                            V3D cloudPoint = als2mls * V3D(p.GetX(), p.GetY(), p.GetZ()); // align to als
 
                             if (cloudPoint.squaredNorm() > max_length)
                                 continue;
@@ -1413,8 +1595,6 @@ void DataHandler::Subscribe()
                     tmp_index++;
                     rate.sleep();
 
-                    // continue; // remove this later
-
                     while (readVUX.next(next_line))
                     {
                         if (flg_exit || !ros::ok())
@@ -1453,17 +1633,16 @@ void DataHandler::Subscribe()
                             Sophus::SE3 pose4georeference = als2mls * interpolated_pose_ppk * vux2imu_extrinsics; // this does not have the extrinsics for mls
 
                             // MLS pose as init guess ---- first extrinsics, then georeference  // mls pose
-                            //pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
-
+                            pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
 
                             publish_refined_ppk_gnss(pose4georeference, cloud_time);
 
                             Sophus::SE3 T_to_be_refined = pose4georeference; // ppk-gnss
 
-                            if (true) // find the extrinsics vux 2 mls
+                            if (false) // find the extrinsics vux 2 mls
                             {
-                                line_poses_buffer.push_back(interpolated_pose_mls); //to find extrinsics for vux 2 hesai
-                                //line_poses_buffer.push_back(als2mls * interpolated_pose_ppk); // for vux to ppk-gnss - vux in local mls frame
+                                line_poses_buffer.push_back(interpolated_pose_mls); // to find extrinsics for vux 2 hesai
+                                // line_poses_buffer.push_back(als2mls * interpolated_pose_ppk); // for vux to ppk-gnss - vux in local mls frame
 
                                 lines_buffer.push_back(downsampled_line);
 
@@ -1471,7 +1650,7 @@ void DataHandler::Subscribe()
                                 if (lines_buffer.size() > 3000) // enough lines
                                 {
                                     // the initial guess --CHANGE THIS ONE HERE
-                                    //Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2imu, t_vux2imu); // this will be refined
+                                    // Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2imu, t_vux2imu); // this will be refined
                                     Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_vux2mls, t_vux2mls); // this will be refined
 
                                     // Initial guess for extrinsic transformation (Scanner -> IMU)
@@ -1613,7 +1792,7 @@ void DataHandler::Subscribe()
                             bool debug = false;
                             bool release = false;
 
-                            bool eval = false;// true;
+                            bool eval = true;
 
                             int BA_iterations = 2; // 3;
                             if (debug)             // I AM ON THIS PART NOW
@@ -2116,6 +2295,10 @@ void DataHandler::Subscribe()
 
                             if (release) // I AM ON THIS PART NOW
                             {
+                                // std::string filename = "/home/eugeniu/vux_save_clouds/vux_" + std::to_string(vux_cloud_id) + "_cloud.pcd";
+                                // std::string filename = "/home/eugeniu/vux_save_clouds/vux_" + std::to_string(vux_cloud_id) + "_cloud.pcd";
+                                std::string filename = "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/test/vux_" + std::to_string(vux_cloud_id) + "_cloud.pcd";
+
                                 if (!refine_init)
                                 {
                                     for (int i = 0; i < next_line->size(); i++) // for each point in the line
@@ -2133,7 +2316,6 @@ void DataHandler::Subscribe()
 
                                     if (save_georeferenced_vux)
                                     { // if (save_clouds)
-                                        std::string filename = "/home/eugeniu/vux_save_clouds/vux_" + std::to_string(vux_cloud_id) + "_cloud.pcd";
 
                                         pcl::io::savePCDFile(filename, *next_line, true); // Binary format
 
@@ -2336,7 +2518,6 @@ void DataHandler::Subscribe()
                                             // option to save the line and trajectory here - TODO
                                             if (save_georeferenced_vux)
                                             { // if (save_clouds)
-                                                std::string filename = "/home/eugeniu/vux_save_clouds/vux_" + std::to_string(vux_cloud_id) + "_cloud.pcd";
 
                                                 pcl::io::savePCDFile(filename, *original_line, true); // Binary format
 
@@ -2395,7 +2576,7 @@ void DataHandler::Subscribe()
                             {
                                 {
                                     std::string input_file = vux_eval_path + "vux_" + std::to_string(vux_cloud_next_id) + "_cloud.pcd";
-                                    std::string output_file = vux_eval_path + "surface-eval/vux_surf_eval_" + std::to_string(vux_cloud_next_id) + ".txt"; // this file will contain the evaluation of all the scans
+                                    std::string output_file = vux_eval_path + "surface-eval2/vux_surf_eval_" + std::to_string(vux_cloud_next_id) + ".txt"; // this file will contain the evaluation of all the scans
 
                                     pcl::PointCloud<VUX_PointType> cloud;
                                     if (pcl::io::loadPCDFile<VUX_PointType>(input_file, cloud) == -1)
@@ -2427,270 +2608,280 @@ void DataHandler::Subscribe()
                                     feats_undistort->is_dense = down_cloud->is_dense;
                                     // if (point_cloud_pub_reference.getNumSubscribers() != 0)
 
-                                    RefPointCloudXYZINormal::Ptr good_planes(new RefPointCloudXYZINormal());
-                                    if (!als_ref->initted_)
-                                        als_ref->init(als2mls);
-
-                                    if (als_ref->Update(Sophus::SE3(state_point.rot, state_point.pos)))
-                                    {
-                                        als_ref->getCloud(downsampled_als_cloud);
-                                        vux_kdtree->setInputCloud(downsampled_als_cloud);
-                                        publishPointCloud(downsampled_als_cloud, point_cloud_pub_reference); // original density
-
-                                        /*als_ref->computePlanes(.5, .05, 5); // this will create the planes
-
-                                        const std::vector<PlanePrimitive> &stable_planes = als_ref->stable_planes;
-                                        pcl::PointCloud<PointType>::Ptr plane_centers(new pcl::PointCloud<PointType>);
-                                        for (const auto &p : stable_planes)
-                                        {
-                                            PointType point;
-                                            point.x = p.centroid.x();
-                                            point.y = p.centroid.y();
-                                            point.z = p.centroid.z();
-                                            point.intensity = 0;
-                                            point.time = 0;
-
-                                            plane_centers->push_back(point);
-
-                                            RefPointType pl;
-                                            pl.x = p.centroid[0];
-                                            pl.y = p.centroid[1];
-                                            pl.z = p.centroid[2];
-                                            pl.normal_x = p.normal[0];
-                                            pl.normal_y = p.normal[1];
-                                            pl.normal_z = p.normal[2];
-                                            pl.curvature = p.curvature;
-                                            good_planes->push_back(pl);
-                                        }
-                                        std::cout << "plane_centers:" << plane_centers->size();
-                                        // Build kd-tree from centroids of stable planes
-                                        plane_tree.setInputCloud(plane_centers);
-
-                                        //publishPointCloud(plane_centers, point_cloud_pub_reference);
-
-                                        //debug_CloudWithNormals(good_planes, cloud_pub, normals_pub);
-
-                                        //std::cout << "Show ref map, press enter..." << std::endl;
-                                        //std::cin.get();*/
-                                    }
-
-                                    double good_plan = .2;
-
-                                    bool use_prebuilt_planes = false;
-                                    // const std::vector<PlanePrimitive> &stable_planes = als_ref->stable_planes;
-
-                                    float radius = 1.0; // for NN planes
-
-                                    for (int i = 0; i < feats_undistort->size(); i++)
-                                    {
-                                        const auto &search_point = feats_undistort->points[i];
-
-                                        double error = -1; // means no neighbours found for this point
-                                        double furtherst_d = -1, closest_d = -1;
-                                        float curvature = -1; // curvature of the NN plane
-                                        int neighbours = -1;
-
-                                        V3D source_point(search_point.x, search_point.y, search_point.z);
-                                        std::vector<int> point_idx;    //(neighbours);
-                                        std::vector<float> point_dist; //(neighbours);
-
-                                        if (use_prebuilt_planes)
-                                        {
-                                            // if (plane_tree.nearestKSearch(search_point, 1, point_idx, point_dist) > 0)
-                                            // {
-                                            //     if (point_dist[0] > 4)
-                                            //     {
-                                            //         const auto &plane = stable_planes[point_idx[0]];
-                                            //         error = fabs((source_point - plane.centroid).dot(plane.normal));
-
-                                            //         RefPointType p;
-                                            //         p.x = plane.centroid[0];
-                                            //         p.y = plane.centroid[1];
-                                            //         p.z = plane.centroid[2];
-                                            //         p.normal_x = plane.normal[0];
-                                            //         p.normal_y = plane.normal[1];
-                                            //         p.normal_z = plane.normal[2];
-                                            //         p.curvature = error;
-                                            //         good_planes->push_back(p);
-                                            //     }
-                                            // }
-                                        }
-                                        else
-                                        {
-                                            // if (vux_kdtree->nearestKSearch(search_point, neighbours, point_idx, point_dist) > 0) //the data is sparse
-                                            if (vux_kdtree->radiusSearch(search_point, radius, point_idx, point_dist) >= 5)
-                                            {
-                                                closest_d = sqrt(point_dist.front());
-                                                furtherst_d = sqrt(point_dist.back());
-
-                                                neighbours = point_idx.size();
-
-                                                // if (point_dist[4] < radius)
-                                                if (false)
-                                                {
-                                                    V3D target_point(downsampled_als_cloud->points[point_idx[0]].x,
-                                                                     downsampled_als_cloud->points[point_idx[0]].y, downsampled_als_cloud->points[point_idx[0]].z);
-
-                                                    Eigen::Matrix<double, Eigen::Dynamic, 3> matA0(neighbours, 3);
-                                                    Eigen::Matrix<double, Eigen::Dynamic, 1> matB0 = -1.0 * Eigen::Matrix<double, Eigen::Dynamic, 1>::Ones(neighbours);
-
-                                                    for (int j = 0; j < neighbours; j++)
-                                                    {
-                                                        matA0(j, 0) = downsampled_als_cloud->points[point_idx[j]].x;
-                                                        matA0(j, 1) = downsampled_als_cloud->points[point_idx[j]].y;
-                                                        matA0(j, 2) = downsampled_als_cloud->points[point_idx[j]].z;
-                                                    }
-                                                    V3D norm = matA0.colPivHouseholderQr().solve(matB0);
-                                                    double negative_OA_dot_norm = 1 / norm.norm();
-                                                    norm.normalize();
-
-                                                    bool planeValid = true;
-                                                    for (int j = 0; j < neighbours; j++)
-                                                    {
-                                                        if (fabs(norm(0) * downsampled_als_cloud->points[point_idx[j]].x +
-                                                                 norm(1) * downsampled_als_cloud->points[point_idx[j]].y +
-                                                                 norm(2) * downsampled_als_cloud->points[point_idx[j]].z + negative_OA_dot_norm) > good_plan)
-                                                        {
-                                                            planeValid = false;
-                                                            break;
-                                                        }
-                                                    }
-                                                    if (planeValid)
-                                                    {
-                                                        error = fabs((source_point - target_point).dot(norm));
-
-                                                        RefPointType p;
-                                                        p.x = downsampled_als_cloud->points[point_idx[0]].x;
-                                                        p.y = downsampled_als_cloud->points[point_idx[0]].y;
-                                                        p.z = downsampled_als_cloud->points[point_idx[0]].z;
-                                                        p.normal_x = norm(0);
-                                                        p.normal_y = norm(1);
-                                                        p.normal_z = norm(2);
-                                                        p.curvature = error;
-                                                        // p.time = n10.curvature;
-                                                        good_planes->push_back(p);
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    // pcl::PointCloud<PointType>::Ptr neighborhood_cloud(new pcl::PointCloud<PointType>);
-                                                    // for (int j = 0; j < neighbours; j++)
-                                                    // {
-                                                    //     neighborhood_cloud->points.push_back(downsampled_als_cloud->points[point_idx[j]]);
-                                                    // }
-                                                    // Eigen::Matrix3f cov;
-                                                    // Eigen::Vector4f centroid;
-                                                    // pcl::computeMeanAndCovarianceMatrix(*neighborhood_cloud, cov, centroid);
-
-                                                    // Fit plane using PCA --------------------------
-                                                    V3D centroid = V3D::Zero();
-                                                    for (int j = 0; j < neighbours; j++)
-                                                    {
-                                                        centroid += V3D(downsampled_als_cloud->points[point_idx[j]].x, downsampled_als_cloud->points[point_idx[j]].y, downsampled_als_cloud->points[point_idx[j]].z);
-                                                    }
-                                                    centroid /= static_cast<double>(neighbours);
-
-                                                    M3D cov = M3D::Zero();
-                                                    for (int j = 0; j < neighbours; j++)
-                                                    {
-                                                        V3D centered_pt = V3D(downsampled_als_cloud->points[point_idx[j]].x, downsampled_als_cloud->points[point_idx[j]].y, downsampled_als_cloud->points[point_idx[j]].z) - centroid;
-                                                        cov += centered_pt * centered_pt.transpose(); // Outer product
-                                                    }
-                                                    cov /= static_cast<double>(neighbours); // Normalize by number of points
-
-                                                    Eigen::SelfAdjointEigenSolver<M3D> eigen_solver(cov);
-                                                    V3D norm = eigen_solver.eigenvectors().col(0); // norm = smallest eigenvalue direction
-                                                    norm.normalize();
-
-                                                    double lambda0 = eigen_solver.eigenvalues()[0];
-                                                    double lambda1 = eigen_solver.eigenvalues()[1];
-                                                    double lambda2 = eigen_solver.eigenvalues()[2];
-                                                    curvature = lambda0 / (lambda0 + lambda1 + lambda2);
-
-                                                    // Check for invalid or degenerate cases
-                                                    if (lambda0 < 0 || (lambda0 + lambda1 + lambda2) < 1e-6)
-                                                    {
-                                                        std::cerr << "Degenerate covariance matrix (maybe zero variation). Skipping...\n";
-                                                        std::cerr << "curvature is : " << curvature << std::endl;
-                                                        std::cout << "lambda0:" << lambda0 << ", lambda1:" << lambda1 << ", lambda2:" << lambda2 << std::endl;
-                                                        // throw std::runtime_error("Handle this...");
-                                                        continue;
-                                                    }
-
-                                                    // Colinear: if the two smallest eigenvalues are close to zero
-                                                    if ((lambda1 / lambda2) < 1e-3)
-                                                    {
-                                                        std::cerr << "Colinear structure detected. Skipping...\n";
-                                                        continue;
-                                                    }
-
-                                                    // Flat/Planar Region: curvature ≈ 0.001 - 0.05
-                                                    // Edge/Corner: curvature ≈ 0.1 - 0.3
-                                                    // Noisy/Irregular: curvature > 0.3
-
-                                                    if (curvature < .01)
-                                                    { // this is good planarity check
-
-                                                        error = fabs((source_point - centroid).dot(norm));
-
-                                                        //change the orientation of the normals for visualization 
-                                                        Eigen::Vector3d earth_normal(0.0, 0.0, 1.0);  // ENU upward direction
-                                                        if (norm.dot(earth_normal) > 0) {
-                                                        //if (norm.dot(state_point.pos) > 0) {
-                                                            norm = -norm;
-                                                        }
-
-                                                        RefPointType p;
-                                                        p.x = centroid[0];
-                                                        p.y = centroid[1];
-                                                        p.z = centroid[2];
-                                                        p.normal_x = norm[0];
-                                                        p.normal_y = norm[1];
-                                                        p.normal_z = norm[2];
-                                                        p.curvature = error;
-                                                        good_planes->push_back(p);
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        feats_undistort->points[i].intensity = error;
-
-                                        if (false) //uncomment to save the data
-                                        {
-                                            std::ofstream ofs(output_file, std::ios::app); // 'app' mode to append
-                                            if (!ofs.is_open())
-                                            {
-                                                std::cerr << "Failed to open output file: " << output_file << "\n";
-                                                return;
-                                            }
-
-                                            // p2plane error, furtherst_d, closest_d, curvature, neighbours in a radius ball
-                                            ofs << error << " " << furtherst_d << " " << closest_d << " " << curvature << " " << neighbours << "\n";
-                                        }
-                                    }
-
+                                    //added now
                                     publish_frame_debug(pubOptimizedVUX, feats_undistort);
-                                    // publishPointCloud_vux(down_cloud, pubOptimizedVUX);
-                                    // publishPointCloud_vux(down_cloud, pubLaserCloudDebug);
+                                    
+                                    if(false) //do not compute the errors
+                                    { 
+                                        //here the main point to plane evaluation is happening
+                                        RefPointCloudXYZINormal::Ptr good_planes(new RefPointCloudXYZINormal());
+                                        if (!als_ref->initted_)
+                                            als_ref->init(als2mls);
+
+                                        if (als_ref->Update(Sophus::SE3(state_point.rot, state_point.pos)))
+                                        {
+                                            als_ref->getCloud(downsampled_als_cloud);
+                                            vux_kdtree->setInputCloud(downsampled_als_cloud);
+                                            publishPointCloud(downsampled_als_cloud, point_cloud_pub_reference); // original density
+
+                                            /*als_ref->computePlanes(.5, .05, 5); // this will create the planes
+
+                                            const std::vector<PlanePrimitive> &stable_planes = als_ref->stable_planes;
+                                            pcl::PointCloud<PointType>::Ptr plane_centers(new pcl::PointCloud<PointType>);
+                                            for (const auto &p : stable_planes)
+                                            {
+                                                PointType point;
+                                                point.x = p.centroid.x();
+                                                point.y = p.centroid.y();
+                                                point.z = p.centroid.z();
+                                                point.intensity = 0;
+                                                point.time = 0;
+
+                                                plane_centers->push_back(point);
+
+                                                RefPointType pl;
+                                                pl.x = p.centroid[0];
+                                                pl.y = p.centroid[1];
+                                                pl.z = p.centroid[2];
+                                                pl.normal_x = p.normal[0];
+                                                pl.normal_y = p.normal[1];
+                                                pl.normal_z = p.normal[2];
+                                                pl.curvature = p.curvature;
+                                                good_planes->push_back(pl);
+                                            }
+                                            std::cout << "plane_centers:" << plane_centers->size();
+                                            // Build kd-tree from centroids of stable planes
+                                            plane_tree.setInputCloud(plane_centers);
+
+                                            //publishPointCloud(plane_centers, point_cloud_pub_reference);
+
+                                            //debug_CloudWithNormals(good_planes, cloud_pub, normals_pub);
+
+                                            //std::cout << "Show ref map, press enter..." << std::endl;
+                                            //std::cin.get();*/
+                                        }
+
+                                        double good_plan = .2;
+
+                                        bool use_prebuilt_planes = false;
+                                        // const std::vector<PlanePrimitive> &stable_planes = als_ref->stable_planes;
+
+                                        float radius = 1.0; // for NN planes
+
+                                        for (int i = 0; i < feats_undistort->size(); i++)
+                                        {
+                                            const auto &search_point = feats_undistort->points[i];
+
+                                            double error = -1; // means no neighbours found for this point
+                                            double furtherst_d = -1, closest_d = -1;
+                                            float curvature = -1; // curvature of the NN plane
+                                            int neighbours = -1;
+
+                                            V3D source_point(search_point.x, search_point.y, search_point.z);
+                                            std::vector<int> point_idx;    //(neighbours);
+                                            std::vector<float> point_dist; //(neighbours);
+
+                                            if (use_prebuilt_planes)
+                                            {
+                                                // if (plane_tree.nearestKSearch(search_point, 1, point_idx, point_dist) > 0)
+                                                // {
+                                                //     if (point_dist[0] > 4)
+                                                //     {
+                                                //         const auto &plane = stable_planes[point_idx[0]];
+                                                //         error = fabs((source_point - plane.centroid).dot(plane.normal));
+
+                                                //         RefPointType p;
+                                                //         p.x = plane.centroid[0];
+                                                //         p.y = plane.centroid[1];
+                                                //         p.z = plane.centroid[2];
+                                                //         p.normal_x = plane.normal[0];
+                                                //         p.normal_y = plane.normal[1];
+                                                //         p.normal_z = plane.normal[2];
+                                                //         p.curvature = error;
+                                                //         good_planes->push_back(p);
+                                                //     }
+                                                // }
+                                            }
+                                            else
+                                            {
+                                                // if (vux_kdtree->nearestKSearch(search_point, neighbours, point_idx, point_dist) > 0) //the data is sparse
+                                                if (vux_kdtree->radiusSearch(search_point, radius, point_idx, point_dist) >= 5)
+                                                {
+                                                    closest_d = sqrt(point_dist.front());
+                                                    furtherst_d = sqrt(point_dist.back());
+
+                                                    neighbours = point_idx.size();
+
+                                                    // if (point_dist[4] < radius)
+                                                    if (false)
+                                                    {
+                                                        V3D target_point(downsampled_als_cloud->points[point_idx[0]].x,
+                                                                        downsampled_als_cloud->points[point_idx[0]].y, downsampled_als_cloud->points[point_idx[0]].z);
+
+                                                        Eigen::Matrix<double, Eigen::Dynamic, 3> matA0(neighbours, 3);
+                                                        Eigen::Matrix<double, Eigen::Dynamic, 1> matB0 = -1.0 * Eigen::Matrix<double, Eigen::Dynamic, 1>::Ones(neighbours);
+
+                                                        for (int j = 0; j < neighbours; j++)
+                                                        {
+                                                            matA0(j, 0) = downsampled_als_cloud->points[point_idx[j]].x;
+                                                            matA0(j, 1) = downsampled_als_cloud->points[point_idx[j]].y;
+                                                            matA0(j, 2) = downsampled_als_cloud->points[point_idx[j]].z;
+                                                        }
+                                                        V3D norm = matA0.colPivHouseholderQr().solve(matB0);
+                                                        double negative_OA_dot_norm = 1 / norm.norm();
+                                                        norm.normalize();
+
+                                                        bool planeValid = true;
+                                                        for (int j = 0; j < neighbours; j++)
+                                                        {
+                                                            if (fabs(norm(0) * downsampled_als_cloud->points[point_idx[j]].x +
+                                                                    norm(1) * downsampled_als_cloud->points[point_idx[j]].y +
+                                                                    norm(2) * downsampled_als_cloud->points[point_idx[j]].z + negative_OA_dot_norm) > good_plan)
+                                                            {
+                                                                planeValid = false;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if (planeValid)
+                                                        {
+                                                            error = fabs((source_point - target_point).dot(norm));
+
+                                                            RefPointType p;
+                                                            p.x = downsampled_als_cloud->points[point_idx[0]].x;
+                                                            p.y = downsampled_als_cloud->points[point_idx[0]].y;
+                                                            p.z = downsampled_als_cloud->points[point_idx[0]].z;
+                                                            p.normal_x = norm(0);
+                                                            p.normal_y = norm(1);
+                                                            p.normal_z = norm(2);
+                                                            p.curvature = error;
+                                                            // p.time = n10.curvature;
+                                                            good_planes->push_back(p);
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        // pcl::PointCloud<PointType>::Ptr neighborhood_cloud(new pcl::PointCloud<PointType>);
+                                                        // for (int j = 0; j < neighbours; j++)
+                                                        // {
+                                                        //     neighborhood_cloud->points.push_back(downsampled_als_cloud->points[point_idx[j]]);
+                                                        // }
+                                                        // Eigen::Matrix3f cov;
+                                                        // Eigen::Vector4f centroid;
+                                                        // pcl::computeMeanAndCovarianceMatrix(*neighborhood_cloud, cov, centroid);
+
+                                                        // Fit plane using PCA --------------------------
+                                                        V3D centroid = V3D::Zero();
+                                                        for (int j = 0; j < neighbours; j++)
+                                                        {
+                                                            centroid += V3D(downsampled_als_cloud->points[point_idx[j]].x, downsampled_als_cloud->points[point_idx[j]].y, downsampled_als_cloud->points[point_idx[j]].z);
+                                                        }
+                                                        centroid /= static_cast<double>(neighbours);
+
+                                                        M3D cov = M3D::Zero();
+                                                        for (int j = 0; j < neighbours; j++)
+                                                        {
+                                                            V3D centered_pt = V3D(downsampled_als_cloud->points[point_idx[j]].x, downsampled_als_cloud->points[point_idx[j]].y, downsampled_als_cloud->points[point_idx[j]].z) - centroid;
+                                                            cov += centered_pt * centered_pt.transpose(); // Outer product
+                                                        }
+                                                        cov /= static_cast<double>(neighbours); // Normalize by number of points
+
+                                                        Eigen::SelfAdjointEigenSolver<M3D> eigen_solver(cov);
+                                                        V3D norm = eigen_solver.eigenvectors().col(0); // norm = smallest eigenvalue direction
+                                                        norm.normalize();
+
+                                                        double lambda0 = eigen_solver.eigenvalues()[0];
+                                                        double lambda1 = eigen_solver.eigenvalues()[1];
+                                                        double lambda2 = eigen_solver.eigenvalues()[2];
+                                                        curvature = lambda0 / (lambda0 + lambda1 + lambda2);
+
+                                                        // Check for invalid or degenerate cases
+                                                        if (lambda0 < 0 || (lambda0 + lambda1 + lambda2) < 1e-6)
+                                                        {
+                                                            std::cerr << "Degenerate covariance matrix (maybe zero variation). Skipping...\n";
+                                                            std::cerr << "curvature is : " << curvature << std::endl;
+                                                            std::cout << "lambda0:" << lambda0 << ", lambda1:" << lambda1 << ", lambda2:" << lambda2 << std::endl;
+                                                            // throw std::runtime_error("Handle this...");
+                                                            continue;
+                                                        }
+
+                                                        // Colinear: if the two smallest eigenvalues are close to zero
+                                                        if ((lambda1 / lambda2) < 1e-3)
+                                                        {
+                                                            std::cerr << "Colinear structure detected. Skipping...\n";
+                                                            continue;
+                                                        }
+
+                                                        // Flat/Planar Region: curvature ≈ 0.001 - 0.05
+                                                        // Edge/Corner: curvature ≈ 0.1 - 0.3
+                                                        // Noisy/Irregular: curvature > 0.3
+
+                                                        if (curvature < .01)
+                                                        { // this is good planarity check
+
+                                                            error = fabs((source_point - centroid).dot(norm));
+
+                                                            // change the orientation of the normals for visualization
+                                                            Eigen::Vector3d earth_normal(0.0, 0.0, 1.0); // ENU upward direction
+                                                            if (norm.dot(earth_normal) > 0)
+                                                            {
+                                                                // if (norm.dot(state_point.pos) > 0) {
+                                                                norm = -norm;
+                                                            }
+
+                                                            RefPointType p;
+                                                            p.x = centroid[0];
+                                                            p.y = centroid[1];
+                                                            p.z = centroid[2];
+                                                            p.normal_x = norm[0];
+                                                            p.normal_y = norm[1];
+                                                            p.normal_z = norm[2];
+                                                            p.curvature = error;
+                                                            good_planes->push_back(p);
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            feats_undistort->points[i].intensity = error;
+
+                                            if (false) // uncomment to save the data
+                                            {
+                                                std::ofstream ofs(output_file, std::ios::app); // 'app' mode to append
+                                                if (!ofs.is_open())
+                                                {
+                                                    std::cerr << "Failed to open output file: " << output_file << "\n";
+                                                    return;
+                                                }
+
+                                                // p2plane error, furtherst_d, closest_d, curvature, neighbours in a radius ball
+                                                ofs << error << " " << furtherst_d << " " << closest_d << " " << curvature << " " << neighbours << "\n";
+                                            }
+                                        }
+
+                                        publish_frame_debug(pubOptimizedVUX, feats_undistort);
+                                        // publishPointCloud_vux(down_cloud, pubOptimizedVUX);
+                                        // publishPointCloud_vux(down_cloud, pubLaserCloudDebug);
+
+                                        
+
+                                        std::cout << "Found " << good_planes->size() << "/" << feats_undistort->size() << " good_planes" << std::endl;
+
+                                        if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
+                                            debug_CloudWithNormals(good_planes, cloud_pub, normals_pub);
+                                    }
 
                                     ros::spinOnce();
-                                    rate.sleep();
-
-                                    std::cout << "Found " << good_planes->size() << "/" << feats_undistort->size() << " good_planes" << std::endl;
-                                    
-                                    if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
-                                        debug_CloudWithNormals(good_planes, cloud_pub, normals_pub);
+                                        rate.sleep();
                                 }
                                 std::cout << "vux_cloud_next_id:" << vux_cloud_next_id << std::endl;
 
                                 vux_cloud_next_id++;
 
-                                // if (vux_cloud_next_id > 1000)
-                                if (vux_cloud_next_id > 20699)
+                                // if (vux_cloud_next_id > 20699)
+                                if (vux_cloud_next_id > 28499)
                                 {
                                     std::cout << "THe end of the georeferenced files..." << std::endl;
-                                    throw std::runtime_error("Stop here."); //uncomment this
+                                    throw std::runtime_error("Stop here."); // uncomment this
                                 }
                             }
 

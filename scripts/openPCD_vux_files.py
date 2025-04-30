@@ -118,7 +118,7 @@ def main(input_dir, output_dir, local_global_T, group_size = 100, visualize=Fals
 if __name__ == "__main__":
    
     parser = argparse.ArgumentParser(description="Merge .pcd files into chunks of 100.")
-    parser.add_argument("--input_dir", default="/home/eugeniu/vux-georeferenced/gnss-imu0/", help="Folder containing .pcd files")
+    parser.add_argument("--input_dir", default="/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu1/", help="Folder containing .pcd files")
     parser.add_argument("--output_dir", default="/home/eugeniu/vux-georeferenced/merged/", help="Folder to save merged .pcd files")
     parser.add_argument("--local_global_T", default="/home/eugeniu/vux-georeferenced/als2mls_dense.txt", help="File with mls to als transform")
     parser.add_argument("--visualize", action="store_false", help="Visualize merged point clouds")
