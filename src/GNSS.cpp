@@ -225,6 +225,7 @@ void GNSS::calibrateGnssExtrinsic(const V3D &MLS_pos)
 
             if (MLS_pos.norm() > max_travelled_distance_for_initialization)
             {
+                std::cout<<"all_theta:"<<all_theta.size()<<std::endl;
                 gnss::LineModel ransac = gnss::ransacFitLine(ind, all_theta, 200., .5);
                 std::cout << "ransac m:" << ransac.m << ", b:" << ransac.b << std::endl;
                 theta_GPS_to_IMU = ransac.b;
@@ -279,6 +280,7 @@ void GNSS::updateExtrinsic(const M3D &R_)
 {
     R_GNSS_to_MLS = R_;
     first_gps_pose = Sophus::SE3(Eye3d, (R_GNSS_to_MLS * origin_enu) + GNSS_T_wrt_IMU).inverse();
+    //GNSS_extrinsic_init = true;
 }
 
 void GNSS::set_param(const V3D &tran, const double &GNSS_IMU_calibration_distance, std::string _postprocessed_gnss_path)

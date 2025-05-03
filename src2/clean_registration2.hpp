@@ -574,6 +574,8 @@ std::unordered_map<int, landmark_> get_Correspondences(
     // Containers
     std::unordered_map<int, landmark_> landmarks_map; // key is index of the point from the map
 
+    //return landmarks_map; //no landmarks TEST WITHOUT PLANES 
+
 #define pca_norms
 
 #ifdef pca_norms
@@ -698,7 +700,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
                     // Edge/Corner: curvature ≈ 0.1 - 0.3
                     // Noisy/Irregular: curvature > 0.3
 
-                    if (curvature > 0 && curvature <= .01)
+                    if (curvature > 0 && curvature <= .005) //.01
                     {
                         planeValid = true;
                         for (int j = 0; j < BA_NEIGH; j++)
@@ -753,9 +755,11 @@ std::unordered_map<int, landmark_> get_Correspondences(
                                     // check if this plane already has measurement from line l
                                     bool already_seen_from_this_line =
                                         std::find(planes_iterator->second.line_idx.begin(), planes_iterator->second.line_idx.end(), l) != planes_iterator->second.line_idx.end();
-
+                                    
+                                    //already_seen_from_this_line = false; //just a test remove this
+                                    
                                     // Only increment seen if this landmark is seen from a new line
-                                    if (!already_seen_from_this_line)
+                                    if (already_seen_from_this_line == false)
                                     {
                                         planes_iterator->second.seen++;                // Increment the seen count
                                         planes_iterator->second.line_idx.push_back(l); // seen from line l
@@ -773,12 +777,13 @@ std::unordered_map<int, landmark_> get_Correspondences(
                                     {
                                         // Same line as before, do not increment seen
                                         // Only update the reprojection data if better
-                                        if (planes_iterator->second.re_proj_error > point_dist[j])
-                                        {
-                                            planes_iterator->second.norm = norm;
-                                            planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
-                                            planes_iterator->second.re_proj_error = point_dist[j];
-                                        }
+                                        
+                                        // if (planes_iterator->second.re_proj_error > point_dist[j])
+                                        // {
+                                        //     planes_iterator->second.norm = norm;
+                                        //     planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                                        //     planes_iterator->second.re_proj_error = point_dist[j];
+                                        // }
                                     }
                                 }
                             }
@@ -895,10 +900,10 @@ Values prev_optimized_values;
 bool prev_graph_exist = false;
 
 auto sigma_point = 1; // 100cm standard deviation (3σ ≈ 3m allowed)
-auto sigma_plane = 1; // 100cm standard deviation (3σ ≈ 30cm allowed)
+auto sigma_plane = 5;// 1; // 100cm standard deviation (3σ ≈ 30cm allowed)
 
 // auto sigma_odom = .02; //for relative odometry - tested with skip one scan
-auto sigma_odom = .005; // .01;  // for relative odometry no scan skip
+auto sigma_odom = .01;  // 1cm .005; for relative odometry no scan skip
 auto sigma_prior = 1.0; // not sure about the prior - let it change it
 
 auto point_noise = gtsam::noiseModel::Robust::Create(
@@ -913,6 +918,17 @@ auto plane_noise = gtsam::noiseModel::Robust::Create(
 
 auto odometry_noise = gtsam::noiseModel::Diagonal::Sigmas(
     (gtsam::Vector6() << gtsam::Vector3::Constant(sigma_odom), gtsam::Vector3::Constant(sigma_odom)).finished());
+
+// auto sigma_trans = .005;      // .05 cm for translation (x,y,z)  
+// auto sigma_rot_deg = 1.0;     // 5 degrees for rotation  
+// auto sigma_rot_rad = sigma_rot_deg * (M_PI / 180.0);  // Convert to radians  
+
+// // Create a 6D diagonal noise model (first 3: translation, next 3: rotation)  
+// auto odometry_noise = gtsam::noiseModel::Diagonal::Sigmas(  
+//     (gtsam::Vector(6) << sigma_trans, sigma_trans, sigma_trans,  
+//                           sigma_rot_rad, sigma_rot_rad, sigma_rot_rad).finished()); 
+
+
 auto prior_noise = gtsam::noiseModel::Diagonal::Sigmas(
     (gtsam::Vector6() << gtsam::Vector3::Constant(sigma_prior), gtsam::Vector3::Constant(sigma_prior)).finished());
 
@@ -1016,7 +1032,7 @@ void mergeXandZGraphs(NonlinearFactorGraph &merged_graph, Values &merged_values,
     {
         // (x, y, z, roll, pitch, yaw)
         gtsam::Vector6 new_prior_sigmas;
-        new_prior_sigmas << .001, .001, .001, .001, .001, .001;
+        new_prior_sigmas << .01, .01, .01, .01, .01, .01;
 
         auto new_prior_noise = gtsam::noiseModel::Diagonal::Sigmas(new_prior_sigmas);
 
@@ -1245,7 +1261,7 @@ void buildGraph(
                 Point3 plane_norm(land.norm.x(), land.norm.y(), land.norm.z());
                 bool use_alternative_method = false; // true;
 
-                //use_alternative_method = true; //test this without this seems a bit better
+                use_alternative_method = true; 
 
                 graph.emplace_shared<PointToPlaneFactor>(useX ? X(pose_idx) : Z(pose_idx), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
                                                          land.re_proj_error, use_alternative_method, plane_noise);
@@ -1301,28 +1317,28 @@ double BA_refinement_merge_graph(
                    overlap_size, threshold_nn, p2p, p2plane);
 
         // Optimize the graph
-        LevenbergMarquardtOptimizer optimizer(graph, initial_values, params); //
-        Values optimized_values = optimizer.optimize();
+        //LevenbergMarquardtOptimizer optimizer(graph, initial_values, params); //
+        // Values optimized_values = optimizer.optimize();
 
-        // optimized_values.print("Optimized Results:\n");
-        //  Retrieve optimized poses
-        //  std::vector<Sophus::SE3> optimized_poses;
-        for (size_t i = 0; i < line_poses.size(); i++)
-        {
-            gtsam::Key pose_key = useX ? X(i) : Z(i);
-            Pose3 optimized_pose = optimized_values.at<Pose3>(pose_key);
-            M3D R = optimized_pose.rotation().matrix();
-            V3D t = optimized_pose.translation();
-            line_poses[i] = Sophus::SE3(R, t);
-            // optimized_poses.emplace_back(Sophus::SE3(R, t));
-        }
+        // // optimized_values.print("Optimized Results:\n");
+        // //  Retrieve optimized poses
+        // //  std::vector<Sophus::SE3> optimized_poses;
+        // for (size_t i = 0; i < line_poses.size(); i++)
+        // {
+        //     gtsam::Key pose_key = useX ? X(i) : Z(i);
+        //     Pose3 optimized_pose = optimized_values.at<Pose3>(pose_key);
+        //     M3D R = optimized_pose.rotation().matrix();
+        //     V3D t = optimized_pose.translation();
+        //     line_poses[i] = Sophus::SE3(R, t);
+        //     // optimized_poses.emplace_back(Sophus::SE3(R, t));
+        // }
 
         prev_graph_exist = true;
-        // prev_optimized_values = initial_values; // keep the raw data
-        prev_optimized_values = optimized_values; // keep the optimized values
+        prev_optimized_values = initial_values; // keep the raw data
+        //prev_optimized_values = optimized_values; // keep the optimized values
         prev_graph = graph;
 
-        rv = optimizer.error();
+        //rv = optimizer.error();
 
         return rv;
     }
@@ -1333,9 +1349,6 @@ double BA_refinement_merge_graph(
 
         NonlinearFactorGraph graph;
         Values initial_values;
-
-        // to be solved
-        // this will optimize only the curr values - not the prev ones too
 
         for (int iter = 0; iter < run_iterations; iter++)
         {
@@ -1413,3 +1426,111 @@ double BA_refinement_merge_graph(
         return rv;
     }
 }
+
+
+
+
+
+
+//#define use_spline
+
+#ifdef use_spline
+    
+
+// Spline basis matrix for uniform cubic B-spline
+const Eigen::Matrix4d C = (Eigen::Matrix4d() << 6. / 6., 0., 0., 0.,
+                           5. / 6., 3. / 6., -3. / 6., 1. / 6.,
+                           1. / 6., 3. / 6., 3. / 6., -2. / 6.,
+                           0., 0., 0., 1. / 6.)
+                              .finished();
+
+class CubicSpline
+{
+public:
+    using SE3Type = Sophus::SE3;
+    using SE3DerivType = Eigen::Matrix4d;
+
+    // Constructor to initialize time step and initial time
+    CubicSpline(double dt = 1.0, double t0 = 0.0) : dt_(dt), t0_(t0) {}
+
+    // Add a knot (pose) to the spline
+    void add_knot(const SE3Type &pose)
+    {
+        knots_.push_back(pose);
+    }
+
+    // Get a knot (pose) from the spline
+    SE3Type get_knot(size_t k) const
+    {
+        return knots_[k];
+    }
+
+    // Evaluate the spline at time t and compute the pose and its derivatives
+    void evaluate(double t, SE3Type &P) const; //, SE3DerivType &P_prim, SE3DerivType &P_bis
+
+private:
+    static int floor_(double x)
+    {
+        return static_cast<int>(std::floor(x));
+    }
+
+    double dt_;                  // Time step
+    double t0_;                  // Initial time
+    std::vector<SE3Type> knots_; // Vector of SE3 poses as knots
+};
+
+void CubicSpline::evaluate(double t, SE3Type &P) const //, SE3DerivType &P_prim, SE3DerivType &P_bis
+{
+    using Mat4 = Eigen::Matrix4d;
+    using Vec4 = Eigen::Matrix<double, 4, 1>;
+
+    assert(dt_ > 0.0 && "CubicSpline::evaluate: Time step (dt) must be greater than zero.");
+    assert(knots_.size() >= 4 && "CubicSpline::evaluate: There must be at least 4 knots for spline interpolation.");
+    assert(t >= t0_ + dt_ && "CubicSpline::evaluate: Time t must be greater than or equal to the time of the first knot.");
+    assert(t < t0_ + dt_ * (knots_.size() - 2) && "CubicSpline::evaluate: Time t must be less than the time of the last knot.");
+
+
+    // Compute normalized time (offset-aware)
+    double s = (t - t0_) / dt_;
+    int i = floor_(s);
+    double u = s - i;
+    int i0 = i - 1;
+
+    double u2 = u * u, u3 = u2 * u, dt_inv = 1.0 / dt_;
+    Vec4 B = C * Vec4{1.0, u, u2, u3};
+    Vec4 Bd1 = C * Vec4{0.0, 1.0, 2.0 * u, 3.0 * u2} * dt_inv;
+    Vec4 Bd2 = C * Vec4{0.0, 0.0, 2.0, 6.0 * u} * dt_inv * dt_inv;
+
+    SE3Type P0 = knots_[i0]; // First knot pose
+    P = P0;
+
+    Mat4 A[3], Ad1[3], Ad2[3];
+
+    for (int j : {1, 2, 3})
+    {
+        SE3Type knot1 = knots_[i0 + j - 1];
+        SE3Type knot2 = knots_[i0 + j];
+        auto omega = (knot1.inverse() * knot2).log();
+        Mat4 omega_hat = SE3Type::hat(omega);
+        SE3Type Aj = SE3Type::exp(B[j] * omega);
+        P = P * Aj;
+        Mat4 Ajm = Aj.matrix();
+        Mat4 Ajd1 = Ajm * omega_hat * Bd1[j];
+        Mat4 Ajd2 = Ajd1 * omega_hat * Bd1[j] + Ajm * omega_hat * Bd2[j];
+        A[j - 1] = Ajm;
+        Ad1[j - 1] = Ajd1;
+        Ad2[j - 1] = Ajd2;
+    }
+
+    // // Compute the derivatives
+    // Mat4 M1 = Ad1[0] * A[1] * A[2] + A[0] * Ad1[1] * A[2] + A[0] * A[1] * Ad1[2];
+    // Mat4 M2 = Ad2[0] * A[1] * A[2] + A[0] * Ad2[1] * A[2] + A[0] * A[1] * Ad2[2] +
+    //           2.0 * Ad1[0] * Ad1[1] * A[2] + 2.0 * Ad1[0] * A[1] * Ad1[2] +
+    //           2.0 * A[0] * Ad1[1] * Ad1[2];
+
+    // P_prim = P0.matrix() * M1;
+    // P_bis = P0.matrix() * M2;
+}
+
+
+#endif 

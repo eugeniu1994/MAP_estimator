@@ -13,8 +13,6 @@ Panels:
         - /Odometry1/Odometry1/Covariance1/Position1
         - /Odometry1/Odometry1/Covariance1/Orientation1
         - /Refined-vux1/Shape1
-        - /Prev-BA1
-        - /Curr-BA1
       Splitter Ratio: 0.5546624064445496
     Tree Height: 1653
   - Class: rviz/Selection
@@ -110,16 +108,16 @@ Visualization Manager:
         - Alpha: 0.6000000238418579
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 21.655517578125
-            Min Value: -3.492093086242676
+            Max Value: 31.943450927734375
+            Min Value: -2.369847297668457
             Value: true
           Axis: Z
           Channel Name: z
           Class: rviz/PointCloud2
           Color: 255; 255; 255
-          Color Transformer: Intensity
-          Decay Time: 1000
-          Enabled: false
+          Color Transformer: AxisColor
+          Decay Time: 200000
+          Enabled: true
           Invert Rainbow: true
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -134,7 +132,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: false
+          Value: true
         - Alpha: 0.5
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -167,7 +165,7 @@ Visualization Manager:
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
             Max Value: 30.66893196105957
-            Min Value: -3.924079656600952
+            Min Value: -3.988469362258911
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -203,7 +201,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: FlatColor
           Decay Time: 0
-          Enabled: false
+          Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Max Intensity: 83
@@ -220,7 +218,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: false
+          Value: true
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -478,8 +476,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 8.067204475402832
-        Min Value: -22.095779418945312
+        Max Value: 23.64863395690918
+        Min Value: -1.5382007360458374
         Value: true
       Axis: Z
       Channel Name: reflectance
@@ -515,7 +513,7 @@ Visualization Manager:
       Color: 255; 0; 0
       Color Transformer: AxisColor
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 83
@@ -532,7 +530,7 @@ Visualization Manager:
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
     - Angle Tolerance: 0.009999999776482582
       Class: rviz/Odometry
       Covariance:
@@ -688,7 +686,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 131.38662719726562
+      Distance: 110.34330749511719
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -696,17 +694,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 26.849077224731445
-        Y: 45.99109649658203
+        X: 19.249465942382812
+        Y: 31.61488151550293
         Z: -1.1575780263228808e-05
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1447972059249878
+      Pitch: 1.079797387123108
       Target Frame: global
-      Yaw: 0.7654128074645996
+      Yaw: 0.8004123568534851
     Saved: ~
 Window Geometry:
   Displays:

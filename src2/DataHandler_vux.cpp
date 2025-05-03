@@ -1101,6 +1101,7 @@ void DataHandler::Subscribe()
     ros::Publisher curr_pub = nh.advertise<sensor_msgs::PointCloud2>("curr_graph_cloud", 1);
 
 
+    Sophus::SE3 als2mls;// = als_to_mls;
 
 #define save_vux_clouds
     for (const rosbag::MessageInstance &m : view)
@@ -1145,7 +1146,7 @@ void DataHandler::Subscribe()
         {
             scan_id++;
             std::cout << "scan_id:" << scan_id << std::endl;
-            if (scan_id > 1837) // 1310 1000 before tests done with 1000
+            if (scan_id > 1310) // 1310 1837-we have georeferenced data for this 1000 before tests done with 1000
             {
                 std::cout << "Stop here... enough data" << std::endl;
                 break;
@@ -1374,24 +1375,52 @@ void DataHandler::Subscribe()
                 std::cout << "Mapping time(ms):  " << (t11 - t00) * 1000 << ", feats_down_size: " << feats_down_size << ", lidar_end_time:" << lidar_end_time << "\n"
                           << std::endl;
 
+                als2mls = als_obj->als_to_mls;
                 //this was used to save the data and then load it
                 //saveScanData(scan_id, state_point.rot, state_point.pos, lidar_end_time, laserCloudSurfMap, folder_path_save_state);
             }
             else
             {
+                ros::spinOnce();
+                rate.sleep();
+
                 loadScanData(scan_id, state_point.rot, state_point.pos, lidar_end_time, laserCloudSurfMap, folder_path_save_state);
 
                 std::cout << "\nstate_point.pos:" << state_point.pos.transpose() << ", lidar_end_time:" << lidar_end_time << std::endl;
+                std::cout<<"als_obj->initted_:"<<als_obj->initted_<<std::endl;
+
+                gnss_obj->Process(gps_buffer, lidar_end_time, state_point.pos);
+
+                if (!gnss_obj->GNSS_extrinsic_init)  // not initialized
+                {                                     
+                    continue;
+                }
 
                 if (!als_obj->initted_)
                 {
-                    readSE3FromFile(als2mls_filename, als_to_mls);
-                    std::cout<<"Read ALS2MLS:\n"<<als_to_mls.matrix()<<std::endl;
-                    als_obj->init(als_to_mls);
-                    gnss_obj->updateExtrinsic(als_obj->R_to_mls);
-                }
+                    Sophus::SE3 known_als2mls;
+                    readSE3FromFile(als2mls_filename, known_als2mls);
 
-                gnss_obj->Process(gps_buffer, lidar_end_time, state_point.pos);
+                    if (!this->downsample) // if it is sparse ALS data from NLS
+                    {   
+                        V3D t = known_als2mls.translation();
+                        t.z() += +20.;
+                        Sophus::SE3 als2mla_for_sparse_ALS = Sophus::SE3(known_als2mls.so3().matrix(), t);
+                        std::cout<<"Init ALS from known T map refinement"<<std::endl;
+                        als_obj->init(als2mla_for_sparse_ALS, laserCloudSurfMap);  //with refinement 
+                    }
+                    else
+                    {
+                        std::cout<<"Init ALS from known T"<<std::endl;
+                        als_obj->init(known_als2mls); 
+                        
+                    }
+                    std::cout<<"Read ALS2MLS:\n"<<known_als2mls.matrix()<<std::endl;
+                    
+                    gnss_obj->updateExtrinsic(als_obj->R_to_mls);
+
+                    als2mls = known_als2mls;
+                }
 
                 als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
 
@@ -1410,13 +1439,9 @@ void DataHandler::Subscribe()
                 }
             }
 
-            Sophus::SE3 als2mls = als_to_mls;
-
             // put it back later
             if (!gnss_obj->GNSS_extrinsic_init)
                 continue;
-
-            als2mls = als_obj->als_to_mls;
 
             //uncomment this to save the als2mls transform 
             // if (!saved_mls2als_transform && perform_mls_registration)
@@ -1431,11 +1456,6 @@ void DataHandler::Subscribe()
                 --save the current voxelized map
                 --add an option to read them afterwards
                 --HOW ABOUT SAVING THE ALS2MLS POSE AND SAVING THE LOCAL MAP ALWAYS
-
-
-            for reference Hesai and ALS
-                that one will be done from another code
-                and save the clouds as .pcd or something
             */
 
             //----------------------------------------------------------------
@@ -1482,13 +1502,7 @@ void DataHandler::Subscribe()
                 rate.sleep();
             }
 
-            if (!this->downsample) // if it is sparse ALS data from NLS
-            {
-                V3D t = als2mls.translation();
-                t.z() += -20.;
-                als2mls = Sophus::SE3(als2mls.so3().matrix(), t);
-            }
-
+            
             double timestamp = Measures.lidar_end_time;
             // timestamp+=1.; //this gets vux closer
 
@@ -2066,8 +2080,7 @@ void DataHandler::Subscribe()
                                     total_scans = 400; // also good
                                     mid_scan = 350;    // 12.5% overlapp
                                     mid_scan = 300;    // 25%
-
-                                    // mid_scan = 350;// 12 % overlap - just a test now
+                                    
                                     //   std::cout << "lines_buffer:" << lines_buffer.size() << std::endl;
 
                                     bool const_vel_model = true; // use const vel model for segments
@@ -2644,7 +2657,7 @@ void DataHandler::Subscribe()
 
                                             current_cost = BA_refinement_merge_graph(
                                                 prev_pub,curr_pub,
-                                                
+
                                                 lines_buffer,
                                                 refined_line_poses_buffer,
                                                 refference_kdtree,

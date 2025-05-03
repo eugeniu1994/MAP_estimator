@@ -407,6 +407,168 @@ bool ALS_Handler::init(const V3D &gps_origin_ENU_, const M3D &init_R_2_mls, cons
     return rv;
 }
 
+bool ALS_Handler::init(const Sophus::SE3 &known_als2mls, const PointCloudXYZI::Ptr &mls_cloud_full)
+{
+    bool rv = true;
+    std::cout << "\033[31mALS init from known T\033[0m" << std::endl;
+
+    R_to_mls = known_als2mls.so3().matrix();
+    als_to_mls = known_als2mls;
+    refine_als = true;
+    initted_ = true;
+    shift_initted_ = true;
+    if (!als_manager_setup)
+    {
+        setupALS_Manager();
+    }
+
+    {
+        std::cout << "\033[31mStart initialization registration ALS2MLS...\033[0m" << std::endl;
+        std::chrono::time_point<std::chrono::system_clock> start, end;
+        start = std::chrono::system_clock::now();
+
+        als_cloud->clear();
+        // prev_mls_pos = V3D(10000, 10000, 0);
+        // this->Update(Sophus::SE3());
+
+        {
+            std::cout << "====================== ALS Update =======================" << std::endl;
+
+            auto mls_pose = Sophus::SE3();
+
+            Sophus::SE3 mls_in_als = als_to_mls.inverse() * mls_pose;
+            auto _mls_enu = mls_in_als.translation();
+
+            std::regex filePattern(R"(tile_x_(\d+)_y_(\d+)\.las)");
+            std::smatch match;
+            std::multiset<FileDistance> closestFiles;
+
+            pcl::PointXYZ curr_mls_position_enu;
+            curr_mls_position_enu.x = _mls_enu[0];
+            curr_mls_position_enu.y = _mls_enu[1];
+            curr_mls_position_enu.z = 0;
+
+            std::vector<int> pointIdxNKNSearch(closest_N_files);
+            std::vector<float> pointNKNSquaredDistance(closest_N_files);
+
+            if (ALS_manager.nearestKSearch(curr_mls_position_enu, closest_N_files, pointIdxNKNSearch, pointNKNSquaredDistance) > 0)
+            {
+                double th_sq = (2 * boxSize) * (2 * boxSize) + 2 * boxSize; // this is ugly change it
+                std::string closest_file;
+                int c = boxSize / 2;
+                for (size_t i = 0; i < pointIdxNKNSearch.size(); ++i)
+                {
+                    std::cout << "distance:" << sqrt(pointNKNSquaredDistance[i]) << std::endl;
+                    if (pointNKNSquaredDistance[i] <= th_sq)
+                    {
+                        curr_mls_position_enu = (*all_las_files)[pointIdxNKNSearch[i]];
+                        closest_file = "tile_x_" + std::to_string(int(curr_mls_position_enu.x - c)) + "_y_" + std::to_string(int(curr_mls_position_enu.y - c)) + ".las";
+
+                        // check if closest_file exists
+                        if (boost::filesystem::exists(folder_root + closest_file))
+                        {
+                            //if (!historyTiles.contains(closest_file))
+                            //{
+                                AddPoints_from_file(closest_file);
+                            //    historyTiles.push(closest_file); // Mark file as loaded and add to the queue
+                            //}
+                        }
+                        else
+                        {
+                            std::cout << "closest_file:" << std::to_string(i) << " : " << closest_file << std::endl;
+                            throw std::runtime_error("Update - Cannot find the right init file in las/laz");
+                        }
+                    }
+                }
+            }
+        }
+
+        getCloud(als_cloud);
+
+        PointCloudXYZI::Ptr mls_cloud(new PointCloudXYZI());
+        float _10_m_above_sensor_hight = 10;
+        for (const auto &point : mls_cloud_full->points)
+        {
+            if (point.z < _10_m_above_sensor_hight) // skip the tree tops
+                mls_cloud->push_back(point);
+        }
+
+        std::cout << "mls:" << mls_cloud->size() << ", als:" << als_cloud->size() << std::endl;
+        std::cout << "\033[31mStart registration...\033[0m" << std::endl;
+        pcl::GeneralizedIterativeClosestPoint<PointType, PointType> icp;
+
+        if (als_cloud->size() < mls_cloud->size()) // als to mls
+        {
+            icp.setInputSource(als_cloud); // als
+            icp.setInputTarget(mls_cloud); // mls
+        }
+        else // mls to als
+        {
+            icp.setInputSource(mls_cloud); // mls
+            icp.setInputTarget(als_cloud); // als
+        }
+
+        icp.setMaximumIterations(200);
+        icp.setMaxCorrespondenceDistance(2.); // m
+        pcl::PointCloud<PointType> Final;
+        icp.align(Final);
+
+        if (icp.hasConverged())
+        {
+            std::cout << "ICP converged." << std::endl
+                      << "The score is " << icp.getFitnessScore() << std::endl;
+            Eigen::Matrix4f transformation = icp.getFinalTransformation();
+
+            Eigen::Matrix4d T = transformation.cast<double>();
+            Sophus::SE3 refinement_T(T.block<3, 3>(0, 0), T.block<3, 1>(0, 3));
+            std::cout << "refinement_T:" << refinement_T.log().transpose() << std::endl;
+
+            auto init_T = als_to_mls;
+            std::cout << "prev als_to_mls:" << als_to_mls.log().transpose() << std::endl;
+            if (als_cloud->size() < mls_cloud->size()) // als to mls
+            {
+                als_to_mls = refinement_T * init_T;
+            }
+            else // mls to als
+            {
+                als_to_mls = refinement_T.inverse() * init_T;
+            }
+
+            std::cout << "curr als_to_mls:" << als_to_mls.log().transpose() << std::endl;
+        }
+        else
+        {
+            std::cout << "\033[31mICP did not converge...Handle this\033[0m" << std::endl;
+            // TODO - handle this
+            throw std::invalid_argument("handle this");
+        }
+
+        end = std::chrono::system_clock::now();
+        std::chrono::duration<float> elapsed_seconds = end - start;
+        float duration_milliseconds = elapsed_seconds.count() * 1000; // to get milliseconds
+        std::cout << "ALS 2 MLS refinement " << elapsed_seconds.count() << " (s), and " << duration_milliseconds << " (ms)" << std::endl;
+
+#if USE_STATIC_KDTREE == 0
+        reset_Tree(ikdtree, cub_needrm);
+#endif
+        als_cloud->clear();
+
+        R_to_mls = als_to_mls.so3().matrix(); // refined rotation from als to mls
+
+        refine_als = true;
+        initted_ = true;
+
+        als_cloud->clear();
+        getCloud(als_cloud);
+
+        // std::cout << "Refined Initialization: " << als_to_mls.log().transpose() << std::endl;
+        std::cout << "\033[32mALS to MLS initializaion converged successfully\033[0m" << std::endl;
+    }
+    rv = true;
+
+    return rv;
+}
+
 void ALS_Handler::getCloud(PointCloudXYZI::Ptr &in_)
 {
 #if USE_STATIC_KDTREE == 1
@@ -741,7 +903,7 @@ void ALS_Handler::computePlanes(double leaf_size, double curvature_threshold, in
 
         if (leaf.nr_points < min_points_per_voxel)
         {
-            //std::cerr << " Drop the voxel it has only " << leaf.nr_points << " points" << std::endl;
+            // std::cerr << " Drop the voxel it has only " << leaf.nr_points << " points" << std::endl;
             continue;
         }
 
