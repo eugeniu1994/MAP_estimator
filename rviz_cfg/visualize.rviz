@@ -116,7 +116,7 @@ Visualization Manager:
           Class: rviz/PointCloud2
           Color: 255; 255; 255
           Color Transformer: AxisColor
-          Decay Time: 200000
+          Decay Time: 30
           Enabled: true
           Invert Rainbow: true
           Max Color: 255; 255; 255
@@ -613,7 +613,7 @@ Visualization Manager:
       Class: rviz/PointCloud2
       Color: 52; 101; 164
       Color Transformer: FlatColor
-      Decay Time: 0
+      Decay Time: 100
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
@@ -641,7 +641,7 @@ Visualization Manager:
       Class: rviz/PointCloud2
       Color: 115; 210; 22
       Color Transformer: FlatColor
-      Decay Time: 0
+      Decay Time: 100
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
