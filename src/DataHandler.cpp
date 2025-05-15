@@ -561,6 +561,46 @@ void DataHandler::RemovePointsFarFromLocation()
 #endif
 }
 
+bool readSE3FromFile(const std::string &filename, Sophus::SE3 &transform_out)
+    {
+        std::ifstream file(filename);
+        if (!file.is_open())
+        {
+            std::cerr << "Failed to open file " << filename << " for reading.\n";
+            return false;
+        }
+
+        std::string line;
+        Eigen::Matrix4d mat;
+        int row = 0;
+
+        while (std::getline(file, line))
+        {
+            if (line.empty() || line[0] == '#')
+                continue;
+            if (line.find("T_als2mls") != std::string::npos)
+                continue;
+
+            std::istringstream iss(line);
+            for (int col = 0; col < 4; ++col)
+            {
+                iss >> mat(row, col);
+            }
+            ++row;
+            if (row == 4)
+                break;
+        }
+
+        if (row != 4)
+        {
+            std::cerr << "Failed to read full 4x4 matrix from " << filename << "\n";
+            return false;
+        }
+
+        transform_out = Sophus::SE3(mat.block<3, 3>(0, 0), mat.block<3, 1>(0, 3));
+        return true;
+    }
+
 void DataHandler::BagHandler()
 {
     std::cout << "\n===============================BagHandler===============================" << std::endl;
@@ -828,6 +868,16 @@ void DataHandler::BagHandler()
 #else
                     *featsFromMap = *laserCloudSurfMap;
 #endif
+
+                    // //only for now - remove this later
+                    // std::string folder_path_save_state = "/home/eugeniu/x_vux-georeferenced-final/_Hesai";
+                    // std::string als2mls_filename = folder_path_save_state + "/als2mls.txt";
+                    // Sophus::SE3 known_als2mls;
+                    // readSE3FromFile(als2mls_filename, known_als2mls);
+                    // std::cout<<"Read the known transformation"<<std::endl;
+                    // als_obj->init(known_als2mls);
+
+
                     als_obj->init(gnss_obj->origin_enu, gnss_obj->R_GNSS_to_MLS, featsFromMap);
                     gnss_obj->updateExtrinsic(als_obj->R_to_mls); // use the scan-based refined rotation for GNSS
                 }

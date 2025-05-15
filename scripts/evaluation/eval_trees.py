@@ -4,6 +4,13 @@ from scipy.spatial import cKDTree
 from sklearn.metrics import mean_squared_error
 import matplotlib.patches as mpatches
 
+
+known_als2mls_inv: 398269.1135182129 6786162.7477222066     131.0252137406
+als_to_mls_inv   : 398269.2192482995 6786162.3634432964     132.7766588416
+
+
+
+
 MLS_all_trees_xyz_path = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/trees/Robust MLS + Dense ALS + Map Fusion + GNSS/MLS_all_trees_xyz.txt"
 ALS_all_trees_xyz_path = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/trees/Robust MLS + Dense ALS + Map Fusion + GNSS/ALS_all_trees_xyz.txt"
 

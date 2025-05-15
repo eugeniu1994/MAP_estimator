@@ -34,7 +34,7 @@ mapping:
     #also the message times are in global frame,  while point times should be relative, starting from zero to .1 s or something 
 
 als:
-    closest_N_files: 5 # 3 # 5 # 4 #number of closest files
+    closest_N_files: 5 #3 for evaluation 5 for registration # 4 #number of closest files
     downsample: false # true 
     #als_path: "/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped/"   # this is reference from Jesse
     als_path: "/media/eugeniu/T7/NLS_las/"   # this is the ALS from NlS
@@ -60,7 +60,7 @@ publish:
 eval:
     tree_file: "/media/eugeniu/T7/_georeferenced_latest/Ref_ALS_Hesai_fused/results/Results/Stem_curves/Found_stem_tree_attributes.txt"
     
-    vux_eval_path: "/home/eugeniu/vux-georeferenced/No_refinement/hesai0/"
+    vux_eval_path: "/home/eugeniu/x_vux-georeferenced-final/gnss_test3/abc/"
     
     #vux_eval_path: "/home/eugeniu/vux_save_clouds/"
     #vux_eval_path: "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai3/"

@@ -545,9 +545,9 @@ bool ALS_Handler::init(const Sophus::SE3 &known_als2mls, const PointCloudXYZI::P
             throw std::invalid_argument("handle this");
         }
 
-        if(false)
+        if(true)
         {
-            //this is required to keep only the updates on the z axis
+            //THIS IS ENFORCING TO USE THE UPDATE ONLY ON THE Z axis translation 
             
             V3D t = known_als2mls.translation(); //known transform
             std::cout<<"Init    t:"<<known_als2mls.translation().transpose()<<std::endl;
@@ -557,8 +557,23 @@ bool ALS_Handler::init(const Sophus::SE3 &known_als2mls, const PointCloudXYZI::P
             //t = als_to_mls.translation();
             //als_to_mls = Sophus::SE3(known_als2mls.so3().matrix(), t); //set the given one plus the z axis refinement for sparse ALS
             std::cout<<"debug als_to_mls translation: "<<als_to_mls.translation().transpose()<<std::endl;
-        }
+        
+            auto known_als2mls_inv = known_als2mls.inverse();
+            auto als_to_mls_inv = als_to_mls.inverse();
 
+            std::cout<<"known_als2mls_inv:"<<known_als2mls_inv.translation().transpose()<<std::endl;
+            std::cout<<"als_to_mls_inv   :"<<als_to_mls_inv.translation().transpose()<<std::endl;
+
+            t = known_als2mls_inv.translation();  //take the known solution
+            
+            t[2] = als_to_mls_inv.translation()[2]; //change on the z axis value
+            //t = als_to_mls_inv.translation(); //just a test if we use the full refined translation 
+
+            als_to_mls = Sophus::SE3(known_als2mls_inv.so3().matrix(), t).inverse();
+
+            //known_als2mls_inv: 398269.1135182129 6786162.7477222066     131.0252137406
+            //als_to_mls_inv   : 398269.2192482995 6786162.3634432964     132.7766588416
+        }
 
 
         end = std::chrono::system_clock::now();

@@ -18,6 +18,7 @@ sns.set_context("notebook", font_scale=1.4)  # 1.6 × base font size (~10 by def
 
 # p2plane error, furtherst_d, closest_d, curvature, neighbours in a radius ball 
 methods = {
+    #old
     # 'GNSS-IMU 0': '/home/eugeniu/vux-georeferenced/No_refinement/gnss-imu0/surface-eval',
     # 'GNSS-IMU 1': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu1/surface-eval",
     # 'GNSS-IMU 2': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu2/surface-eval",
@@ -27,67 +28,29 @@ methods = {
     # 'Hesai 1': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai1/surface-eval",
     # 'Hesai 2': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai2/surface-eval",
     # 'Hesai 3': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai3/surface-eval",
-    
-    'GNSS-IMU 0_': '/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu0/surface-eval2',
-    'GNSS-IMU 1_': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu1/surface-eval2",
-    'GNSS-IMU 2_': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu2/surface-eval2",
-    'GNSS-IMU 3_': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/gnss-imu3/surface-eval2",
-
-    'Hesai 0': '/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai0/surface-eval2',
-    'Hesai 1': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai1/surface-eval2",
-    'Hesai 2': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai2/surface-eval2",
-    'Hesai 3': "/home/eugeniu/vux-georeferenced_2km_30cm_voxel/hesai3/surface-eval2",
+    #------------------------------------------------------------------------------------------------
 
 
-    
-    # 'GNSS-IMU1_2BA': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu1/surface-eval",
-    # 'Hesai1_2BA': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai1/surface-eval",
+    'GNSS-IMU 0': '/home/eugeniu/x_vux-georeferenced-final/gnss-imu0/surface-eval',
+    'GNSS-IMU 1': '/home/eugeniu/x_vux-georeferenced-final/gnss-imu1/surface-eval',
+    'GNSS-IMU 2': '/home/eugeniu/x_vux-georeferenced-final/gnss-imu2/surface-eval',
+    'GNSS-IMU 3': '/home/eugeniu/x_vux-georeferenced-final/gnss-imu3/surface-eval',
 
-    # 'GNSS-IMU1_3BA': "/home/eugeniu/vux-georeferenced/BA-3_iterations/gnss-imu1/surface-eval",
-    # 'Hesai1_3BA': "/home/eugeniu/vux-georeferenced/BA-3_iterations/hesai1/surface-eval",
+    # 'GNSS-test 0': '/home/eugeniu/x_vux-georeferenced-final/gnss_test0/surface-eval',
+    # 'GNSS-test 1': '/home/eugeniu/x_vux-georeferenced-final/gnss_test1/surface-eval',
+    # 'GNSS-test 2': '/home/eugeniu/x_vux-georeferenced-final/gnss_test2/surface-eval',
+    # 'GNSS-test 3': '/home/eugeniu/x_vux-georeferenced-final/gnss_test3/surface-eval',
 
-    # 'GNSS-IMU2_2BA': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu2/surface-eval",
-    # 'Hesai2_2BA': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai2/surface-eval",
-
-    # 'GNSS-IMU2_3BA': "/home/eugeniu/vux-georeferenced/BA-3_iterations/gnss-imu2/surface-eval",
-    # 'Hesai2_3BA': "/home/eugeniu/vux-georeferenced/BA-3_iterations/hesai2/surface-eval",
-
-    # 'GNSS-IMU3_2BA': "/home/eugeniu/vux-georeferenced/BA-2_iterations/gnss-imu3/surface-eval",
-    # 'Hesai3_2BA': "/home/eugeniu/vux-georeferenced/BA-2_iterations/hesai3/surface-eval",
-
-    # 'GNSS-IMU3_3BA': "/home/eugeniu/vux-georeferenced/BA-3_iterations/gnss-imu3/surface-eval",
-    # 'Hesai3_3BA': "/home/eugeniu/vux-georeferenced/BA-3_iterations/hesai3/surface-eval",
-    
+    'Hesai 0': '/home/eugeniu/x_vux-georeferenced-final/hesai0/surface-eval',
+    'Hesai 1': '/home/eugeniu/x_vux-georeferenced-final/hesai1/surface-eval',
+    'Hesai 2': '/home/eugeniu/x_vux-georeferenced-final/hesai2/surface-eval',
+    'Hesai 3': '/home/eugeniu/x_vux-georeferenced-final/hesai3/surface-eval'
 }
 
-
-'''
-the conclusions so far:
-
--There is no corelation between point to plane error
-    and the quality of the reference plane 
-
--gnss-imu is bad, the hesai is a good initial guess
--we can refine a bad initial guess via scan-to-map registration
--if the initial guess is good already - then results do not change much
-
--The reference map might make the results slightly worse 2cm 
-    due to different FOV - or something else 
-
--Using too many BA iterations - makes it workse 2 iters better than 3
-
-
-
-
-WE STICK WITH 2BA METHOD
-
-
-'''
 
 # Bootstrap parameters
 n_bootstrap = 10000
 rng = np.random.default_rng(seed=42)  # reproducible
-
 
 def natural_sort_key(path):
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', os.path.splitext(path)[0])]
@@ -325,7 +288,7 @@ def show_correlation():
         plt.colorbar(label=f'Bins for {label} (r={pearson:.2f})')
 
         # Add correlation in the title or label if desired
-        r = np.corrcoef(x, y)[0, 1]
+        #r = np.corrcoef(x, y)[0, 1]
         #plt.title(f'{label} (r = {r:.2f})')
         #plt.legend(title="Method", loc='best')
         plt.xlabel('Point-to-surface error')
