@@ -29,13 +29,10 @@
 
 #define BA_NEIGH (10.0) // (5.0) // use min 5 points for nearest neighbours
 
-// try now see if it still drifts
-
-// #define BA_NEIGH (20.0) no landmarks found for sparse data
-
-// this will rewure tests with radius based landmarks
-
 // #define BA_NEIGH (30.0) too many enighbours does not fit the 1m threshold
+
+
+//#define compile_prev_code this will compile prev code
 
 namespace Eigen
 {
@@ -455,6 +452,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
     // return dx.norm();
 }
 
+
 double scan2map_planes_test(pcl::PointCloud<PointType>::Ptr &src,
                             const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
                             const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud,
@@ -618,6 +616,7 @@ double scan2map_planes_test(pcl::PointCloud<PointType>::Ptr &src,
     return cost_total;
     // return dx.norm();
 }
+
 
 void debug_CloudWithNormals(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud_with_normals,
                             const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub)
@@ -819,6 +818,7 @@ void debugGraphs(const gtsam::Values &prev_values, const gtsam::Values &curr_val
     publishBACloud(curr_pub, curr_cloud, header);
 }
 
+#ifdef compile_prev_code
 struct landmark_
 {
     int map_point_index;         // index of the point from the reference map
@@ -1072,6 +1072,8 @@ std::unordered_map<int, landmark_> get_Correspondences(
     return landmarks_map;
 }
 
+#endif
+
 double GM_robust_kernel(const double &residual2)
 {
     double kernel_ = 1.0;
@@ -1123,6 +1125,8 @@ public:
         return (gtsam::Vector(1) << error).finished();
     }
 };
+
+
 
 namespace custom_factor
 {
@@ -1437,6 +1441,7 @@ auto prior_noise = gtsam::noiseModel::Diagonal::Sigmas(
 auto tight_noise = noiseModel::Diagonal::Sigmas(
     (Vector6() << .0001, .0001, .0001, .0001, .0001, .0001).finished());
 
+#ifdef compile_prev_code
 void updatePriorUncertainty(gtsam::NonlinearFactorGraph &graph,
                             gtsam::Key prior_key,
                             const gtsam::SharedNoiseModel &new_prior_noise)
@@ -2029,6 +2034,7 @@ void CubicSpline::evaluate(double t, SE3Type &P) const //, SE3DerivType &P_prim,
 
 #endif
 
+#endif
 //----------------------------------------------------------------------------------------------
 
 struct landmark_new
@@ -2377,20 +2383,20 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                                 landmarks_map.emplace(point_3d, tgt); // Insert with 3D point as key
                                 // landmarks_map[point_idx[j]] = tgt;
                             }
-                            else if (planes_iterator->second.is_plane) // Already exists → update if better
-                            {
-                                if (planes_iterator->second.re_proj_error > curvature)
-                                {
-                                    planes_iterator->second.norm = norm;
-                                    planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
-                                    planes_iterator->second.re_proj_error = curvature; // Fixed: Use curvature (not point_dist[j])
-                                }
-                            }
+                            // else if (planes_iterator->second.is_plane) // Already exists → update if better
+                            // {
+                            //     if (planes_iterator->second.re_proj_error > curvature)
+                            //     {
+                            //         planes_iterator->second.norm = norm;
+                            //         planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                            //         planes_iterator->second.re_proj_error = curvature; // Fixed: Use curvature (not point_dist[j])
+                            //     }
+                            // }
 
                             break; // to keep only the closest neighbour
                         }
                     }
-                    else if (linearity > .7) // edge like
+                    else if (linearity > .8) // edge like
                     {
                         // if (lambda2 > 3 * lambda1) -> good line aloam
 
@@ -2424,18 +2430,18 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                             tgt.edge_direction = line_direction; // biggest eigen vector
                             landmarks_map.emplace(point_3d, tgt);
                         }
-                        else if (edge_iterator->second.is_edge) // Already exists → update if better
-                        {
-                            if (edge_iterator->second.re_proj_error < linearity) // found a better
-                            {
-                                V3D line_direction = solver.eigenvectors().col(2);
-                                line_direction.normalize();
+                        // else if (edge_iterator->second.is_edge) // Already exists → update if better
+                        // {
+                        //     if (edge_iterator->second.re_proj_error < linearity) // found a better
+                        //     {
+                        //         V3D line_direction = solver.eigenvectors().col(2);
+                        //         line_direction.normalize();
 
-                                edge_iterator->second.edge_direction = line_direction;
-                                edge_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
-                                edge_iterator->second.re_proj_error = linearity;
-                            }
-                        }
+                        //         edge_iterator->second.edge_direction = line_direction;
+                        //         edge_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                        //         edge_iterator->second.re_proj_error = linearity;
+                        //     }
+                        // }
                     }
                 }
             }
@@ -3433,7 +3439,7 @@ void updateDA(ros::Publisher &_pub_debug,
                     //     global_seen_landmarks[land.key] = land;
                     // }
                 }
-                else if (land.is_edge && false)
+                else if (land.is_edge)
                 {
                     Point3 line_dir(land.edge_direction.x(), land.edge_direction.y(), land.edge_direction.z());
                     auto robust_noise = gtsam::noiseModel::Robust::Create(
@@ -3584,7 +3590,7 @@ Sophus::SE3 updateSimple(
         Values latest_estimate;
         Eigen::Matrix4d T_last;
 
-        double prev_error = std::numeric_limits<double>::max();
+        double prev_error = 9999.;// std::numeric_limits<double>::max();
         const double convergence_threshold = .05; // when to stop
 
         // Add odometry or priors to graph
@@ -3659,8 +3665,7 @@ Sophus::SE3 updateSimple(
 
             double current_error = optimizer.error();
 
-            // std::cout << "\nIteration " << refinement << ", error = " << current_error << std::endl;
-
+            std::cout << "\nIteration " << refinement << ", error = " << current_error << std::endl;
             auto d_error = std::abs(prev_error - current_error);
             std::cout << "Number of factors in graph: " << curr_graph.size() << ", d_error:" << d_error << std::endl;
             if (d_error < convergence_threshold)
@@ -3671,8 +3676,8 @@ Sophus::SE3 updateSimple(
 
             prev_error = current_error;
 
-            // std::cout << "Finished one iteration, press enter..." << std::endl;
-            // std::cin.get();
+            std::cout << "Finished one iteration, press enter..." << std::endl;
+            std::cin.get();
 
             // break;
         }
@@ -3696,8 +3701,8 @@ Sophus::SE3 updateSimple(
 
         latest_estimate = isam.calculateEstimate();
         std::cout << "Isam Total factors: " << isam.getFactorsUnsafe().size() << std::endl;
-        double current_error = isam.getFactorsUnsafe().error(latest_estimate);
-        std::cout<<"before update isam current_error:"<<current_error<<std::endl;
+        //double current_error = isam.getFactorsUnsafe().error(latest_estimate);
+        //std::cout<<"before update isam current_error:"<<current_error<<std::endl;
 
         // isam.update();
         // latest_estimate = isam.calculateEstimate();

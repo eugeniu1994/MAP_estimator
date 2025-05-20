@@ -1825,8 +1825,8 @@ void DataHandler::Subscribe()
 
 
 
-                                vux_mls_time_aligned = true; //just a test to remove the syn - remove later TODO
-                                continue;
+                                //vux_mls_time_aligned = true; //just a test to remove the syn - remove later TODO
+                                //continue;
 
 
                 if (diff < 0.1)
@@ -2022,70 +2022,6 @@ void DataHandler::Subscribe()
                 estimator_.localKdTree_map->setInputCloud(reference_localMap_cloud);
                 const auto &refference_kdtree = estimator_.localKdTree_map;
 
-                // we can use the feats_down_body when perform online MLS see the registration
-                // TODO - skip next, and perform it for hesai
-                if (perform_mls_registration)
-                {
-                    pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
-                    for (const auto &p : feats_down_body->points)
-                    {
-                        V3D p_body(p.x, p.y, p.z);
-                        V3D p_imu(state_point.offset_R_L_I.matrix() * p_body + state_point.offset_T_L_I);
-
-                        VUX_PointType vux_p;
-                        vux_p.x = p_imu.x();
-                        vux_p.y = p_imu.y();
-                        vux_p.z = p_imu.z();
-                        downsampled_line->push_back(vux_p);
-                    }
-
-                    double translation_std = .05; // 5cm meters
-                    double rotation_std = .01;    // radians - 2.8 degrees
-                    curr_mls = addNoiseToPose(curr_mls, translation_std, rotation_std, rng);
-
-                    auto absolute_init_guess_T = prev_mls;// curr_mls;             // absolute init guess
-                    auto refined_odom = prev_mls.inverse() * curr_mls; // relative init guess
-
-                    //refined_odom = Sophus::SE3();
-
-                    optimized_pose = updateSimple // updateReferenceGraph
-                        (
-                            pubLaserCloudDebug, flg_exit, // debug
-                            prev_pub, curr_pub,
-                            cloud_pub, normals_pub,
-                            downsampled_line,      // scan in sensor frame
-                            absolute_init_guess_T, // absolute T init guess
-                            refined_odom,          // odometry
-                            refference_kdtree, reference_localMap_cloud);
-
-                    if (pubOptimizedVUX.getNumSubscribers() != 0)
-                    {
-                        feats_down_body->clear();
-                        for (int i = 0; i < downsampled_line->size(); i++) // for each point in the line
-                        {
-                            V3D p_src(downsampled_line->points[i].x, downsampled_line->points[i].y, downsampled_line->points[i].z);
-                            V3D p_transformed = optimized_pose * p_src;
-                            //V3D p_transformed = curr_mls * p_src;
-
-                            PointType p;
-                            p.x = p_transformed.x();
-                            p.y = p_transformed.y();
-                            p.z = p_transformed.z();
-
-                            feats_down_body->push_back(p);
-                        }
-                        publish_frame_debug(pubOptimizedVUX, feats_down_body);
-                    }
-
-                    prev_mls = curr_mls;
-                    continue; //------------------------------------------------------------------------------------------
-                }
-
-
-
-
-
-
                 while (gnss_vux_data[tmp_index].gps_tod <= time_of_day_sec && tmp_index < gnss_vux_data.size())
                 {
                     ros::spinOnce();
@@ -2109,6 +2045,72 @@ void DataHandler::Subscribe()
 
                     tmp_index++;
                     rate.sleep();
+
+
+
+                    // we can use the feats_down_body when perform online MLS see the registration
+                    // TODO - skip next, and perform it for hesai
+                    if (perform_mls_registration)
+                    {
+                        pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
+                        for (const auto &p : feats_down_body->points)
+                        {
+                            V3D p_body(p.x, p.y, p.z);
+                            V3D p_imu(state_point.offset_R_L_I.matrix() * p_body + state_point.offset_T_L_I);
+
+                            VUX_PointType vux_p;
+                            vux_p.x = p_imu.x();
+                            vux_p.y = p_imu.y();
+                            vux_p.z = p_imu.z();
+                            downsampled_line->push_back(vux_p);
+                        }
+
+                        double translation_std = .05; // 5cm meters
+                        double rotation_std = .02;    // radians - 2.8 degrees
+                        curr_mls = addNoiseToPose(curr_mls, translation_std, rotation_std, rng);
+
+                        auto absolute_init_guess_T = prev_mls;// curr_mls;             // absolute init guess
+                        auto refined_odom = prev_mls.inverse() * curr_mls; // relative init guess
+                        
+                        //auto absolute_init_guess_T = als2mls * gnss_vux_data[tmp_index-2].se3;
+                        //auto refined_odom = prev_mls.inverse() * curr_mls; 
+
+                        //refined_odom = Sophus::SE3();
+
+                        optimized_pose = updateSimple // updateReferenceGraph
+                            (
+                                pubLaserCloudDebug, flg_exit, // debug
+                                prev_pub, curr_pub,
+                                cloud_pub, normals_pub,
+                                downsampled_line,      // scan in sensor frame
+                                absolute_init_guess_T, // absolute T init guess
+                                refined_odom,          // odometry
+                                refference_kdtree, reference_localMap_cloud);
+
+                        if (pubOptimizedVUX.getNumSubscribers() != 0)
+                        {
+                            feats_down_body->clear();
+                            for (int i = 0; i < downsampled_line->size(); i++) // for each point in the line
+                            {
+                                V3D p_src(downsampled_line->points[i].x, downsampled_line->points[i].y, downsampled_line->points[i].z);
+                                V3D p_transformed = optimized_pose * p_src;
+                                //V3D p_transformed = curr_mls * p_src;
+
+                                PointType p;
+                                p.x = p_transformed.x();
+                                p.y = p_transformed.y();
+                                p.z = p_transformed.z();
+
+                                feats_down_body->push_back(p);
+                            }
+                            publish_frame_debug(pubOptimizedVUX, feats_down_body);
+                        }
+
+                        prev_mls = curr_mls;
+                        continue; //------------------------------------------------------------------------------------------
+                    }
+
+
 
                     if (false) // this will find the extrinsics between the lidar and the gnss poses
                     {
@@ -2724,8 +2726,9 @@ void DataHandler::Subscribe()
                                 }
                             }
 
+                            
                             //---------------------------------------------------------------------
-
+                            #ifdef compile_prev_code
                             if (debug) // I AM ON THIS PART NOW
                             {
                                 // std::cout<<"In Debug..."<<std::endl;
@@ -3483,7 +3486,7 @@ void DataHandler::Subscribe()
                             }
 
                             //---------------------------------------------------------------------
-
+                            #endif
                             if (eval)
                             {
                                 if (coarse_once) // first time approach
