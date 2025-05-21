@@ -31,8 +31,7 @@
 
 // #define BA_NEIGH (30.0) too many enighbours does not fit the 1m threshold
 
-
-//#define compile_prev_code this will compile prev code
+// #define compile_prev_code this will compile prev code
 
 namespace Eigen
 {
@@ -49,8 +48,8 @@ namespace registration
     struct P2Plane_global
     {
         P2Plane_global(const V3D &curr_point_, const V3D &plane_unit_norm_,
-                       double negative_OA_dot_norm_)
-            : curr_point(curr_point_), plane_unit_norm(plane_unit_norm_), negative_OA_dot_norm(negative_OA_dot_norm_) {}
+                       double d_)
+            : curr_point(curr_point_), plane_unit_norm(plane_unit_norm_), d(d_) {}
 
         template <typename T>
         bool operator()(const T *q, const T *t, T *residual) const
@@ -62,22 +61,22 @@ namespace registration
             Eigen::Matrix<T, 3, 1> point_world = q_w * curr_point.template cast<T>() + t_w;
 
             Eigen::Matrix<T, 3, 1> norm(T(plane_unit_norm.x()), T(plane_unit_norm.y()), T(plane_unit_norm.z()));
-            residual[0] = norm.dot(point_world) + T(negative_OA_dot_norm);
+            residual[0] = norm.dot(point_world) + T(d);
 
             return true;
         }
 
         static ceres::CostFunction *Create(const V3D &curr_point_, const V3D &plane_unit_norm_,
-                                           const double negative_OA_dot_norm_)
+                                           const double d_)
         {
             return (new ceres::AutoDiffCostFunction<
                     P2Plane_global, 1, 4, 3>(
-                new P2Plane_global(curr_point_, plane_unit_norm_, negative_OA_dot_norm_)));
+                new P2Plane_global(curr_point_, plane_unit_norm_, d_)));
         }
 
         V3D curr_point;
         V3D plane_unit_norm;
-        double negative_OA_dot_norm;
+        double d;
     };
 
     struct P2Plane_local
@@ -153,8 +152,8 @@ namespace registration
     {
 
         LidarPlaneNormFactor_extrinsics(const V3D &curr_point_, const V3D &plane_unit_norm_,
-                                        double negative_OA_dot_norm_, const Sophus::SE3 &fixed_pose_) : curr_point(curr_point_), plane_unit_norm(plane_unit_norm_),
-                                                                                                        negative_OA_dot_norm(negative_OA_dot_norm_), fixed_pose(fixed_pose_) {}
+                                        double d_, const Sophus::SE3 &fixed_pose_) : curr_point(curr_point_), plane_unit_norm(plane_unit_norm_),
+                                                                                     d(d_), fixed_pose(fixed_pose_) {}
 
         template <typename T>
         bool operator()(const T *q, const T *t, T *residual) const
@@ -174,22 +173,22 @@ namespace registration
             Eigen::Matrix<T, 3, 1> point_world = R_fixed * point_in_frame + t_fixed;
 
             Eigen::Matrix<T, 3, 1> norm(T(plane_unit_norm.x()), T(plane_unit_norm.y()), T(plane_unit_norm.z()));
-            residual[0] = norm.dot(point_world) + T(negative_OA_dot_norm);
+            residual[0] = norm.dot(point_world) + T(d);
 
             return true;
         }
 
         static ceres::CostFunction *Create(const V3D &curr_point_, const V3D &plane_unit_norm_,
-                                           const double negative_OA_dot_norm_, const Sophus::SE3 &fixed_pose_)
+                                           const double d_, const Sophus::SE3 &fixed_pose_)
         {
             return (new ceres::AutoDiffCostFunction<
                     LidarPlaneNormFactor_extrinsics, 1, 4, 3>(
-                new LidarPlaneNormFactor_extrinsics(curr_point_, plane_unit_norm_, negative_OA_dot_norm_, fixed_pose_)));
+                new LidarPlaneNormFactor_extrinsics(curr_point_, plane_unit_norm_, d_, fixed_pose_)));
         }
 
         V3D curr_point;
         V3D plane_unit_norm;
-        double negative_OA_dot_norm;
+        double d;
         Sophus::SE3 fixed_pose;
     };
 };
@@ -290,7 +289,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
 
                         // find the norm of plane
                         V3D norm = matA0.colPivHouseholderQr().solve(matB0);
-                        double negative_OA_dot_norm = 1 / norm.norm();
+                        double d = 1 / norm.norm();
                         norm.normalize();
 
                         bool planeValid = true;
@@ -298,7 +297,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
                         {
                             if (fabs(norm(0) * reference_localMap_cloud->points[point_idx[j]].x +
                                      norm(1) * reference_localMap_cloud->points[point_idx[j]].y +
-                                     norm(2) * reference_localMap_cloud->points[point_idx[j]].z + negative_OA_dot_norm) > .1)
+                                     norm(2) * reference_localMap_cloud->points[point_idx[j]].z + d) > .1)
                             {
                                 planeValid = false;
                                 break;
@@ -316,7 +315,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
                             J_r.block<3, 1>(0, 0) = norm;                      // df/dt
                             J_r.block<3, 1>(3, 0) = p_transformed.cross(norm); // df/dR
 
-                            // double residual = norm(0) * p_transformed.x() + norm(1) * p_transformed.y() + norm(2) * p_transformed.z() + negative_OA_dot_norm;
+                            // double residual = norm(0) * p_transformed.x() + norm(1) * p_transformed.y() + norm(2) * p_transformed.z() + d;
                             double residual = (p_transformed - target_point).dot(norm);
 
                             double w = Weight(residual * residual);
@@ -366,7 +365,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
 
                         // find the norm of plane
                         V3D norm = matA0.colPivHouseholderQr().solve(matB0);
-                        double negative_OA_dot_norm = 1 / norm.norm();
+                        double d = 1 / norm.norm();
                         norm.normalize();
 
                         bool planeValid = true;
@@ -374,7 +373,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
                         {
                             if (fabs(norm(0) * reference_localMap_cloud->points[point_idx[j]].x +
                                      norm(1) * reference_localMap_cloud->points[point_idx[j]].y +
-                                     norm(2) * reference_localMap_cloud->points[point_idx[j]].z + negative_OA_dot_norm) > .1)
+                                     norm(2) * reference_localMap_cloud->points[point_idx[j]].z + d) > .1)
                             {
                                 planeValid = false;
                                 break;
@@ -392,7 +391,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
                             J_r.block<3, 1>(0, 0) = norm;                      // df/dt
                             J_r.block<3, 1>(3, 0) = p_transformed.cross(norm); // df/dR
 
-                            // double residual = norm(0) * p_transformed.x() + norm(1) * p_transformed.y() + norm(2) * p_transformed.z() + negative_OA_dot_norm;
+                            // double residual = norm(0) * p_transformed.x() + norm(1) * p_transformed.y() + norm(2) * p_transformed.z() + d;
                             double residual = (p_transformed - target_point).dot(norm);
 
                             double w = Weight(residual * residual);
@@ -451,7 +450,6 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
     return cost_total;
     // return dx.norm();
 }
-
 
 double scan2map_planes_test(pcl::PointCloud<PointType>::Ptr &src,
                             const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
@@ -530,7 +528,7 @@ double scan2map_planes_test(pcl::PointCloud<PointType>::Ptr &src,
                         // Compute Eigenvalues and Eigenvectors
                         Eigen::SelfAdjointEigenSolver<M3D> solver(covariance);
                         V3D norm = solver.eigenvectors().col(0); // Smallest eigenvector
-                        double negative_OA_dot_norm = 1 / norm.norm();
+                        double d = 1 / norm.norm();
                         norm.normalize();
 
                         // Compute eigenvalue ratios to assess planarity
@@ -583,7 +581,7 @@ double scan2map_planes_test(pcl::PointCloud<PointType>::Ptr &src,
                             J_r.block<3, 1>(0, 0) = norm;                      // df/dt
                             J_r.block<3, 1>(3, 0) = p_transformed.cross(norm); // df/dR
 
-                            // double residual = norm(0) * p_transformed.x() + norm(1) * p_transformed.y() + norm(2) * p_transformed.z() + negative_OA_dot_norm;
+                            // double residual = norm(0) * p_transformed.x() + norm(1) * p_transformed.y() + norm(2) * p_transformed.z() + d;
                             double residual = (p_transformed - target_point).dot(norm);
 
                             double w = Weight(residual * residual);
@@ -617,8 +615,7 @@ double scan2map_planes_test(pcl::PointCloud<PointType>::Ptr &src,
     // return dx.norm();
 }
 
-
-void debug_CloudWithNormals(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud_with_normals,
+void debug_CloudWithNormals(const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &cloud_with_normals,
                             const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub)
 {
 
@@ -682,7 +679,7 @@ void debug_CloudWithNormals(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud_
     }
 }
 
-void debug_CloudWithNormals2(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud_with_normals,
+void debug_CloudWithNormals2(pcl::PointCloud<pcl::PointXYZINormal>::Ptr &cloud_with_normals,
                              const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub)
 {
     // --- 1. Publish Point Cloud ---
@@ -699,9 +696,32 @@ void debug_CloudWithNormals2(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud
     normals_marker.color.a = 1.0;  // Full opacity
     double normal_length = 2.;     // 5.;     // Length of normal lines
     double opacity = 1.0;
-    for (const auto &point : cloud_with_normals->points)
+
+    // Flip normal to point consistently toward viewpoint
+    // V3D point_on_the_plane(reference_localMap_cloud->points[point_idx[0]].x, reference_localMap_cloud->points[point_idx[0]].y, reference_localMap_cloud->points[point_idx[0]].z);
+    // if (norm.dot(T.translation() - point_on_the_plane) < 0)
+    // {
+    //     norm = -norm;
+    // }
+
+    for (auto &point : cloud_with_normals->points)
     {
         geometry_msgs::Point p1, p2;
+
+        auto norm = V3D(point.normal_x, point.normal_y, point.normal_z);
+        if (norm.dot(V3D(0, 0, 1)) < 0)
+        {
+            norm *= -1;
+        }
+
+        if (point.curvature > 0)
+        {
+            norm *= -1;
+        }
+
+        point.normal_x = norm[0];
+        point.normal_y = norm[1];
+        point.normal_z = norm[2];
 
         // Start of normal (point)
         p1.x = point.x;
@@ -726,9 +746,9 @@ void debug_CloudWithNormals2(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud
         std_msgs::ColorRGBA color;
         if (point.curvature > 0) // blue seen multiple times
         {
-            color.r = 0.3;
-            color.g = 0.8;
-            color.b = 1.0;
+            color.r = 1.;
+            color.g = 0.;
+            color.b = 0.0;
             opacity = 1.0;
         }
         else if (point.curvature == -1)
@@ -736,7 +756,7 @@ void debug_CloudWithNormals2(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud
             color.r = 0.0;
             color.g = 1.0; // seen once
             color.b = 0.0;
-            opacity = .8;
+            opacity = .5;
         }
 
         else if (point.curvature == -2)
@@ -821,11 +841,11 @@ void debugGraphs(const gtsam::Values &prev_values, const gtsam::Values &curr_val
 #ifdef compile_prev_code
 struct landmark_
 {
-    int map_point_index;         // index of the point from the reference map
-    V3D norm;                    // the normal of the plane in global frame
-    V3D point_on_the_plane;      // point from the map
-    double negative_OA_dot_norm; // d parameter of the plane
-    int seen;                    // how many times it has been seen
+    int map_point_index;    // index of the point from the reference map
+    V3D norm;               // the normal of the plane in global frame
+    V3D point_on_the_plane; // point from the map
+    double d;               // d parameter of the plane
+    int seen;               // how many times it has been seen
     double re_proj_error;
     std::vector<int> line_idx; // from which line is seen
     std::vector<int> scan_idx; // from which which point index of the line_idx it is seen
@@ -893,7 +913,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
 
                     // find the norm of plane
                     V3D norm = matA0.colPivHouseholderQr().solve(matB0);
-                    double negative_OA_dot_norm = 1 / norm.norm();
+                    double d = 1 / norm.norm();
                     norm.normalize();
 
                     bool planeValid = true;
@@ -901,7 +921,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
                     {
                         double d = fabs(norm(0) * reference_localMap_cloud->points[point_idx[j]].x +
                                         norm(1) * reference_localMap_cloud->points[point_idx[j]].y +
-                                        norm(2) * reference_localMap_cloud->points[point_idx[j]].z + negative_OA_dot_norm);
+                                        norm(2) * reference_localMap_cloud->points[point_idx[j]].z + d);
                         if (d > good_plane_threshold)
                         {
                             planeValid = false;
@@ -935,7 +955,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
                     // Compute Eigenvalues and Eigenvectors
                     Eigen::SelfAdjointEigenSolver<M3D> solver(covariance);
                     V3D norm = solver.eigenvectors().col(0); // Smallest eigenvector
-                    double negative_OA_dot_norm = 1 / norm.norm();
+                    double d = 1 / norm.norm();
                     norm.normalize();
 
                     // Compute eigenvalue ratios to assess planarity
@@ -999,10 +1019,10 @@ std::unordered_map<int, landmark_> get_Correspondences(
                             if (planes_iterator == landmarks_map.end()) // does not exist - add
                             {
                                 landmark_ tgt;
-                                tgt.map_point_index = point_idx[j];              // index of the point from the map
-                                tgt.norm = norm;                                 // plane normal
-                                tgt.negative_OA_dot_norm = negative_OA_dot_norm; // d of the plane
-                                tgt.seen = 1;                                    // first time seen
+                                tgt.map_point_index = point_idx[j]; // index of the point from the map
+                                tgt.norm = norm;                    // plane normal
+                                tgt.d = d;                          // d of the plane
+                                tgt.seen = 1;                       // first time seen
                                 tgt.re_proj_error = point_dist[j];
                                 tgt.line_idx.push_back(l); // seen from line l
                                 tgt.scan_idx.push_back(i); // and point i from this line l
@@ -1020,7 +1040,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
                                 // if (planes_iterator->second.re_proj_error > point_dist[j])
                                 // {
                                 //     planes_iterator->second.norm = norm;
-                                //     planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                                //     planes_iterator->second.d = d;
                                 //     planes_iterator->second.re_proj_error = point_dist[j];
                                 // }
 
@@ -1044,7 +1064,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
                                         // if (planes_iterator->second.re_proj_error > point_dist[j])
                                         // {
                                         //     planes_iterator->second.norm = norm;
-                                        //     planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                                        //     planes_iterator->second.d = d;
                                         //     planes_iterator->second.re_proj_error = point_dist[j];
                                         // }
                                     }
@@ -1056,7 +1076,7 @@ std::unordered_map<int, landmark_> get_Correspondences(
                                         // if (planes_iterator->second.re_proj_error > point_dist[j])
                                         // {
                                         //     planes_iterator->second.norm = norm;
-                                        //     planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                                        //     planes_iterator->second.d = d;
                                         //     planes_iterator->second.re_proj_error = point_dist[j];
                                         // }
                                     }
@@ -1125,8 +1145,6 @@ public:
         return (gtsam::Vector(1) << error).finished();
     }
 };
-
-
 
 namespace custom_factor
 {
@@ -1206,14 +1224,14 @@ namespace custom_factor
     class PointToPlaneFactor : public NoiseModelFactor1<Pose3>
     {
     private:
-        Point3 measured_point_;       // Point in sensor frame
-        Point3 plane_normal_;         // Plane normal (normalized)
-        Point3 target_point_;         // A point on the plane in world frame
-        double negative_OA_dot_norm_; // = 1 / norm.norm()
+        Point3 measured_point_; // Point in sensor frame
+        Point3 plane_normal_;   // Plane normal (normalized)
+        Point3 target_point_;   // A point on the plane in world frame
+        double d_;
         bool use_alternative_method_; // Flag to choose between calculation methods
 
-        double huber_delta_ = .1; // 10cm
-        // Huber weight calculation
+        double huber_delta_ = 1.0; // .1;  maybe take this as parameter
+
         double huberWeight(double error_norm) const
         {
             return (error_norm <= huber_delta_) ? 1.0 : huber_delta_ / error_norm;
@@ -1224,21 +1242,19 @@ namespace custom_factor
                            const Point3 &measured_point,
                            const Point3 &plane_norm,
                            const Point3 &target_point,
-                           double negative_OA_dot_norm,
+                           double d,
                            bool use_alternative_method,
                            const SharedNoiseModel &model) : NoiseModelFactor1<Pose3>(model, pose_key),
                                                             measured_point_(measured_point),
                                                             plane_normal_(plane_norm),
                                                             target_point_(target_point),
-                                                            negative_OA_dot_norm_(negative_OA_dot_norm),
+                                                            d_(d),
                                                             use_alternative_method_(use_alternative_method) {}
 
         Vector evaluateError(const Pose3 &pose, OptionalMatrixType H) const override
         {
-            // Transform measured point to world frame
-            // Point3 p_transformed = pose.transformFrom(measured_point_, H);
             Matrix36 H_point_wrt_pose;
-            Point3 p_transformed = pose.transformFrom(measured_point_, H ? &H_point_wrt_pose : 0);
+            Point3 p_transformed = pose.transformFrom(measured_point_, H ? &H_point_wrt_pose : 0); // Transform measured point to world frame
 
             double error = 0.0;
             if (use_alternative_method_)
@@ -1247,18 +1263,14 @@ namespace custom_factor
             }
             else
             {
-                error = plane_normal_.dot(p_transformed) + negative_OA_dot_norm_;
+                error = plane_normal_.dot(p_transformed) + d_;
             }
 
-            //  Apply robust weighting
-            // auto robust_weight = GM_robust_kernel(error * error);
-
-            double robust_weight = huberWeight(fabs(error));
+            double robust_weight = huberWeight(fabs(error)); //  Apply robust weighting
             // double robust_weight = 1.0;
 
             if (H)
             {
-                // Apply same weight to Jacobian
                 *H = (plane_normal_.transpose() * H_point_wrt_pose) * robust_weight;
             }
 
@@ -1273,7 +1285,7 @@ namespace custom_factor
                 measured_point_,
                 plane_normal_,
                 target_point_,
-                negative_OA_dot_norm_,
+                d_,
                 use_alternative_method_,
                 this->noiseModel());
         }
@@ -1368,36 +1380,65 @@ namespace custom_factor
         }
     };
 
-    class PointToDistributionFactor : public NoiseModelFactor1<Pose3>
-    {
-        using Base = NoiseModelFactor1<Pose3>;
-        Point3 point_;   // LiDAR point in local frame
-        Point3 mean_;    // Mean of nearby map points in world frame
-        Matrix3 invCov_; // Inverse covariance (Σ⁻¹)
+    // class PointToDistributionFactor : public NoiseModelFactor1<Pose3>
+    // {
+    //     using Base = NoiseModelFactor1<Pose3>;
+    //     Point3 point_;   // LiDAR point in local frame
+    //     Point3 mean_;    // Mean of nearby map points in world frame
+    //     Matrix3 invCov_; // Inverse covariance (Σ⁻¹)
 
-    public:
-        PointToDistributionFactor(Key poseKey,
-                                  const Point3 &point,
-                                  const Point3 &mean,
-                                  const Matrix3 &invCov)
-            : Base(noiseModel::Unit::Create(3), poseKey),
-              point_(point), mean_(mean), invCov_(invCov) {}
+    // public:
+    //     PointToDistributionFactor(Key poseKey,
+    //                               const Point3 &point,
+    //                               const Point3 &mean,
+    //                               const Matrix3 &invCov)
+    //         : Base(noiseModel::Unit::Create(3), poseKey),
+    //           point_(point), mean_(mean), invCov_(invCov) {}
 
-        Vector evaluateError(const Pose3 &pose, OptionalMatrixType H) const override
-        {
-            Point3 p_world = pose.transformFrom(point_, H);
+    //     Vector evaluateError(const Pose3 &pose, OptionalMatrixType H) const override
+    //     {
+    //         Point3 p_world = pose.transformFrom(point_, H);
 
-            Vector3 diff = p_world - mean_;
-            if (H)
-            {
-                // Whitened Jacobian: ∂e/∂pose = inv(Cov) * ∂(p_world)/∂pose
-                *H = invCov_ * (*H); // Chain rule: dMahalanobis/dPose = Σ⁻¹ * dP/dPose
-            }
-            return invCov_ * diff; // Mahalanobis residual vector
-        }
+    //         Vector3 diff = p_world - mean_;
+    //         if (H)
+    //         {
+    //             // Whitened Jacobian: ∂e/∂pose = inv(Cov) * ∂(p_world)/∂pose
+    //             *H = invCov_ * (*H); // Chain rule: dMahalanobis/dPose = Σ⁻¹ * dP/dPose
+    //         }
+    //         return invCov_ * diff; // Mahalanobis residual vector
+    //     }
 
-        virtual ~PointToDistributionFactor() {}
-    };
+    //     virtual ~PointToDistributionFactor() {}
+    // };
+
+    // class PointToDistributionFactor : public gtsam::NoiseModelFactor1<gtsam::Pose3>
+    // {
+    //     using Base = gtsam::NoiseModelFactor1<gtsam::Pose3>;
+    //     gtsam::Point3 point_;   // LiDAR point in local frame
+    //     gtsam::Point3 mean_;    // Mean of nearby map points in world frame
+
+    // public:
+    //     PointToDistributionFactor(gtsam::Key poseKey,
+    //                             const gtsam::Point3& point,
+    //                             const gtsam::Point3& mean,
+    //                             const gtsam::SharedNoiseModel& model)
+    //         : Base(model, poseKey), point_(point), mean_(mean) {}
+
+    //     gtsam::Vector evaluateError(const gtsam::Pose3& pose,
+    //                                 gtsam::OptionalMatrixType H) const override
+    //     {
+    //         gtsam::Point3 p_world = pose.transformFrom(point_, H); // ∂p_world/∂pose in H
+    //         return p_world - mean_; // Unwhitened residual, whitening done by noise model
+    //     }
+
+    //     virtual ~PointToDistributionFactor() {}
+    // };
+    // Point3 mean(land.center.x(), land.center.y(), land.center.z());
+    //                 Matrix3 invCov = land.covariance.inverse();
+    //                 Matrix3 cov = land.covariance; // get it from PCA
+    //                 SharedNoiseModel model = noiseModel::Gaussian::Covariance(cov);
+    //                 this_Graph.emplace_shared<PointToDistributionFactor>(X(key), measured_point, mean, model);
+    //                 //this_Graph.emplace_shared<PointToDistributionFactor>(X(key), measured_point, mean, invCov);
 };
 
 using namespace custom_factor;
@@ -1698,10 +1739,10 @@ void buildGraph(
 
     if (normals_pub.getNumSubscribers() != 0)
     {
-        pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+        pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointXYZINormal>());
         for (const auto &[index, land] : landmarks_map)
         {
-            pcl::PointNormal pt;
+            pcl::PointXYZINormal pt;
             pt.x = reference_localMap_cloud->points[land.map_point_index].x;
             pt.y = reference_localMap_cloud->points[land.map_point_index].y;
             pt.z = reference_localMap_cloud->points[land.map_point_index].z;
@@ -1770,7 +1811,7 @@ void buildGraph(
 
                 use_alternative_method = true;
 
-                graph.emplace_shared<PointToPlaneFactor>(useX ? X(pose_idx) : Z(pose_idx), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
+                graph.emplace_shared<PointToPlaneFactor>(useX ? X(pose_idx) : Z(pose_idx), measured_point, plane_norm, target_point, land.d,
                                                          use_alternative_method, plane_noise);
 
                 added_constraints++;
@@ -2039,10 +2080,10 @@ void CubicSpline::evaluate(double t, SE3Type &P) const //, SE3DerivType &P_prim,
 
 struct landmark_new
 {
-    int map_point_index;         // index of the point from the reference map
-    V3D norm;                    // the normal of the plane in global frame
-    V3D landmark_point;          // point_on_the_plane;      // point from the map
-    double negative_OA_dot_norm; // d parameter of the plane
+    int map_point_index; // index of the point from the reference map
+    V3D norm;            // the normal of the plane in global frame
+    V3D landmark_point;  // point_on_the_plane;      // point from the map
+    double d;            // d parameter of the plane
 
     double re_proj_error;
     std::vector<int> line_idx; // from which line is seen
@@ -2106,11 +2147,11 @@ auto plane_noise_cauchy_for_prev_segment = gtsam::noiseModel::Robust::Create(
     gtsam::noiseModel::Isotropic::Sigma(1, landmarks_sigma));
 
 // used so far
-// auto odometry_noise_ = gtsam::noiseModel::Diagonal::Sigmas(
-//     (gtsam::Vector6() << gtsam::Vector3(.01, .01, .05), //.01, .01, .02 translation stddev (m): x, y, z
-//      gtsam::Vector3(.01, .01, .01)                      // rotation stddev (radians): roll, pitch, yaw
-//      )
-//         .finished());
+auto odometry_noise_ = gtsam::noiseModel::Diagonal::Sigmas(
+    (gtsam::Vector6() << gtsam::Vector3(.01, .01, .05), //.01, .01, .02 translation stddev (m): x, y, z
+     gtsam::Vector3(.01, .01, .01)                      // rotation stddev (radians): roll, pitch, yaw
+     )
+        .finished());
 
 // auto loose_prior_noise = gtsam::noiseModel::Diagonal::Sigmas(
 //     (gtsam::Vector6() << gtsam::Vector3(5., 5., 10.), // translation stddev (m): x, y, z
@@ -2119,11 +2160,10 @@ auto plane_noise_cauchy_for_prev_segment = gtsam::noiseModel::Robust::Create(
 //         .finished());
 
 // just a test
-auto odometry_noise_ = gtsam::noiseModel::Diagonal::Sigmas(
-    (gtsam::Vector6() << gtsam::Vector3(1., 1., 1.), //.01, .01, .02 translation stddev (m): x, y, z
-     gtsam::Vector3(.5, .5, .5)                      // rotation stddev (radians): roll, pitch, yaw
-     )
-        .finished());
+// auto odometry_noise_ = gtsam::noiseModel::Diagonal::Sigmas(
+//     (gtsam::Vector6() << gtsam::Vector3(.1, .1, .5), //.01, .01, .02 translation stddev (m): x, y, z
+//      gtsam::Vector3(.1, .1, .1)                      // rotation stddev (radians): roll, pitch, yaw
+//      ).finished());
 
 auto loose_prior_noise = gtsam::noiseModel::Diagonal::Sigmas(
     (gtsam::Vector6() << gtsam::Vector3(10., 10., 10.), // translation stddev (m): x, y, z
@@ -2197,6 +2237,8 @@ void debugPoint(const V3D &t, ros::Publisher &pub)
 
 void resetOptimization()
 {
+    std::cout << "\n\nresetOptimization\n\n"
+              << std::endl;
     gtsam::ISAM2Params optParameters;
 
     // optParameters.relinearizeThreshold = 0.1; //0.1 means if the change in a variable (like pose or velocity) exceeds 0.1 in norm, then it will be relinearized.
@@ -2230,7 +2272,9 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
 
     double uncertainty_scale = 15;
 
-    // uncertainty_scale = 1;
+    // uncertainty_scale = 1.;
+
+    uncertainty_scale = 5;
 
     // this can be done in parallel BTW-----------------------------
     for (int i = 0; i < scan->size(); i++)
@@ -2310,7 +2354,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                 norm.normalize();
 
                 // Compute plane offset: d = - (n * centroid)
-                double negative_OA_dot_norm = -norm.dot(centroid);
+                double d = -norm.dot(centroid);
 
                 // Compute eigenvalue ratios to assess planarity
                 const auto &eigenvalues = solver.eigenvalues();
@@ -2375,7 +2419,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                                 // tgt.landmark_point = point_3d;  //first point
                                 tgt.key = point_3d;
                                 tgt.sigma = sigma_plane;
-                                tgt.negative_OA_dot_norm = negative_OA_dot_norm;
+                                tgt.d = d;
                                 tgt.re_proj_error = curvature;
                                 tgt.line_idx.push_back(0); // Seen from line l
                                 tgt.scan_idx.push_back(i); // Seen at point i in line l
@@ -2388,7 +2432,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                             //     if (planes_iterator->second.re_proj_error > curvature)
                             //     {
                             //         planes_iterator->second.norm = norm;
-                            //         planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                            //         planes_iterator->second.d = d;
                             //         planes_iterator->second.re_proj_error = curvature; // Fixed: Use curvature (not point_dist[j])
                             //     }
                             // }
@@ -2417,7 +2461,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                             tgt.center = centroid;
                             tgt.covariance = covariance;
 
-                            tgt.negative_OA_dot_norm = negative_OA_dot_norm;
+                            tgt.d = d;
                             tgt.sigma = sigma_edge;
 
                             tgt.re_proj_error = linearity; // keep linearity here, bigger -> better
@@ -2438,7 +2482,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                         //         line_direction.normalize();
 
                         //         edge_iterator->second.edge_direction = line_direction;
-                        //         edge_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                        //         edge_iterator->second.d = d;
                         //         edge_iterator->second.re_proj_error = linearity;
                         //     }
                         // }
@@ -2484,7 +2528,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                 norm.normalize();
 
                 // Compute plane offset: d = - (n * centroid)
-                double negative_OA_dot_norm = -norm.dot(centroid);
+                double d = -norm.dot(centroid);
 
                 // Compute eigenvalue ratios to assess planarity
                 const auto &eigenvalues = solver.eigenvalues();
@@ -2550,7 +2594,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                                 // tgt.landmark_point = point_3d;  //first point
                                 tgt.key = point_3d;
                                 tgt.sigma = sigma_plane;
-                                tgt.negative_OA_dot_norm = negative_OA_dot_norm;
+                                tgt.d = d;
                                 tgt.re_proj_error = curvature;
                                 tgt.line_idx.push_back(0); // Seen from line l
                                 tgt.scan_idx.push_back(i); // Seen at point i in line l
@@ -2563,7 +2607,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                                 if (planes_iterator->second.re_proj_error > curvature)
                                 {
                                     planes_iterator->second.norm = norm;
-                                    planes_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                                    planes_iterator->second.d = d;
                                     planes_iterator->second.re_proj_error = curvature; // Fixed: Use curvature (not point_dist[j])
                                 }
                             }
@@ -2591,7 +2635,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                             tgt.center = centroid;
                             tgt.covariance = covariance;
 
-                            tgt.negative_OA_dot_norm = negative_OA_dot_norm;
+                            tgt.d = d;
 
                             tgt.re_proj_error = linearity; // keep linearity here, bigger -> better
 
@@ -2611,7 +2655,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
                                 line_direction.normalize();
 
                                 edge_iterator->second.edge_direction = line_direction;
-                                edge_iterator->second.negative_OA_dot_norm = negative_OA_dot_norm;
+                                edge_iterator->second.d = d;
                                 edge_iterator->second.re_proj_error = linearity;
                             }
                         }
@@ -2761,7 +2805,7 @@ Sophus::SE3 updateReferenceGraph(
                                 //                                reference_localMap_cloud->points[land.map_point_index].z);
                                 gtsam::Unit3 plane_norm(land.norm.x(), land.norm.y(), land.norm.z());
 
-                                // reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, landmark_point, land.negative_OA_dot_norm,
+                                // reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, landmark_point, land.d,
                                 //                                                      true, plane_noise_cauchy);
 
                                 // --- Existing Landmark ---
@@ -2851,14 +2895,14 @@ Sophus::SE3 updateReferenceGraph(
                                     // if (use_alternative_method_)
                                     //     error = (p_transformed - target_point_).dot(plane_normal_);
                                     // else
-                                    //     error = plane_normal_.dot(p_transformed) + negative_OA_dot_norm_;
+                                    //     error = plane_normal_.dot(p_transformed) + d_;
 
                                     bool use_alternative_method = true; // this works - the tests was done with this true
 
                                     // THE BUG WAS SOLVED: ---- THERE IS A BUG HERE SOMEWHERE - SOLVE IT
                                     use_alternative_method = false; // just check if this solves the issue of xy drift
 
-                                    // reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
+                                    // reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.d,
                                     //                                                    use_alternative_method, plane_noise_cauchy);
 
                                     // Robust kernel scale: threshold for downweighting begins
@@ -2876,7 +2920,7 @@ Sophus::SE3 updateReferenceGraph(
                                         robust_noise = plane_noise_cauchy; // use the artificial one
                                     }
 
-                                    reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
+                                    reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.d,
                                                                                        use_alternative_method, robust_noise);
 
                                     added_constraints++;
@@ -2888,7 +2932,7 @@ Sophus::SE3 updateReferenceGraph(
                                         // add the connection from curr state to prev scans' landmark
                                         Point3 target_point_prev(it->second.landmark_point.x(), it->second.landmark_point.y(), it->second.landmark_point.z());
                                         Point3 plane_norm_prev(it->second.norm.x(), it->second.norm.y(), it->second.norm.z());
-                                        // reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm_prev, target_point_prev, land.negative_OA_dot_norm,
+                                        // reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm_prev, target_point_prev, land.d,
                                         //                                                    use_alternative_method, plane_noise_cauchy);
 
                                         // cauchy_param = 1.5. * it->second.sigma;
@@ -2901,7 +2945,7 @@ Sophus::SE3 updateReferenceGraph(
                                             prev_robust_noise = plane_noise_cauchy; // use the artificial one
                                         }
 
-                                        reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm_prev, target_point_prev, land.negative_OA_dot_norm,
+                                        reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm_prev, target_point_prev, land.d,
                                                                                            use_alternative_method, prev_robust_noise);
                                     }
                                     else
@@ -3081,14 +3125,14 @@ Sophus::SE3 updateReferenceGraph(
                                 // if (use_alternative_method_)
                                 //     error = (p_transformed - target_point_).dot(plane_normal_);
                                 // else
-                                //     error = plane_normal_.dot(p_transformed) + negative_OA_dot_norm_;
+                                //     error = plane_normal_.dot(p_transformed) + d_;
 
                                 bool use_alternative_method = true; // this works - the tests was done with this true
 
                                 // THE BUG WAS SOLVED: ---- THERE IS A BUG HERE SOMEWHERE - SOLVE IT
                                 // use_alternative_method = false; // just check if this solves the issue of xy drift
 
-                                reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
+                                reference_graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.d,
                                                                                    use_alternative_method, plane_noise_cauchy_for_prev_segment);
 
                                 added_constraints++;
@@ -3116,12 +3160,12 @@ Sophus::SE3 updateReferenceGraph(
                     if (normals_pub.getNumSubscribers() != 0)
                     {
                         // just a test
-                        pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+                        pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointXYZINormal>());
                         for (const auto &[index, land] : history_landmarks_map)
                         {
                             if (land.is_edge)
                             {
-                                pcl::PointNormal pt;
+                                pcl::PointXYZINormal pt;
                                 pt.x = land.landmark_point.x();
                                 pt.y = land.landmark_point.y();
                                 pt.z = land.landmark_point.z();
@@ -3136,7 +3180,7 @@ Sophus::SE3 updateReferenceGraph(
                             }
                             else if (land.is_plane)
                             {
-                                pcl::PointNormal pt;
+                                pcl::PointXYZINormal pt;
                                 pt.x = land.landmark_point.x();
                                 pt.y = land.landmark_point.y();
                                 pt.z = land.landmark_point.z();
@@ -3158,12 +3202,12 @@ Sophus::SE3 updateReferenceGraph(
 
             if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
             {
-                pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+                pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointXYZINormal>());
                 // add the map landmarks
                 for (const auto &[index, land] : global_seen_landmarks)
                 {
                     // break; // just for now do not show them
-                    pcl::PointNormal pt;
+                    pcl::PointXYZINormal pt;
 
                     if (land.is_edge)
                     {
@@ -3190,7 +3234,7 @@ Sophus::SE3 updateReferenceGraph(
                 {
                     if (land.is_edge)
                     {
-                        pcl::PointNormal pt;
+                        pcl::PointXYZINormal pt;
                         pt.x = land.landmark_point.x();
                         pt.y = land.landmark_point.y();
                         pt.z = land.landmark_point.z();
@@ -3205,7 +3249,7 @@ Sophus::SE3 updateReferenceGraph(
                     }
                     else if (land.is_plane)
                     {
-                        pcl::PointNormal pt;
+                        pcl::PointXYZINormal pt;
                         pt.x = land.landmark_point.x();
                         pt.y = land.landmark_point.y();
                         pt.z = land.landmark_point.z();
@@ -3358,12 +3402,12 @@ Sophus::SE3 updateReferenceGraph(
 }
 
 void updateDA(ros::Publisher &_pub_debug,
-              ros::Publisher &_pub_prev, ros::Publisher &_pub_curr,
+              // ros::Publisher &_pub_prev, ros::Publisher &_pub_curr,
               const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
-              pcl::PointCloud<VUX_PointType>::Ptr &scan, // scan in sensor frame
+              const pcl::PointCloud<VUX_PointType>::Ptr &scan, // scan in sensor frame
               const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
               const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud,
-              const Sophus::SE3 &nn_init_guess_T, NonlinearFactorGraph &this_Graph)
+              const Sophus::SE3 &nn_init_guess_T, NonlinearFactorGraph &this_Graph, bool use_prev_scans_landmarks = false)
 {
 
     double threshold_nn = 1.0;
@@ -3375,6 +3419,10 @@ void updateDA(ros::Publisher &_pub_debug,
 
     std::cout << "Number of items in landmarks_map: " << landmarks_map.size() << ", global_seen_landmarks: " << global_seen_landmarks.size() << std::endl;
     int added_constraints = 0;
+    if (use_prev_scans_landmarks)
+    {
+        std::cout << "use_prev_scans_landmarks is true,  use prev pose landmarks ..." << std::endl;
+    }
     if (landmarks_map.size() > 2) //
     {
         prev_seen_landmarks.clear();
@@ -3394,13 +3442,13 @@ void updateDA(ros::Publisher &_pub_debug,
                     // if (use_alternative_method_)
                     //     error = (p_transformed - target_point_).dot(plane_normal_);
                     // else
-                    //     error = plane_normal_.dot(p_transformed) + negative_OA_dot_norm_;
+                    //     error = plane_normal_.dot(p_transformed) + d_;
 
                     bool use_alternative_method = true; // this works - the tests was done with this true
                     use_alternative_method = false;     // just check if this solves the issue of xy drift
 
                     auto robust_noise = gtsam::noiseModel::Robust::Create(
-                        gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel),
+                        gtsam::noiseModel::mEstimator::Cauchy::Create(.1), // robust_kernel
                         gtsam::noiseModel::Isotropic::Sigma(1, 3 * land.sigma));
 
                     if (use_artificial_uncertainty)
@@ -3408,38 +3456,42 @@ void updateDA(ros::Publisher &_pub_debug,
                         robust_noise = plane_noise_cauchy; // use the artificial one
                     }
 
-                    this_Graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.negative_OA_dot_norm,
+                    this_Graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, land.d,
                                                                   use_alternative_method, robust_noise);
 
+                    added_constraints++;
+
                     //--------check consistency with prev scans-----------------------
-                    // auto it = global_seen_landmarks.find(landmark_id); // check if its seen in prev scan
-                    // if (it != global_seen_landmarks.end())             // same plane seen in prev scans too
-                    // {
-                    //     Point3 target_point_prev(it->second.landmark_point.x(), it->second.landmark_point.y(), it->second.landmark_point.z());
-                    //     // maybe use the current point measurement
-                    //     Point3 plane_norm_prev(it->second.norm.x(), it->second.norm.y(), it->second.norm.z());
+                    if (use_prev_scans_landmarks)
+                    {
+                        auto it = global_seen_landmarks.find(landmark_id); // check if its seen in prev scan
+                        if (it != global_seen_landmarks.end())             // same plane seen in prev scans too
+                        {
+                            Point3 target_point_prev(it->second.landmark_point.x(), it->second.landmark_point.y(), it->second.landmark_point.z());
+                            Point3 plane_norm_prev(it->second.norm.x(), it->second.norm.y(), it->second.norm.z());
 
-                    //     auto prev_robust_noise = gtsam::noiseModel::Robust::Create(
-                    //         gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel),
-                    //         gtsam::noiseModel::Isotropic::Sigma(1, 3 * it->second.sigma));
+                            auto prev_robust_noise = gtsam::noiseModel::Robust::Create(
+                                gtsam::noiseModel::mEstimator::Cauchy::Create(.1),
+                                gtsam::noiseModel::Isotropic::Sigma(1, 3 * it->second.sigma));
 
-                    //     if (use_artificial_uncertainty)
-                    //     {
-                    //         prev_robust_noise = plane_noise_cauchy; // use the artificial one
-                    //     }
+                            if (use_artificial_uncertainty)
+                            {
+                                prev_robust_noise = plane_noise_cauchy; // use the artificial one
+                            }
 
-                    //     this_Graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm_prev, target_point_prev, land.negative_OA_dot_norm,
-                    //                                                     use_alternative_method, prev_robust_noise);
+                            this_Graph.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm_prev, target_point_prev, land.d,
+                                                                          use_alternative_method, prev_robust_noise);
 
-                    //     prev_seen_landmarks[land.key] = land;
-                    // }
-                    // else
-                    // {
-                    //     // this landmarks is has not been seet yet,  add it to buffer
-                    //     global_seen_landmarks[land.key] = land;
-                    // }
+                            prev_seen_landmarks[land.key] = land;
+                        }
+                        else
+                        {
+                            // this landmarks is has not been seet yet,  add it to buffer
+                            global_seen_landmarks[land.key] = land;
+                        }
+                    }
                 }
-                else if (land.is_edge)
+                else if (land.is_edge && false)
                 {
                     Point3 line_dir(land.edge_direction.x(), land.edge_direction.y(), land.edge_direction.z());
                     auto robust_noise = gtsam::noiseModel::Robust::Create(
@@ -3460,13 +3512,11 @@ void updateDA(ros::Publisher &_pub_debug,
                 // gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel), // Robust kernel for outliers
                 // gtsam::noiseModel::Isotropic::Sigma(3, sigma_point));
 
-                auto point_noise = gtsam::noiseModel::Robust::Create(
-                    gtsam::noiseModel::mEstimator::Cauchy::Create(.1), // Robust kernel for outliers 10cm
-                    gtsam::noiseModel::Isotropic::Sigma(3, .5));
+                // auto point_noise = gtsam::noiseModel::Robust::Create(
+                //     gtsam::noiseModel::mEstimator::Cauchy::Create(.1), // Robust kernel for outliers 10cm
+                //     gtsam::noiseModel::Isotropic::Sigma(3, .5));
 
-                //this_Graph.emplace_shared<PointToPointFactor>(X(key), measured_point, target_point, point_noise);
-
-                added_constraints++;
+                // this_Graph.emplace_shared<PointToPointFactor>(X(key), measured_point, target_point, point_noise);
 
                 break; // means only once
             }
@@ -3477,13 +3527,13 @@ void updateDA(ros::Publisher &_pub_debug,
 
     if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
     {
-        pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+        pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointXYZINormal>());
         // add the map landmarks
         // for (const auto &[index, land] : global_seen_landmarks)
         for (const auto &[index, land] : prev_seen_landmarks)
         {
             // break; // just for now do not show them
-            pcl::PointNormal pt;
+            pcl::PointXYZINormal pt;
 
             if (land.is_edge)
             {
@@ -3503,6 +3553,8 @@ void updateDA(ros::Publisher &_pub_debug,
             pt.normal_y = land.norm.y();
             pt.normal_z = land.norm.z();
 
+            pt.intensity = land.sigma; // just for test
+
             cloud_with_normals->push_back(pt);
         }
         // add the new landmarks
@@ -3510,7 +3562,7 @@ void updateDA(ros::Publisher &_pub_debug,
         {
             if (land.is_edge)
             {
-                pcl::PointNormal pt;
+                pcl::PointXYZINormal pt;
                 pt.x = land.landmark_point.x();
                 pt.y = land.landmark_point.y();
                 pt.z = land.landmark_point.z();
@@ -3525,7 +3577,7 @@ void updateDA(ros::Publisher &_pub_debug,
             }
             else if (land.is_plane)
             {
-                pcl::PointNormal pt;
+                pcl::PointXYZINormal pt;
                 pt.x = land.landmark_point.x();
                 pt.y = land.landmark_point.y();
                 pt.z = land.landmark_point.z();
@@ -3535,6 +3587,8 @@ void updateDA(ros::Publisher &_pub_debug,
                 pt.normal_z = land.norm.z();
 
                 pt.curvature = -1;
+
+                pt.intensity = land.sigma; // just for test
 
                 cloud_with_normals->push_back(pt);
             }
@@ -3566,7 +3620,7 @@ void updateDA(ros::Publisher &_pub_debug,
     }
 }
 
-Sophus::SE3 updateSimple(
+Sophus::SE3 updateSimple_old(
     ros::Publisher &_pub_debug, volatile bool &flag,
     ros::Publisher &_pub_prev, ros::Publisher &_pub_curr,
     const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
@@ -3590,14 +3644,15 @@ Sophus::SE3 updateSimple(
         Values latest_estimate;
         Eigen::Matrix4d T_last;
 
-        double prev_error = 9999.;// std::numeric_limits<double>::max();
-        const double convergence_threshold = .05; // when to stop
+        double prev_error = 9999., current_error; // std::numeric_limits<double>::max();
+        const double convergence_threshold = .05; // 5cm  // when to stop
 
         // Add odometry or priors to graph
         reference_values.insert(X(key), absolute_gtsam_pose);
         reference_graph.emplace_shared<BetweenFactor<Pose3>>(X(key - 1), X(key), gtsam_relative, odometry_noise_);
         reference_graph.add(gtsam::PriorFactor<gtsam::Pose3>(X(key), _absolute_guess, loose_prior_noise));
 
+        // Batch refinement to get closer - with 2 consecutive scans and their measurements
         for (int refinement = 0; refinement < 20; refinement++)
         {
             ros::spinOnce();
@@ -3611,8 +3666,6 @@ Sophus::SE3 updateSimple(
             // add previous collected data
             curr_graph.add(global_graph);
             curr_values.insert(global_values);
-
-            // curr_values.print("\n\nCurrent values with global_values:\n");
 
             // add the data for the current graph measurements
             curr_graph.add(reference_graph);
@@ -3631,39 +3684,22 @@ Sophus::SE3 updateSimple(
             //     std::cout << "  " << gtsam::DefaultKeyFormatter(key) << std::endl;
             // }
 
-            // Add odometry or priors to graph
-            // curr_values.insert(X(key), absolute_gtsam_pose);
-            // curr_graph.emplace_shared<BetweenFactor<Pose3>>(X(key - 1), X(key), gtsam_relative, odometry_noise_);
-            // curr_graph.add(gtsam::PriorFactor<gtsam::Pose3>(X(key), _absolute_guess, loose_prior_noise));
-
-            // std::cout<<"Inside refinement - Try to get the pose at X("<<key<<")"<<std::endl;
             Pose3 latest_pose = (refinement == 0) ? absolute_gtsam_pose : latest_estimate.at<gtsam::Pose3>(X(key));
 
             T_last = latest_pose.matrix();
             Sophus::SE3 nn_init_guess_T(T_last.block<3, 3>(0, 0), T_last.block<3, 1>(0, 3));
 
-            // add the landmarks to current graph
+            // add the landmarks measurements to current graph
             updateDA(_pub_debug,
-                     _pub_prev, _pub_curr,
                      cloud_pub, normals_pub,
                      scan, // scan in sensor frame
                      refference_kdtree, reference_localMap_cloud,
                      nn_init_guess_T, curr_graph);
 
-            // curr_values.print("\n\nCurrent values:\n");
-            //  for (const auto& key_value : curr_values) {
-            //      std::cout <<"Key in curr_values: " << gtsam::DefaultKeyFormatter(key_value.key) << std::endl;
-            //  }
-
-            // std::cout<<"Start optimize"<<std::endl;
             LevenbergMarquardtOptimizer optimizer(curr_graph, curr_values);
             latest_estimate = optimizer.optimize();
 
-            // for (const auto &key_value : latest_estimate) {
-            //     std::cout << "Key in estimate: " << DefaultKeyFormatter(key_value.key) << std::endl;
-            // }
-
-            double current_error = optimizer.error();
+            current_error = optimizer.error();
 
             std::cout << "\nIteration " << refinement << ", error = " << current_error << std::endl;
             auto d_error = std::abs(prev_error - current_error);
@@ -3676,49 +3712,46 @@ Sophus::SE3 updateSimple(
 
             prev_error = current_error;
 
-            std::cout << "Finished one iteration, press enter..." << std::endl;
-            std::cin.get();
+            // std::cout << "Finished one iteration, press enter..." << std::endl;
+            // std::cin.get();
 
             // break;
         }
-        // std::cout<<"Out the for loop..."<<std::endl;
-        //  add the landmarks to current graph
 
         reference_values.clear();
-        //reference_values.insert(X(key - 1), prevPose_);
-        reference_values.insert(X(key), latest_estimate.at<gtsam::Pose3>(X(key)));
+        reference_values.insert(X(key), latest_estimate.at<gtsam::Pose3>(X(key))); // an improved init guess
 
         Sophus::SE3 nn_init_guess_T(T_last.block<3, 3>(0, 0), T_last.block<3, 1>(0, 3));
+        bool use_prev_scans_landmarks = true;
         updateDA(_pub_debug,
-                 _pub_prev, _pub_curr,
+                 //_pub_prev, _pub_curr,
                  cloud_pub, normals_pub,
                  scan, // scan in sensor frame
                  refference_kdtree, reference_localMap_cloud,
-                 nn_init_guess_T, reference_graph);
+                 nn_init_guess_T, reference_graph, use_prev_scans_landmarks);
 
-        //isam.update(reference_graph); // graph only includes current iteration's factors
+        // isam.update(reference_graph); // graph only includes current iteration's factors
         isam.update(reference_graph, reference_values);
 
         latest_estimate = isam.calculateEstimate();
         std::cout << "Isam Total factors: " << isam.getFactorsUnsafe().size() << std::endl;
-        //double current_error = isam.getFactorsUnsafe().error(latest_estimate);
-        //std::cout<<"before update isam current_error:"<<current_error<<std::endl;
+        // double current_error = isam.getFactorsUnsafe().error(latest_estimate);
+        // std::cout<<"before update isam current_error:"<<current_error<<std::endl;
+        //  isam.update();
+        //  latest_estimate = isam.calculateEstimate();
+        //  current_error = isam.getFactorsUnsafe().error(latest_estimate);
+        //  std::cout<<"after update  isam current_error:"<<current_error<<std::endl;
 
-        // isam.update();
-        // latest_estimate = isam.calculateEstimate();
-        // current_error = isam.getFactorsUnsafe().error(latest_estimate);
-        // std::cout<<"after update  isam current_error:"<<current_error<<std::endl;
-        
+        //the issue with this is that for 2d case it will fail
+        //because only 2 scans are used at a time
 
         global_graph.resize(0);
         global_values.clear();
 
-        gtsam::noiseModel::Gaussian::shared_ptr updatedPoseNoise = gtsam::noiseModel::Gaussian::Covariance(isam.marginalCovariance(X(key - 1)));
-        gtsam::PriorFactor<gtsam::Pose3> priorPose(X(key), prevPose_, updatedPoseNoise);
-
-        if (!reference_values.exists(X(key-1))) {
-            std::cerr << "Missing X("<<key<<") in reference_values, inserting value" << std::endl;
-            reference_values.insert(X(key-1), prevPose_);
+        if (!reference_values.exists(X(key - 1)))
+        {
+            // std::cerr << "Missing X("<<key<<") in reference_values, inserting value" << std::endl;
+            reference_values.insert(X(key - 1), prevPose_);
         }
 
         // keep track of them
@@ -3729,7 +3762,6 @@ Sophus::SE3 updateSimple(
         reference_values.clear(); // this is required to clean the graph, isam has its copy
 
         prevPose_ = latest_estimate.at<gtsam::Pose3>(X(key));
-
         T_last = prevPose_.matrix();
         Sophus::SE3 optimized_pose(T_last.block<3, 3>(0, 0), T_last.block<3, 1>(0, 3));
         prevOptimized_pose = optimized_pose;
@@ -3741,7 +3773,7 @@ Sophus::SE3 updateSimple(
 
         key++;
 
-        if (key >= max_size && false)
+        if (key >= max_size) // max_size && false
         {
             if (batch_optimization)
             {
@@ -3793,17 +3825,22 @@ Sophus::SE3 updateSimple(
             {
                 std::cout << "reset graph =============================" << std::endl;
 
+                global_graph.resize(0);
+                global_values.clear();
+
                 // get updated noise before reset
                 gtsam::noiseModel::Gaussian::shared_ptr updatedPoseNoise = gtsam::noiseModel::Gaussian::Covariance(isam.marginalCovariance(X(key - 1)));
 
                 // reset graph
                 resetOptimization();
-                // add pose
+
                 gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, updatedPoseNoise);
                 reference_graph.add(priorPose);
-
-                // add values
                 reference_values.insert(X(0), prevPose_);
+
+                // Add to global graph and estimate
+                global_graph.add(reference_graph);
+                global_values.insert(reference_values);
 
                 // optimize once
                 isam.update(reference_graph, reference_values);
@@ -3824,21 +3861,18 @@ Sophus::SE3 updateSimple(
         Pose3 _absolute_guess = Pose3(T.matrix());
         reference_values.insert(X(0), _absolute_guess);
         reference_graph.addPrior(X(0), _absolute_guess, prior_noise);
-        key++;
+        key = 1;
 
         prevOptimized_pose = T;
         debugGraph(reference_values, _pub_prev);
 
-        {
-            // Add to global graph and estimate
-            global_graph.add(reference_graph);
-            global_values.insert(reference_values);
-        }
+        // Add to global graph and estimate
+        global_graph.add(reference_graph);
+        global_values.insert(reference_values);
 
         // Do the initial batch optimization
         isam.update(reference_graph, reference_values);
-        // Clear graph and values to avoid reusing same keys
-        reference_graph = gtsam::NonlinearFactorGraph(); //.resize(0);
+        reference_graph.resize(0); // = gtsam::NonlinearFactorGraph(); //
         reference_values.clear();
 
         doneFirstOpt = true;
@@ -3849,3 +3883,388 @@ Sophus::SE3 updateSimple(
         return T;
     }
 }
+
+//----------------------------------------------------------------------------------------
+
+namespace latest_code
+{
+    void updateDataAssociation(ros::Publisher &_pub_debug, int pose_key,
+                               const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
+                               const pcl::PointCloud<VUX_PointType>::Ptr &scan, // scan in sensor frame
+                               const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
+                               const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud,
+                               const Sophus::SE3 &nn_init_guess_T, NonlinearFactorGraph &this_Graph, bool use_prev_scans_landmarks = false)
+    {
+
+        double threshold_nn = 1.0;
+        bool radius_based = true; // false;
+
+        const std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> &landmarks_map = get_Landmarks(
+            scan, nn_init_guess_T, refference_kdtree, reference_localMap_cloud,
+            threshold_nn, radius_based);
+
+        std::cout << "Number of items in landmarks_map: " << landmarks_map.size() << ", global_seen_landmarks: " << global_seen_landmarks.size() << std::endl;
+        int added_constraints = 0;
+        if (use_prev_scans_landmarks)
+        {
+            std::cout << "use_prev_scans_landmarks is true,  use prev pose landmarks ..." << std::endl;
+        }
+        if (landmarks_map.size() > 2) //
+        {
+            prev_seen_landmarks.clear();
+            for (const auto &[landmark_id, land] : landmarks_map)
+            {
+                for (int i = 0; i < land.scan_idx.size(); i++)
+                {
+                    const auto &p_idx = land.scan_idx[i]; // at index p_idx from that scan
+                    const auto &raw_point = scan->points[p_idx];
+
+                    Point3 measured_point(raw_point.x, raw_point.y, raw_point.z); // measured_landmark_in_sensor_frame
+                    Point3 target_point(land.landmark_point.x(), land.landmark_point.y(), land.landmark_point.z());
+
+                    if (land.is_plane)
+                    {
+                        Point3 plane_norm(land.norm.x(), land.norm.y(), land.norm.z());
+                        // if (use_alternative_method_)
+                        //     error = (p_transformed - target_point_).dot(plane_normal_);
+                        // else
+                        //     error = plane_normal_.dot(p_transformed) + d_;
+
+                        bool use_alternative_method = true; // this works - the tests was done with this true
+                        use_alternative_method = false;     // just check if this solves the issue of xy drift
+
+                        auto robust_noise = gtsam::noiseModel::Robust::Create(
+                            gtsam::noiseModel::mEstimator::Cauchy::Create(.1), // robust_kernel
+                            gtsam::noiseModel::Isotropic::Sigma(1, 3 * land.sigma));
+
+                        if (use_artificial_uncertainty)
+                        {
+                            robust_noise = plane_noise_cauchy; // use the artificial one
+                        }
+
+                        this_Graph.emplace_shared<PointToPlaneFactor>(X(pose_key), measured_point, plane_norm, target_point, land.d,
+                                                                      use_alternative_method, robust_noise);
+
+                        added_constraints++;
+
+                        //--------check consistency with prev scans-----------------------
+                        if (use_prev_scans_landmarks)
+                        {
+                            auto it = global_seen_landmarks.find(landmark_id); // check if its seen in prev scan
+                            if (it != global_seen_landmarks.end())             // same plane seen in prev scans too
+                            {
+                                // Point3 target_point_prev(it->second.landmark_point.x(), it->second.landmark_point.y(), it->second.landmark_point.z());
+                                // Point3 plane_norm_prev(it->second.norm.x(), it->second.norm.y(), it->second.norm.z());
+
+                                // auto prev_robust_noise = gtsam::noiseModel::Robust::Create(
+                                //     gtsam::noiseModel::mEstimator::Cauchy::Create(.1),
+                                //     gtsam::noiseModel::Isotropic::Sigma(1, 3 * it->second.sigma));
+
+                                // if (use_artificial_uncertainty)
+                                // {
+                                //     prev_robust_noise = plane_noise_cauchy; // use the artificial one
+                                // }
+
+                                // //this_Graph.emplace_shared<PointToPlaneFactor>(X(pose_key), measured_point, plane_norm_prev, target_point_prev, land.d,
+                                // //                                              use_alternative_method, prev_robust_noise);
+
+                                // prev_seen_landmarks[land.key] = land;
+                            }
+                            else
+                            {
+                                // this landmarks is has not been seet yet,  add it to buffer
+                                global_seen_landmarks[land.key] = land;
+                            }
+                        }
+                    }
+                    else if (land.is_edge && false)
+                    {
+                        Point3 line_dir(land.edge_direction.x(), land.edge_direction.y(), land.edge_direction.z());
+                        auto robust_noise = gtsam::noiseModel::Robust::Create(
+                            gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel),
+                            gtsam::noiseModel::Isotropic::Sigma(1, 3 * land.sigma));
+
+                        if (use_artificial_uncertainty)
+                        {
+                            robust_noise = plane_noise_cauchy; // use the artificial one
+                        }
+                        this_Graph.emplace_shared<PointToLineFactor>(X(pose_key), measured_point, target_point, line_dir, robust_noise);
+
+                        added_constraints++;
+                    }
+
+                    // p2p
+                    // auto point_noise_cauchy = gtsam::noiseModel::Robust::Create(
+                    // gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel), // Robust kernel for outliers
+                    // gtsam::noiseModel::Isotropic::Sigma(3, sigma_point));
+
+                    // auto point_noise = gtsam::noiseModel::Robust::Create(
+                    //     gtsam::noiseModel::mEstimator::Cauchy::Create(.1), // Robust kernel for outliers 10cm
+                    //     gtsam::noiseModel::Isotropic::Sigma(3, .5));
+
+                    // this_Graph.emplace_shared<PointToPointFactor>(X(pose_key), measured_point, target_point, point_noise);
+
+                    break; // means only once
+                }
+            }
+        }
+
+        std::cout << "added_constraints:" << added_constraints << std::endl;
+    }
+
+
+    auto odom_noise_model = noiseModel::Diagonal::Sigmas((Vector(6) << .1, .1, .1, .1, .1, .1).finished());
+    auto prior_noise_model_loose = noiseModel::Diagonal::Sigmas((Vector(6) << 1., 1., 1., .1, .1, .1).finished());
+    auto anchor_noise_model = noiseModel::Diagonal::Sigmas((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6).finished());
+
+    std::deque<Sophus::SE3> pose_buffer;
+    std::deque<pcl::PointCloud<VUX_PointType>::Ptr> scan_buffer;
+
+    const size_t max_buffer_size = 10;// 20;
+
+    Pose3 sophusToGtsam(const Sophus::SE3 &pose)
+    {
+        return Pose3(pose.matrix());
+    }
+
+    Sophus::SE3 GtsamToSophus(const Pose3 &pose)
+    {
+        Eigen::Matrix4d T = pose.matrix(); // Get 4x4 matrix
+        return Sophus::SE3(T.topLeftCorner<3,3>(), T.topRightCorner<3,1>());
+    }
+
+    Values prev_optimized_values_;
+    bool has_prev_solution = false;
+
+    Pose3 anchor_pose, relative_anchor;
+    pcl::PointCloud<VUX_PointType>::Ptr anchor_scan;
+
+    double prev_error = 9999., current_error; // std::numeric_limits<double>::max();
+    const double convergence_threshold = .05; // 5cm  // when to stop
+
+    Sophus::SE3 updateSimple(
+        ros::Publisher &_pub_debug, volatile bool &flag,
+        ros::Publisher &_pub_prev, ros::Publisher &_pub_curr,
+        const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
+        const pcl::PointCloud<VUX_PointType>::Ptr &scan,           // scan in sensor frame
+        const Sophus::SE3 &initial_pose, Sophus::SE3 &rel_T, // absolute T, odometry
+        const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
+        const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud)
+    {
+        pose_buffer.push_back(initial_pose);
+        scan_buffer.push_back(scan);
+
+        if (pose_buffer.size() < max_buffer_size) // not enough poses
+        {
+            return pose_buffer.front(); //the optimization will start when pose_buffer.size() is equal to max_buffer_size
+        }
+        
+        if (pose_buffer.size() > max_buffer_size) {
+            
+            anchor_scan = scan_buffer.front();
+            
+            pose_buffer.pop_front();
+            scan_buffer.pop_front();
+        }
+
+        // Initialize values from raw odometry
+        Values current_values;
+        if(has_prev_solution) //add anchor
+        {
+            current_values.insert(A(0), anchor_pose);
+        }
+        for (size_t i = 0; i < pose_buffer.size(); i++) {
+            Pose3 pose = sophusToGtsam(pose_buffer[i]); 
+            current_values.insert(X(i), pose);
+        }
+        
+        pcl::PointCloud<pcl::PointXYZI>::Ptr buffer_clouds(new pcl::PointCloud<pcl::PointXYZI>());
+
+        //optimization refinement 
+        for (int iter = 0; iter < 10; ++iter) 
+        {
+            ros::spinOnce();
+            if (flag || !ros::ok())
+                break;
+
+            buffer_clouds->clear();
+            global_seen_landmarks.clear();
+
+            NonlinearFactorGraph graph; //everytime a new graph
+
+            //process the buffer
+            for (size_t i = 0; i < pose_buffer.size(); i++) 
+            {
+                //add odometry data from current_values-------------------------------------------------
+                Pose3 curr_pose = current_values.at<Pose3>(X(i));
+                if (i == 0) {
+                    graph.add(PriorFactor<Pose3>(X(i), curr_pose, prior_noise_model_loose));
+                } else {
+                    Pose3 prev_pose = current_values.at<Pose3>(X(i - 1));
+                    Pose3 rel_pose = prev_pose.between(curr_pose);
+                    graph.add(BetweenFactor<Pose3>(X(i - 1), X(i), rel_pose, odom_noise_model));
+                }
+
+                // Add point-to-plane factors using updated poses--------------------------------------
+                Eigen::Matrix4d curr_pose_i = curr_pose.matrix();
+                Sophus::SE3 nn_init_guess_T(curr_pose_i.block<3, 3>(0, 0), curr_pose_i.block<3, 1>(0, 3));
+                bool use_prev_scans_landmarks = true;
+                updateDataAssociation(_pub_debug, i, //add planes for graph from pose i
+                            cloud_pub, normals_pub,
+                            scan_buffer[i], // scan in sensor frame
+                            refference_kdtree, reference_localMap_cloud,
+                            nn_init_guess_T, graph, use_prev_scans_landmarks);
+
+                if(_pub_debug.getNumSubscribers() != 0 || normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
+                {
+                    if (_pub_debug.getNumSubscribers() != 0)
+                    {
+                        for (int j = 0; j < scan_buffer[i]->size(); j++)
+                        {
+                            V3D p_src(scan_buffer[i]->points[j].x, scan_buffer[i]->points[j].y, scan_buffer[i]->points[j].z);
+                            V3D p_transformed = nn_init_guess_T * p_src;
+
+                            pcl::PointXYZI p;
+                            p.x = p_transformed.x();
+                            p.y = p_transformed.y();
+                            p.z = p_transformed.z();
+                            p.intensity = i;
+
+                            buffer_clouds->push_back(p);
+                        }
+                        
+                        if(has_prev_solution){
+                            auto anchor_T = GtsamToSophus(anchor_pose);
+                            for (int j = 0; j < anchor_scan->size(); j++)
+                            {
+                                V3D p_src(anchor_scan->points[j].x, anchor_scan->points[j].y, anchor_scan->points[j].z);
+                                V3D p_transformed = anchor_T * p_src;
+
+                                pcl::PointXYZI p;
+                                p.x = p_transformed.x();
+                                p.y = p_transformed.y();
+                                p.z = p_transformed.z();
+                                p.intensity = -1;
+
+                                buffer_clouds->push_back(p);
+                            }
+                        }
+
+                        sensor_msgs::PointCloud2 cloud_msg;
+                        pcl::toROSMsg(*buffer_clouds, cloud_msg);
+                        cloud_msg.header.frame_id = "world";
+                        _pub_debug.publish(cloud_msg);
+                    }
+
+                    if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
+                    {
+                        pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointXYZINormal>());
+                        // add the map landmarks
+                        for (const auto &[index, land] : global_seen_landmarks)
+                        //for (const auto &[index, land] : prev_seen_landmarks)
+                        {
+                            // break; // just for now do not show them
+                            pcl::PointXYZINormal pt;
+
+                            if (land.is_edge)
+                            {
+                                pt.curvature = -2; // edges
+                            }
+                            else
+                            {
+                                // pt.curvature = -1; //prev planes
+                                pt.curvature = 1; // <0 plotted as blue
+                            }
+
+                            pt.x = land.landmark_point.x();
+                            pt.y = land.landmark_point.y();
+                            pt.z = land.landmark_point.z();
+
+                            pt.normal_x = land.norm.x();
+                            pt.normal_y = land.norm.y();
+                            pt.normal_z = land.norm.z();
+
+                            pt.intensity = land.sigma; // just for test
+
+                            cloud_with_normals->push_back(pt);
+                        }
+                        // // add the new landmarks
+                        // for (const auto &[index, land] : landmarks_map)
+                        // {
+                        //     if (land.is_edge)
+                        //     {
+                        //         pcl::PointXYZINormal pt;
+                        //         pt.x = land.landmark_point.x();
+                        //         pt.y = land.landmark_point.y();
+                        //         pt.z = land.landmark_point.z();
+
+                        //         pt.normal_x = land.edge_direction.x();
+                        //         pt.normal_y = land.edge_direction.y();
+                        //         pt.normal_z = land.edge_direction.z();
+
+                        //         pt.curvature = -2;
+
+                        //         cloud_with_normals->push_back(pt);
+                        //     }
+                        //     else if (land.is_plane)
+                        //     {
+                        //         pcl::PointXYZINormal pt;
+                        //         pt.x = land.landmark_point.x();
+                        //         pt.y = land.landmark_point.y();
+                        //         pt.z = land.landmark_point.z();
+
+                        //         pt.normal_x = land.norm.x();
+                        //         pt.normal_y = land.norm.y();
+                        //         pt.normal_z = land.norm.z();
+
+                        //         pt.curvature = -1;
+
+                        //         pt.intensity = land.sigma; // just for test
+
+                        //         cloud_with_normals->push_back(pt);
+                        //     }
+                        // }
+
+                        debug_CloudWithNormals2(cloud_with_normals, cloud_pub, normals_pub);
+                    }
+                }
+            }
+
+            if(has_prev_solution)//add anchor
+            {
+                // Re-insert anchor pose factor every time
+                graph.add(PriorFactor<Pose3>(A(0), anchor_pose, anchor_noise_model));
+                // Tie anchor to first pose
+                graph.add(BetweenFactor<Pose3>(A(0), X(0), relative_anchor, anchor_noise_model));
+            }
+
+            LevenbergMarquardtOptimizer optimizer(graph, current_values);
+            current_values = optimizer.optimize();  //re-optimize the current values
+
+            current_error = optimizer.error();
+            std::cout << "\nIteration " << iter << ", error = " << current_error << std::endl;
+            auto d_error = std::abs(prev_error - current_error);
+            std::cout << "Number of factors in graph: " << graph.size() << ", d_error:" << d_error << std::endl;
+            if (d_error < convergence_threshold)
+            {
+                std::cout << "Converged after " << iter << " iterations.\n";
+                break;
+            }
+            prev_error = current_error;
+
+            std::cout << "Finished one iteration, press enter..." << std::endl;
+            std::cin.get();
+            //break;
+        }
+
+        // Save latest optimized values
+        prev_optimized_values_ = current_values;
+        has_prev_solution = true;
+
+        anchor_pose = current_values.at<Pose3>(X(0));
+        relative_anchor = anchor_pose.between(current_values.at<Pose3>(X(1)));
+
+        return GtsamToSophus(anchor_pose);
+    }
+};
+

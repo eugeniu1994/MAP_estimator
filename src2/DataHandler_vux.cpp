@@ -1074,7 +1074,8 @@ void DataHandler::Subscribe()
 
     // #define get_planes
 
-    using RefPointType = pcl::PointNormal; // pcl::PointXYZINormal;
+    //using RefPointType = pcl::PointNormal; // pcl::PointXYZINormal;
+    using RefPointType = pcl::PointXYZINormal;
     using RefPointCloudXYZINormal = pcl::PointCloud<RefPointType>;
 
     pcl::PointCloud<PointType>::Ptr original_als_cloud(new pcl::PointCloud<PointType>);
@@ -1312,6 +1313,8 @@ void DataHandler::Subscribe()
     Sophus::SE3 p_vux_local;
 
     V3D t_lidar2gnss_cheap_system = V3D(-1.6362570035, -0.8122014727, -2.1519203387);
+    
+    using namespace latest_code;
 
 #define save_vux_clouds
     for (const rosbag::MessageInstance &m : view)
@@ -1740,6 +1743,8 @@ void DataHandler::Subscribe()
             if (!vux_mls_time_aligned)
             {
                 mls2als = als2mls.inverse();
+                curr_mls = Sophus::SE3(state_point.rot, state_point.pos);
+                prev_mls = curr_mls;
                 if (!raw_vux_imu_time_aligned)
                 {
                     double first_vux_time = 0;
@@ -2050,7 +2055,7 @@ void DataHandler::Subscribe()
 
                     // we can use the feats_down_body when perform online MLS see the registration
                     // TODO - skip next, and perform it for hesai
-                    if (perform_mls_registration)
+                    if (perform_mls_registration && false)
                     {
                         pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
                         for (const auto &p : feats_down_body->points)
@@ -2065,19 +2070,16 @@ void DataHandler::Subscribe()
                             downsampled_line->push_back(vux_p);
                         }
 
-                        double translation_std = .05; // 5cm meters
+                        double translation_std = .09;// .05; // 5cm meters
                         double rotation_std = .02;    // radians - 2.8 degrees
+                        
                         curr_mls = addNoiseToPose(curr_mls, translation_std, rotation_std, rng);
 
-                        auto absolute_init_guess_T = prev_mls;// curr_mls;             // absolute init guess
+                        auto absolute_init_guess_T = curr_mls;             // absolute init guess
                         auto refined_odom = prev_mls.inverse() * curr_mls; // relative init guess
-                        
-                        //auto absolute_init_guess_T = als2mls * gnss_vux_data[tmp_index-2].se3;
-                        //auto refined_odom = prev_mls.inverse() * curr_mls; 
+                        refined_odom = Sophus::SE3();
 
-                        //refined_odom = Sophus::SE3();
-
-                        optimized_pose = updateSimple // updateReferenceGraph
+                        optimized_pose = updateSimple
                             (
                                 pubLaserCloudDebug, flg_exit, // debug
                                 prev_pub, curr_pub,
@@ -2184,33 +2186,6 @@ void DataHandler::Subscribe()
                             pose_pub2.publish(pose_msg);
                         }
                     }
-
-                    // implement the online GNSS-IMU fusion solution
-
-                    // auto v_imu = Measures.imu;
-                    // const double &imu_end_time = v_imu.back()->header.stamp.toSec();
-                    // const double &pcl_beg_time = Measures.lidar_beg_time;
-                    // const double &pcl_end_time = Measures.lidar_end_time;
-                    // const double &imu_beg_time = v_imu.front()->header.stamp.toSec();
-
-                    // const double &gps_time = gnss_obj->gps_time;
-
-                    // std::cout<<"\npcl_beg_time:"<<pcl_beg_time<<", pcl_end_time:"<<pcl_end_time<<std::endl;
-                    // std::cout<<"imu_beg_time  :"<<imu_beg_time<<", imu_end_time:"<<imu_end_time<<std::endl;
-                    // std::cout<<"gps_time      :"<<gps_time<<std::endl;
-
-                    // //gnss_obj->gps_cov //= V3D(noise_x, noise_y, noise_z);
-
-                    // V3D gnss_pos = als2mls * gnss_obj->curr_enu; //trnasformed to local frame
-                    // gnss_pos[2] = gnss_obj->carthesian[2]; //take the z from carthesian
-
-                    // //p_vux_local = Sophus::SE3(M3D::Identity(), gnss_pos);
-                    // p_vux_local = Sophus::SE3(state_point.rot, gnss_pos);
-
-                    // p_vux_local = p_vux_local * Sophus::SE3(M3D::Identity(), t_lidar2gnss_cheap_system).inverse(); //put it on mls system
-                    // publish_ppk_gnss(p_vux_local, msg_time);
-
-                    // continue; //000000000000000000000000000000000000000
 
                     while (readVUX.next(next_line))
                     {
@@ -2419,9 +2394,11 @@ void DataHandler::Subscribe()
                             bool debug = false; // true;
                             bool release = false;
                             bool eval = false; // true;// false;  //NOW----------------------------
-                            bool latest_approach = true;
+                            bool latest_approach = false;// true;
 
                             int BA_iterations = 2;
+
+                            coarse_once = false;
 
                             if (latest_approach)
                             {
@@ -2581,14 +2558,13 @@ void DataHandler::Subscribe()
                                     if (add_noise)
                                     {
                                         // Noise levels
-                                        double translation_std = 0.05; // meters
-                                        double rotation_std = 0.01;    // radians - 2.8 degrees
-
                                         // translation_std *= 2.;
                                         // rotation_std *= 2.;
 
-                                        // Noisy pose
+                                        double translation_std = .05; // 5cm meters
+                                        double rotation_std = .02;    // radians - 2.8 degrees
                                         T_to_be_refined = addNoiseToPose(T_to_be_refined, translation_std, rotation_std, rng);
+
                                     }
 
                                     if (!refine_init)
@@ -2601,15 +2577,25 @@ void DataHandler::Subscribe()
                                         auto refined_odom = prev_pose.inverse() * absolute_init_guess_T; // relative init guess
                                         prev_pose = absolute_init_guess_T;
 
-                                        // just a test for updateSimple
-                                        optimized_pose = updateReferenceGraph(
-                                            pubLaserCloudDebug, // debug
+                                        
+                                        optimized_pose = updateSimple// updateReferenceGraph
+                                        (
+                                            pubLaserCloudDebug, flg_exit, // debug
                                             prev_pub, curr_pub,
                                             cloud_pub, normals_pub,
                                             downsampled_line,      // scan in sensor frame
-                                            absolute_init_guess_T, // absolute T
+                                            absolute_init_guess_T, // absolute T init guess
                                             refined_odom,          // odometry
                                             refference_kdtree, reference_localMap_cloud);
+
+                                        // optimized_pose = updateReferenceGraph(
+                                        //     pubLaserCloudDebug, // debug
+                                        //     prev_pub, curr_pub,
+                                        //     cloud_pub, normals_pub,
+                                        //     downsampled_line,      // scan in sensor frame
+                                        //     absolute_init_guess_T, // absolute T
+                                        //     refined_odom,          // odometry
+                                        //     refference_kdtree, reference_localMap_cloud);
 
                                         if (pose_pub.getNumSubscribers() != 0 || pose_pub2.getNumSubscribers() != 0)
                                         {
@@ -2717,11 +2703,11 @@ void DataHandler::Subscribe()
                                             publishPointCloud_vux(next_line, pubOptimizedVUX2);
                                     }
 
-                                    std::cout << " Line added - Press Enter to continue..." << std::endl;
                                     ros::spinOnce();
                                     rate.sleep();
 
                                     // this is for debug only
+                                    //std::cout << " Line added - Press Enter to continue..." << std::endl;
                                     // std::cin.get();
                                 }
                             }
