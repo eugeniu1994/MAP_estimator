@@ -1952,9 +1952,6 @@ void DataHandler::Subscribe()
 
                     // we can use the feats_down_body when perform online MLS see the registration
                     // TODO - skip next, and perform it for hesai
-                    
-                    
-                    #ifdef some_Test
                     if (perform_mls_registration && false) //&& false
                     {
                         pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
@@ -2187,7 +2184,6 @@ void DataHandler::Subscribe()
                         prev_mls = curr_mls;
                         continue; //------------------------------------------------------------------------------------------
                     }
-                    #endif
 
                     if (false) // this will find the extrinsics between the lidar and the gnss poses
                     {
@@ -2287,10 +2283,8 @@ void DataHandler::Subscribe()
 
                         some_index++;
 
-                        if (time_aligned ) // && some_index % 10
+                        if (time_aligned && some_index % 10) // && some_index % 3 == 0 && some_index % 20 == 0
                         {
-                            TransformPoints(vux2mls_extrinsics, next_line); //transform the vux cloud first to mls
-
                             pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
                             downSizeFilter_vux.setInputCloud(next_line);
                             downSizeFilter_vux.filter(*downsampled_line);
@@ -2301,27 +2295,22 @@ void DataHandler::Subscribe()
                             Sophus::SE3 interpolated_pose_ppk = interpolateSE3(gnss_vux_data, cloud_time, tmp_index, false); // interpolated from ppk-gnss
                             Sophus::SE3 interpolated_pose_mls = interpolateSE3(prev_mls, prev_mls_time, curr_mls, curr_mls_time, cloud_time);
 
-                            Sophus::SE3 pose4georeference;
+                            // std::cout << "Segment:" << segment_id << " distance:" << (prev_mls.translation() - curr_mls.translation()).norm() << " m" << std::endl;
 
+                            // another way for ppk gnss
+                            //  Sophus::SE3 pose_local = Sophus::SE3(interpolated_pose_ppk.so3(), interpolated_pose_ppk.translation() - first_vux_pose.translation());
+                            //  pose_local = als2mls * interpolated_pose_ppk;
 
                             // PPK/GNSS pose as init guess---- first extrinsic, then georeference, then transform to als - //ppk-gnss
-                            //Sophus::SE3 pose4georeference = als2mls * interpolated_pose_ppk * vux2imu_extrinsics; // this does not have the extrinsics for mls
+                            Sophus::SE3 pose4georeference = als2mls * interpolated_pose_ppk * vux2imu_extrinsics; // this does not have the extrinsics for mls
 
-                            //prev approach
                             // MLS pose as init guess ---- first extrinsics, then georeference  // mls pose
-                            //pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
+                            pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
 
                             // PPK/GNSS transformed to mls, interpolated, transformed to hesai, and then extrinsics to hesai
                             // pose4georeference = als2mls * interpolated_pose_ppk * gnss2lidar * vux2mls_extrinsics;
 
-                            //new approach - transform the scan to mls first
-
-                            //init guess poses 
-                            pose4georeference = als2mls * interpolated_pose_ppk * gnss2lidar; //PPK/GNSS - transformed to hesai mls frame
-                            //pose4georeference = interpolated_pose_mls; //MLS pose as init guess - without the vux extrinsics
-
-
-                            publish_refined_ppk_gnss(pose4georeference, cloud_time);
+                            // publish_refined_ppk_gnss(pose4georeference, cloud_time);
 
                             Sophus::SE3 T_to_be_refined = pose4georeference; // ppk-gnss
 
@@ -2668,16 +2657,24 @@ void DataHandler::Subscribe()
                                 }
                                 else
                                 {
+                                    // uncomment only for gnss imu,  for hesai leave it identity
+
+                                    coarse_delta_T = Sophus::SE3(); // this solved the issue,  do not do that
+                                    publish_refined_ppk_gnss(T_to_be_refined, cloud_time);
+
+                                    
+
                                     if (!refine_init)
                                     {
                                         optimized_pose = T_to_be_refined; // do nothing - keep the original pose
                                     }
                                     else
                                     {
-                                        auto refined_odom = prev_pose.inverse() * T_to_be_refined; // relative init guess
-                                        prev_pose = T_to_be_refined;
+                                        auto absolute_init_guess_T = coarse_delta_T * T_to_be_refined;   // absolute init guess
+                                        auto refined_odom = prev_pose.inverse() * absolute_init_guess_T; // relative init guess
+                                        prev_pose = absolute_init_guess_T;
 
-                                        optimized_pose = T_to_be_refined;
+                                        optimized_pose = absolute_init_guess_T;
 
                                         updateSimple // updateReferenceGraph
                                             (
@@ -2685,7 +2682,7 @@ void DataHandler::Subscribe()
                                                 prev_pub, curr_pub,
                                                 cloud_pub, normals_pub,
                                                 downsampled_line,      // scan in sensor frame
-                                                T_to_be_refined, // absolute T init guess
+                                                absolute_init_guess_T, // absolute T init guess
                                                 refined_odom,          // odometry
                                                 refference_kdtree, reference_localMap_cloud, 
                                             pubOptimizedVUX, pose_pub , cloud_time);
@@ -2708,12 +2705,12 @@ void DataHandler::Subscribe()
                                             // pose_msg.child_frame_id = "MLS";     // moving platform
                                             pose_msg.header.stamp = ros::Time().fromSec(cloud_time);
 
-                                            Eigen::Vector3d trans = T_to_be_refined.translation();
+                                            Eigen::Vector3d trans = absolute_init_guess_T.translation();
                                             pose_msg.pose.pose.position.x = trans.x();
                                             pose_msg.pose.pose.position.y = trans.y();
                                             pose_msg.pose.pose.position.z = trans.z();
 
-                                            Eigen::Quaterniond q(T_to_be_refined.so3().matrix());
+                                            Eigen::Quaterniond q(absolute_init_guess_T.so3().matrix());
                                             pose_msg.pose.pose.orientation.x = q.x();
                                             pose_msg.pose.pose.orientation.y = q.y();
                                             pose_msg.pose.pose.orientation.z = q.z();

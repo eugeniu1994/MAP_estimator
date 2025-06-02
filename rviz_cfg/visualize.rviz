@@ -69,7 +69,7 @@ Visualization Manager:
       Frames:
         All Enabled: false
       Marker Alpha: 1
-      Marker Scale: 20
+      Marker Scale: 10
       Name: TF
       Show Arrows: false
       Show Axes: true
@@ -538,12 +538,12 @@ Visualization Manager:
           Color Style: Unique
           Frame: Local
           Offset: 1
-          Scale: 0.4000000059604645
+          Scale: 0.5
           Value: true
         Position:
           Alpha: 0.4000000059604645
           Color: 204; 51; 204
-          Scale: 0.699999988079071
+          Scale: 0.5
           Value: true
         Value: true
       Enabled: true
@@ -719,7 +719,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 52.986724853515625
+      Distance: 58.159976959228516
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -727,17 +727,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -9.546300888061523
-        Y: 9.907230377197266
-        Z: 7.766147973597981e-07
+        X: 10.146806716918945
+        Y: 33.40709686279297
+        Z: -3.4481281545595266e-06
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8047967553138733
+      Pitch: 1.2547967433929443
       Target Frame: global
-      Yaw: 3.02175235748291
+      Yaw: 0.501747190952301
     Saved: ~
 Window Geometry:
   Displays:

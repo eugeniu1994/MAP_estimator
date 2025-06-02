@@ -169,11 +169,11 @@ else()
     set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src/estimators/ICP.cpp src/Graph.cpp src/estimators/ALS_icp.cpp)
 endif()
 
-message(STATUS "MAIN_SOURCE_FILES: ${MAIN_SOURCE_FILES}")
-add_executable(mls_mapping src/main.cpp ${MAIN_SOURCE_FILES} src/DataHandler_arvo.cpp) 
-target_link_libraries(mls_mapping ${TARGET_LINK_LIBS} ) 
-add_dependencies(mls_mapping ${catkin_EXPORTED_TARGETS})
-target_include_directories(mls_mapping PRIVATE ${PYTHON_INCLUDE_DIRS} ${MATPLOTLIB_CPP_INCLUDE_DIRS})
+# message(STATUS "MAIN_SOURCE_FILES: ${MAIN_SOURCE_FILES}")
+# add_executable(mls_mapping src/main.cpp ${MAIN_SOURCE_FILES} src/DataHandler_arvo.cpp) 
+# target_link_libraries(mls_mapping ${TARGET_LINK_LIBS} ) 
+# add_dependencies(mls_mapping ${catkin_EXPORTED_TARGETS})
+# target_include_directories(mls_mapping PRIVATE ${PYTHON_INCLUDE_DIRS} ${MATPLOTLIB_CPP_INCLUDE_DIRS})
 
 
 
@@ -199,12 +199,16 @@ SET(MAIN_SOURCE_FILES2 src2/Vux_publisher.cpp src/utils.cpp )
 SET(TARGET_LINK_LIBS3 ${TARGET_LINK_LIBS} RiVLib::scanlib gtsam)  
 set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
 
+# set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src3/test.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
+
+
+
 #for tsl map
-if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/include/p2p/)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/include/p2p ${CMAKE_CURRENT_BINARY_DIR}/p2p)
-endif()
-set(TARGET_LINK_LIBS3 ${TARGET_LINK_LIBS3} tsl::robin_map ) #p2p::core
-set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src2/VoxelHash.cpp) #remove the voxel hash from here
+# if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/include/p2p/)
+#     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/include/p2p ${CMAKE_CURRENT_BINARY_DIR}/p2p)
+# endif()
+# set(TARGET_LINK_LIBS3 ${TARGET_LINK_LIBS3} tsl::robin_map ) #p2p::core
+# set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src2/VoxelHash.cpp) #remove the voxel hash from here
 
 
 add_executable(vux_main src2/main.cpp ${MAIN_SOURCE_FILES3})

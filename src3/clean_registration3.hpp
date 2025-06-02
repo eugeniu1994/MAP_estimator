@@ -1260,14 +1260,12 @@ struct Vector3dEqual
     }
 };
 
-//double robust_kernel = .1;
-
-double robust_kernel = .5;
+double robust_kernel = .1;
 
 double landmarks_sigma = 1; // this was used for all the tests so far
 
-bool use_artificial_uncertainty = false;
-//bool use_artificial_uncertainty = true;
+// bool use_artificial_uncertainty = false;
+bool use_artificial_uncertainty = true;
 
 auto plane_noise_cauchy = gtsam::noiseModel::Robust::Create(
     // gtsam::noiseModel::mEstimator::Cauchy::Create(.2), // Less aggressive than Tukey
@@ -1305,14 +1303,13 @@ void publishPose(ros::Publisher &pose_pub, const Sophus::SE3 &pose, double cloud
                  const V3D &rot_var)
 {
     /*
-        trans_var and rot_var should be in the 'frame_id = "world";' frame
+        trans_var and rot_var should be in the 'frame_id = "world";' frame 
     */
-    //std::cout << "\n publishPose :" << cloud_time << ", t:" << pose.translation().transpose() << std::endl;
+    std::cout << "\n publishPose :" << cloud_time << ", t:" << pose.translation().transpose() << std::endl;
     nav_msgs::Odometry pose_msg;
-    pose_msg.header.frame_id = "world";
-    pose_msg.child_frame_id = "VUX_B"; // moving platform
-    // pose_msg.header.stamp = ros::Time().fromSec(cloud_time);
-    pose_msg.header.stamp = ros::Time(cloud_time);
+    pose_msg.header.frame_id = "world"; 
+    //pose_msg.header.stamp = ros::Time().fromSec(cloud_time);
+    pose_msg.header.stamp = ros::Time(cloud_time); 
 
     // pose_msg.header.stamp = ros::Time::now();
 
@@ -1780,22 +1777,6 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
 std::default_random_engine generator(42);
 namespace latest_code
 {
-    //V3D r_sigma = V3D(.01, .01, .01);    //1cm
-    //V3D t_sigma = V3D(.005, .005, .005); //2degrees
-
-    
-    
-
-
-    //with added noise--------------------------------
-    //double std_noise = .1; //for trnslation
-    double std_noise = .05; //for rotation
-    V3D t_sigma = V3D(.001, std_noise, std_noise);        // Y and Z axis noise
-    V3D r_sigma = V3D(.001, .001, std_noise);         //r
-
-    
-
-
     Sophus::SE3 addNoiseToPose(const Sophus::SE3 &T,
                                const double &trans_noise_std,
                                const double &rot_noise_std,
@@ -1807,60 +1788,41 @@ namespace latest_code
             return dist(generator);
         };
 
-        // V3D delta_t(0, 0, 0);
-        // V3D delta_rpy(0, 0, 0);
-        // // delta_rpy[2] = sampleGaussian(rot_noise_std);
-        // // Convert RPY noise to rotation matrix
-        // Eigen::AngleAxisd rx(delta_rpy[0], Eigen::Vector3d::UnitX());
-        // Eigen::AngleAxisd ry(delta_rpy[1], Eigen::Vector3d::UnitY());
-        // Eigen::AngleAxisd rz(delta_rpy[2], Eigen::Vector3d::UnitZ());
+        V3D delta_t(0, 0, 0);
 
-        // Eigen::Matrix3d delta_R = (rz * ry * rx).toRotationMatrix();
-        // // Sophus::SE3 noise(delta_R, delta_t);
+        // works for
+        // delta_t[0] = sampleGaussian(trans_noise_std);  // errors on x axis of vux - which is z of the world
+
+        // not good for
+        //  delta_t[1] = sampleGaussian(trans_noise_std);
+        //  delta_t[2] = sampleGaussian(trans_noise_std);
+
+        V3D delta_rpy(0, 0, 0);
+        // delta_rpy[2] = sampleGaussian(rot_noise_std);
+
+        // Convert RPY noise to rotation matrix
+        Eigen::AngleAxisd rx(delta_rpy[0], Eigen::Vector3d::UnitX());
+        Eigen::AngleAxisd ry(delta_rpy[1], Eigen::Vector3d::UnitY());
+        Eigen::AngleAxisd rz(delta_rpy[2], Eigen::Vector3d::UnitZ());
+
+        Eigen::Matrix3d delta_R = (rz * ry * rx).toRotationMatrix();
+
+        // Sophus::SE3 noise(delta_R, delta_t);
 
         // translation and then rotation
         Eigen::Matrix<double, 6, 1> delta = Eigen::Matrix<double, 6, 1>::Zero();
 
-        //delta[0] = sampleGaussian(trans_noise_std); // translation on local X - not working
-        //delta[3] = sampleGaussian(rot_noise_std); // rotation around local x not working, no constraints, maybe IMU can do it  
-        //delta[4] = sampleGaussian(rot_noise_std); // rotation around local Y  - WORKS but not stable enough
+        delta[3] = sampleGaussian(rot_noise_std); // rotation around local x
+        // delta[5] = sampleGaussian(rot_noise_std); // rotation around local Z
 
-        delta[1] = sampleGaussian(trans_noise_std); // translation on local Y - WORKS
-        delta[2] = sampleGaussian(trans_noise_std); // translation on local Z - WORKS
-        delta[5] = sampleGaussian(rot_noise_std); // rotation around local Z yaw angle 
-
+        // delta[0] = sampleGaussian(trans_noise_std); // translation on local X
         auto noise = Sophus::SE3::exp(delta);
 
         std::cout << "noise:\n"
                   << noise.matrix() << std::endl;
 
-        Sophus::SE3 T_noisy = T * noise; // perturbation is applied in the local (sensor) frame.
-
-        // Sophus::SE3 T_noisy = noise * T;
-
+        Sophus::SE3 T_noisy = T * noise;
         return T_noisy;
-    }
-
-    Pose3 addNoiseToPose_gtsam(const Pose3 &true_pose, const Vector6 &noise_local_std)
-    {
-        auto sampleGaussian = [&](double std_dev)
-        {
-            std::normal_distribution<double> dist(0.0, std_dev);
-            return dist(generator);
-        };
-        Vector6 noise_local_;
-        noise_local_ << 0., 0., 0., 0., 0., 0.; //6D vector [rx ry rz tx ty tz] in the local frame
-
-        for (int i = 0; i < 6; i++)
-        {
-            noise_local_[i] += sampleGaussian(noise_local_std[i]);
-        }
-
-        //Convert to gtsam::Pose3 via exponential map (on tangent space)
-        Pose3 noise = Pose3::Expmap(noise_local_);
-
-        Pose3 noisy_pose = true_pose.compose(noise);
-        return noisy_pose;
     }
 
     void updateDataAssociation(ros::Publisher &_pub_debug, int pose_key,
@@ -1997,15 +1959,20 @@ namespace latest_code
             std::cout << "added_constraints:" << added_constraints << std::endl;
     }
 
-    
+    // auto r_sigma = V3D(.01, .01, .01);
+    auto t_sigma = V3D(.005, .005, .005);
+
+    // auto t_sigma = V3D(.5, .005, .005); //handles errors on x axis of vux - which is z of the world
+    // auto r_sigma = V3D(.01, .01, .1); //roll
+
+    auto r_sigma = V3D(.2, .01, .01); // roll
 
     auto odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
         (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
          gtsam::Vector3(t_sigma)                      //. translation stddev (m): x, y, z
-         ).finished());
+         )
+            .finished());
     // the issues is that is should be // rad,rad,rad,m, m, m
-
-    Vector6 noise_in_sensor = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
 
     Vector6 sigmas_prior = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
     // auto prior_noise_model_loose_world = noiseModel::Diagonal::Sigmas(sigmas_prior);
@@ -2020,7 +1987,7 @@ namespace latest_code
     std::deque<pcl::PointCloud<VUX_PointType>::Ptr> scan_buffer;
 
     const size_t max_buffer_size = 50; // 25; // 3;
-    const size_t step_size = 45;       // 10;  // Number of poses to slide each time
+    const size_t step_size = 25;       // 10;  // Number of poses to slide each time
 
     bool has_prev_solution = false;
 
@@ -2042,18 +2009,17 @@ namespace latest_code
     {
         Sophus::SE3 initial_pose = initial_pose_clean;
 
-        bool debug = true;// false;
-
         bool add_noise = true; // false;
         if (add_noise)
         {
-            double translation_std = std_noise; //.1; // .3;// .05; // 5cm meters
-            double rotation_std = std_noise;// .1;//.05;   // radians - 5.7 degrees
+            double translation_std = .1; // .3;// .05; // 5cm meters
+            double rotation_std = .2;// .05;   // radians - 5.7 degrees
 
             Sophus::SE3 T_noisy = addNoiseToPose(initial_pose, translation_std, rotation_std, generator);
 
             initial_pose = T_noisy;
         }
+
 
         {
             /*
@@ -2063,7 +2029,7 @@ namespace latest_code
                 SOPHUS: [tran, rot]
 
                 -PriorFactor<Pose3>: noise is absolute in the world frame
-                -BetweenFactor<Pose3>: noise is in the frame of the first pose
+                -BetweenFactor<Pose3>: noise is in the frame of the first pose 
 
                 // T is a gtsam::Pose3
                 gtsam::Vector6 noise;
@@ -2084,14 +2050,22 @@ namespace latest_code
 
                 ////////////////////////////////////////////////////////////////////////////////
 
+                Pose3 addNoiseToPose(const Pose3& true_pose, const Vector6& noise_local) {
+                    // noise_local: 6D vector [rx ry rz tx ty tz] in the local frame
+                    // Step 1: Convert to gtsam::Pose3 via exponential map (on tangent space)
+                    Pose3 noise = Pose3::Expmap(noise_local);
 
+                    // Step 2: Compose to get noisy pose
+                    Pose3 noisy_pose = true_pose.compose(noise);
+                    return noisy_pose;
+                }
 
                 Pose3 T_true = Pose3(Rot3::RzRyRx(0.1, 0.2, 0.3), Point3(1.0, 2.0, 3.0));
                 // Step 1: Define known noise
                 Vector6 noise_local;
                 noise_local << 0.01, -0.02, 0.005, 0.1, -0.05, 0.02;  // rotation then translation
                 // Step 2: Simulate noisy measurement
-                Pose3 T_noisy = addNoiseToPose_gtsam(T_true, noise_local);
+                Pose3 T_noisy = addNoiseToPose(T_true, noise_local);
 
                 // Assume the noise is in the local (body) frame, so identity covariance
                 Vector6 sigmas = noise_local.cwiseAbs();  // std deviations
@@ -2105,7 +2079,7 @@ namespace latest_code
 
                 //-----------------------------------------------
                 Pose3 pose_i = values.at<Pose3>(X(i));
-                Matrix66 local_cov = marginals.marginalCovariance(X(i)); is for the absolute pose of node X(i) in its own frame
+                Matrix66 local_cov = marginals.marginalCovariance(X(i)); is for the absolute pose of node X(i) in its own frame 
                 Matrix66 Ad_T = pose_i.AdjointMap();
                 Matrix66 world_cov = Ad_T * local_cov * Ad_T.transpose();  // Now in world frame
 
@@ -2136,42 +2110,36 @@ namespace latest_code
             */
         }
 
-        if (false)
-        {
-            //Vector6 noise_local;
-            //noise_local << 001, .001, .001, .001, .1, .001; // rotation then translation
-            
-             t_sigma = V3D(.001, .001, .001); // Y and Z axis noise
-             r_sigma = V3D(.001, .1, .001);         //rotation around y axis noise 
 
-            Vector6 noise_local = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
 
-            Pose3 T_true = sophusToGtsam(initial_pose_clean);
 
-            Pose3 T_noisy = addNoiseToPose_gtsam(T_true, noise_local); //Simulate noisy measurement
-            initial_pose = GtsamToSophus(T_noisy);
-
-            r_sigma = noise_local.head<3>(); // First 3 elements (rotation)
-            t_sigma = noise_local.tail<3>(); // Last 3 elements (translation)
-
-            std::cout << "r_sigma:" << r_sigma.transpose() << std::endl;
-            std::cout << "t_sigma:" << t_sigma.transpose() << std::endl;
-
-            odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
-                (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
-                 gtsam::Vector3(t_sigma)                      //. translation stddev (m): x, y, z
-                 )
-                .finished());
-        }
 
         pose_buffer.push_back(initial_pose);
         scan_buffer.push_back(scan);
 
-        debugPoint(initial_pose.translation(), _pub_prev);
+        // rotate translation sigma to curr frame
+        auto _sigma_translation = t_sigma; // initial_pose.so3().matrix() * t_sigma;
 
+        // Eigen::Matrix3d Sigma = t_sigma.array().square().matrix().asDiagonal();
+        // auto R = initial_pose.so3().matrix();
+        // Eigen::Matrix3d rotated_Sigma = R * Sigma * R.transpose();
+        // //_sigma_translation = rotated_Sigma.diagonal().cwiseSqrt();
+
+        // std::cout<<"\ninitial t_sigma:"<<t_sigma.transpose()<<std::endl;
+        // std::cout<<"rotated _sigma_translation:"<<_sigma_translation.transpose()<<std::endl;
+
+        // do the same for rotation
+
+        odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
+             gtsam::Vector3(_sigma_translation)           //. translation stddev (m): x, y, z
+             )
+                .finished());
+
+        debugPoint(initial_pose.translation(), _pub_prev);
         if (pose_pub.getNumSubscribers() != 0)
         {
-            publishPose(pose_pub, initial_pose, time, t_sigma, r_sigma);
+            publishPose(pose_pub, initial_pose, time, _sigma_translation, r_sigma);
         }
 
         if (pose_buffer.size() < max_buffer_size) // not enough poses
@@ -2179,6 +2147,9 @@ namespace latest_code
             return initial_pose; // the optimization will start when pose_buffer.size() is equal to max_buffer_size
         }
 
+
+        
+        
         // Initialize values from raw odometry
         Values current_values;
         if (has_prev_solution) // add anchor
@@ -2186,7 +2157,7 @@ namespace latest_code
             current_values.insert(A(0), anchor_pose);
         }
 
-        //std::cout << "updateSimple pose_buffer size:" << pose_buffer.size() << std::endl;
+        std::cout << "updateSimple pose_buffer size:" << pose_buffer.size() << std::endl;
         for (size_t i = 0; i < pose_buffer.size(); i++)
         {
             Pose3 pose = sophusToGtsam(pose_buffer[i]);
@@ -2196,6 +2167,8 @@ namespace latest_code
         pcl::PointCloud<pcl::PointXYZI>::Ptr buffer_clouds(new pcl::PointCloud<pcl::PointXYZI>());
 
         // optimization refinement
+        bool debug = true; // false;
+
         NonlinearFactorGraph graph;
         for (int iter = 0; iter < 50; ++iter)
         {
@@ -2387,14 +2360,11 @@ namespace latest_code
 
             // break;
         }
-        
-        if (debug)
-        {
-            std::cout << "Accepted press enter... pose_buffer.size():" << pose_buffer.size() << std::endl;
-            std::cin.get();
-        }
-        
-        has_prev_solution = true; //do not use anchor for now, untill figure how noise works which frame
+
+        std::cout << "Accepted press enter... pose_buffer.size():" << pose_buffer.size() << std::endl;
+        std::cin.get();
+
+        //has_prev_solution = true; //do not use anchor for now, untill figure how noise works which frame 
 
         // Estimate new uncertainty for prior
         gtsam::Marginals marginals(graph, current_values);
@@ -2416,7 +2386,7 @@ namespace latest_code
                     anchor_pose = current_values.at<Pose3>(X(i));
                     relative_anchor = anchor_pose.between(current_values.at<Pose3>(X(i + 1)));
 
-                    anchor_covariance = marginals.marginalCovariance(X(i)); // the covariances are in frame X(i)
+                    anchor_covariance = marginals.marginalCovariance(X(i)); //the covariances are in frame X(i)
                     next_prior_covariance = marginals.marginalCovariance(X(i + 1));
 
                     if (pubOptimizedVUX.getNumSubscribers() != 0)
@@ -2451,6 +2421,8 @@ namespace latest_code
             prior_noise_model_loose_world = gtsam::noiseModel::Gaussian::Covariance(next_prior_covariance);
             anchor_noise_model_world = gtsam::noiseModel::Gaussian::Covariance(anchor_covariance);
         }
+
+        
 
         return GtsamToSophus(anchor_pose);
     }
