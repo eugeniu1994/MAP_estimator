@@ -54,34 +54,6 @@ void publishPointCloud(pcl::PointCloud<PointType>::Ptr &cloud, const ros::Publis
     // std::cout << "\nPublished " << cloud->size() << " points" << ", Header time: " << first_point_time_ros << std::endl;
 }
 
-void publishPointCloud_vux(pcl::PointCloud<VUX_PointType>::Ptr &cloud, const ros::Publisher &point_cloud_pub)
-{
-    if (point_cloud_pub.getNumSubscribers() == 0)
-    {
-        return;
-    }
-
-    if (cloud->empty())
-    {
-        std::cerr << "VUX Point cloud is empty. Skipping publish.\n";
-        return;
-    }
-
-    sensor_msgs::PointCloud2 cloud_msg;
-    pcl::toROSMsg(*cloud, cloud_msg);
-
-    // Get the first point's GPS time and convert to ROS time
-    ros::Time first_point_time_ros(cloud->points[0].time);
-
-    cloud_msg.header.stamp = first_point_time_ros; // ros::Time::now();
-    // cloud_msg.header.frame_id = "VUX";  //change the frame id
-    // cloud_msg.header.frame_id = "PPK_GNSS"; // Publish in GNSS frame
-    cloud_msg.header.frame_id = "world"; // Publish in GNSS frame
-
-    point_cloud_pub.publish(cloud_msg);
-
-    // std::cout << "\nPublished " << cloud->size() << " points" << ", Header time: " << first_point_time_ros << std::endl;
-}
 
 void publishJustPoints(const pcl::PointCloud<PointType>::Ptr &cloud_, const ros::Publisher &cloud_pub)
 {
@@ -1281,8 +1253,8 @@ void DataHandler::Subscribe()
         {
             scan_id++;
             std::cout << "scan_id:" << scan_id << std::endl;
-            if (scan_id > 1050) // 1310 550 1837-we have georeferenced data for this 1000 before tests done with 1000
-            {
+            if (scan_id > 500) // 1050 used for data before
+            { 
                 std::cout << "Stop here... enough data" << std::endl;
                 break;
             }
@@ -1916,11 +1888,11 @@ void DataHandler::Subscribe()
                 }
 
                 // set the current map to kdtree----------------------------------------
-                //  std::cout << "kdtree set input MLS points: " << laserCloudSurfMap->size() << std::endl;
-                //  const auto &reference_localMap_cloud = laserCloudSurfMap;
+                std::cout << "kdtree set input MLS points: " << laserCloudSurfMap->size() << std::endl;
+                const auto &reference_localMap_cloud = laserCloudSurfMap;
 
-                std::cout << "kdtree set input ALS points: " << als_obj->als_cloud->size() << std::endl;
-                const auto &reference_localMap_cloud = als_obj->als_cloud;
+                // std::cout << "kdtree set input ALS points: " << als_obj->als_cloud->size() << std::endl;
+                // const auto &reference_localMap_cloud = als_obj->als_cloud;
 
                 //------------------------------------------------------------------------
                 estimator_.localKdTree_map->setInputCloud(reference_localMap_cloud);
@@ -1997,7 +1969,7 @@ void DataHandler::Subscribe()
                             auto refined_odom = prev_mls.inverse() * curr_mls; // relative init guess
                             refined_odom = Sophus::SE3();
 
-                            optimized_pose = updateSimple(
+                            optimized_pose = updateBatch(
                                 pubLaserCloudDebug, flg_exit, // debug
                                 prev_pub, curr_pub,
                                 cloud_pub, normals_pub,
@@ -2289,7 +2261,7 @@ void DataHandler::Subscribe()
 
                         if (time_aligned ) // && some_index % 10
                         {
-                            TransformPoints(vux2mls_extrinsics, next_line); //transform the vux cloud first to mls
+                            //TransformPoints(vux2mls_extrinsics, next_line); //transform the vux cloud first to mls
 
                             pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
                             downSizeFilter_vux.setInputCloud(next_line);
@@ -2317,9 +2289,13 @@ void DataHandler::Subscribe()
                             //new approach - transform the scan to mls first
 
                             //init guess poses 
-                            pose4georeference = als2mls * interpolated_pose_ppk * gnss2lidar; //PPK/GNSS - transformed to hesai mls frame
-                            //pose4georeference = interpolated_pose_mls; //MLS pose as init guess - without the vux extrinsics
+                            //pose4georeference = als2mls * interpolated_pose_ppk * gnss2lidar; //PPK/GNSS - transformed to hesai mls frame
+                            pose4georeference = interpolated_pose_mls; //MLS pose as init guess - without the vux extrinsics
 
+
+
+                            //pose from mls with extrinsics and everything 
+                            pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
 
                             publish_refined_ppk_gnss(pose4georeference, cloud_time);
 
@@ -2477,8 +2453,9 @@ void DataHandler::Subscribe()
 
                             bool debug = false; // true;
                             bool release = false;
-                            bool eval = false; // true;// false;  //NOW----------------------------
-                            bool latest_approach = true;
+
+                            bool eval =  false;  //NOW----------------------------
+                            bool latest_approach = false;// true;
 
                             int BA_iterations = 2;
 
@@ -2679,16 +2656,17 @@ void DataHandler::Subscribe()
 
                                         optimized_pose = T_to_be_refined;
 
-                                        updateSimple // updateReferenceGraph
+                                        updateBatch // updateReferenceGraph
                                             (
                                                 pubLaserCloudDebug, flg_exit, // debug
                                                 prev_pub, curr_pub,
                                                 cloud_pub, normals_pub,
                                                 downsampled_line,      // scan in sensor frame
+                                                next_line,      // scan in sensor frame
                                                 T_to_be_refined, // absolute T init guess
                                                 refined_odom,          // odometry
                                                 refference_kdtree, reference_localMap_cloud, 
-                                            pubOptimizedVUX, pose_pub , cloud_time);
+                                            pubOptimizedVUX, pubOptimizedVUX2, pose_pub , cloud_time);
 
                                         // optimized_pose = updateReferenceGraph(
                                         //     pubLaserCloudDebug, // debug
@@ -2760,7 +2738,7 @@ void DataHandler::Subscribe()
                                         publish_frame_debug(pubOptimizedVUX, feats_down_body);
                                     }
 
-                                    if (pubOptimizedVUX2.getNumSubscribers() != 0 || save_georeferenced_vux)
+                                    if ((pubOptimizedVUX2.getNumSubscribers() != 0 || save_georeferenced_vux) && false)
                                     {
                                         TransformPoints(optimized_pose, next_line);
 
@@ -3593,17 +3571,22 @@ void DataHandler::Subscribe()
 
                                 {
                                     std::string input_file = vux_eval_path + "vux_" + std::to_string(vux_cloud_next_id) + "_cloud.pcd";
-                                    // std::string output_file = vux_eval_path + "surface-eval/vux_surf_eval_" + std::to_string(vux_cloud_next_id) + ".txt"; // this file will contain the evaluation of all the scans
+                                    std::string output_file = vux_eval_path + "surface-eval/vux_surf_eval_" + std::to_string(vux_cloud_next_id) + ".txt"; // this file will contain the evaluation of all the scans
 
                                     // just a test now
-                                    std::string output_file = "/home/eugeniu/x_vux-georeferenced-final/test/vux_surf_eval_" + std::to_string(vux_cloud_next_id) + ".txt"; // this file will contain the evaluation of all the scans
+                                    //std::string output_file = "/home/eugeniu/x_vux-georeferenced-final/test/vux_surf_eval_" + std::to_string(vux_cloud_next_id) + ".txt"; // this file will contain the evaluation of all the scans
 
                                     pcl::PointCloud<VUX_PointType> cloud;
                                     if (pcl::io::loadPCDFile<VUX_PointType>(input_file, cloud) == -1)
                                     {
                                         std::cerr << "Couldn't read file: " << input_file << "\n";
+
+                                        throw std::runtime_error("Stop here.");
+
                                         continue;
                                     }
+
+               
                                     auto segment_cloud_ptr = boost::make_shared<pcl::PointCloud<VUX_PointType>>(cloud);
 
                                     pcl::PointCloud<VUX_PointType>::Ptr down_cloud(new pcl::PointCloud<VUX_PointType>);
@@ -3634,7 +3617,7 @@ void DataHandler::Subscribe()
                                         publish_frame_debug(pubOptimizedVUX, feats_undistort);
                                     }
 
-                                    if (false) // do not compute the errors
+                                    if (true) // do not compute the errors
                                     {
                                         // here the main point to plane evaluation is happening
                                         RefPointCloudXYZINormal::Ptr good_planes(new RefPointCloudXYZINormal());
@@ -3810,6 +3793,10 @@ void DataHandler::Subscribe()
                                                         centroid /= static_cast<double>(neighbours);
 
                                                         M3D cov = M3D::Zero();
+                                                        // Regularize
+                                                        double lambda_reg = 1e-5;
+                                                        cov = cov + lambda_reg * Eye3d;
+
                                                         for (int j = 0; j < neighbours; j++)
                                                         {
                                                             V3D centered_pt = V3D(downsampled_als_cloud->points[point_idx[j]].x, downsampled_als_cloud->points[point_idx[j]].y, downsampled_als_cloud->points[point_idx[j]].z) - centroid;
@@ -3839,7 +3826,7 @@ void DataHandler::Subscribe()
                                                         // Colinear: if the two smallest eigenvalues are close to zero
                                                         if ((lambda1 / lambda2) < 1e-3)
                                                         {
-                                                            std::cerr << "Colinear structure detected. Skipping...\n";
+                                                            //std::cerr << "Colinear structure detected. Skipping...\n";
                                                             continue;
                                                         }
 
@@ -3894,7 +3881,8 @@ void DataHandler::Subscribe()
                                         //  publishPointCloud_vux(down_cloud, pubOptimizedVUX);
                                         //  publishPointCloud_vux(down_cloud, pubLaserCloudDebug);
 
-                                        std::cout << "Found " << good_planes->size() << "/" << feats_undistort->size() << " good_planes" << std::endl;
+                                        
+                                        //std::cout << "Found " << good_planes->size() << "/" << feats_undistort->size() << " good_planes" << std::endl;
 
                                         if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
                                             debug_CloudWithNormals(good_planes, cloud_pub, normals_pub);
@@ -3908,11 +3896,11 @@ void DataHandler::Subscribe()
                                 vux_cloud_next_id++;
 
                                 // if (vux_cloud_next_id > 20699)
-                                if (vux_cloud_next_id > 21399)
-                                {
-                                    std::cout << "The end of the georeferenced files..." << std::endl;
-                                    throw std::runtime_error("Stop here.");
-                                }
+                                // if (vux_cloud_next_id > 21399)
+                                // {
+                                //     std::cout << "The end of the georeferenced files..." << std::endl;
+                                //     throw std::runtime_error("Stop here.");
+                                // }
                             }
 
                             //---------------------------------------------------------------------

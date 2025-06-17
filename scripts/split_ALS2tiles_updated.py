@@ -73,11 +73,11 @@ def process_laz_files_incremental(input_folder, output_folder, tile_size, east_m
                 existing_y = existing.y
                 existing_z = existing.z
 
-                # Print the shapes of the arrays (x, y, z) to confirm they exist
+                # shapes of the arrays (x, y, z) to confirm they exist
                 # print(f'tile_pcloud.x shape: {tile_x.shape}')
                 # print(f'existing.x shape: {existing_x.shape}')
                 
-                # Concatenate the points' arrays (x, y, z)
+                # Concatenate the points arrays (x, y, z)
                 combined_x = np.concatenate((existing_x, tile_x))
                 combined_y = np.concatenate((existing_y, tile_y))
                 combined_z = np.concatenate((existing_z, tile_z))

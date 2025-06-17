@@ -3,18 +3,57 @@ import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from sklearn.metrics import mean_squared_error
 import matplotlib.patches as mpatches
+import seaborn as sns
+
+font = 18
 
 
-known_als2mls_inv: 398269.1135182129 6786162.7477222066     131.0252137406
-als_to_mls_inv   : 398269.2192482995 6786162.3634432964     132.7766588416
+plt.rcParams.update({'font.size': font})
+sns.set(style="whitegrid")
+sns.set_context("notebook", font_scale=1.4)  # 1.6 × base font size (~10 by default)
+font = 16
 
-
+plt.rcParams.update({'font.size': font})
+plt.rc('axes', titlesize=font)     # Set the font size of the title
+#plt.rc('axes', labelsize=font)     # Set the font size of the x and y labels
+#plt.rc('xtick', labelsize=12)    # Set the font size of the x tick labels
+#plt.rc('ytick', labelsize=12)    # Set the font size of the y tick labels
+plt.rc('legend', fontsize=14)    # Set the font size of the legend
+plt.rc('font', size=font)          # Set the general font size'''
 
 
 MLS_all_trees_xyz_path = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/trees/Robust MLS + Dense ALS + Map Fusion + GNSS/MLS_all_trees_xyz.txt"
-ALS_all_trees_xyz_path = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/trees/Robust MLS + Dense ALS + Map Fusion + GNSS/ALS_all_trees_xyz.txt"
-
 ALS_all_trees_xyz_path = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/trees/ALS_experimental/ALS_all_trees_xyz.txt"
+
+from scipy import stats
+from sklearn.utils import resample
+
+# Function to calculate confidence intervals
+def calculate_confidence_interval(mean, std, n, alpha=0.05):
+    # t-critical value for 95% confidence (two-tailed test)
+    t_critical = stats.t.ppf(1 - alpha/2, df=n-1)
+        
+    # Standard error
+    std_error = std / np.sqrt(n)
+        
+    # Margin of error
+    margin_of_error = t_critical * std_error
+        
+    # Confidence interval
+    lower_bound = mean - margin_of_error
+    upper_bound = mean + margin_of_error
+        
+    return lower_bound, upper_bound
+    
+def bootstrap_ci(data, n_resamples=1000, ci=95):
+    means = []
+    for _ in range(n_resamples):
+        sample = resample(data)
+        means.append(np.mean(sample))
+    lower = np.percentile(means, (100 - ci) / 2)
+    upper = np.percentile(means, 100 - (100 - ci) / 2)
+    return lower, upper
+
 
 def read_se3_and_inverse_from_txt(filename):
     with open(filename, 'r') as f:
@@ -41,121 +80,19 @@ def read_se3_and_inverse_from_txt(filename):
 
     return matrices["T_als2mls"], matrices["T_mls2als"]
 
-
 T_als2mls, T_mls2als = read_se3_and_inverse_from_txt("/home/eugeniu/vux-georeferenced/als2mls_dense.txt")
 
-print("ALS to MLS:\n", T_als2mls)
-print("MLS to ALS:\n", T_mls2als)
+# print("ALS to MLS:\n", T_als2mls)
+# print("MLS to ALS:\n", T_mls2als)
+
 
 def apply_transformation(pcd, T):
     T = np.array(T, dtype=np.float64)
     
-    points = np.asarray(pcd, dtype=np.float64)
-    #points[:,:3] = points[:,:3].dot(T[:3, :3].T) + T[:3, 3]
+    #points = np.asarray(pcd, dtype=np.float64)
+    points = pcd[:,:3].dot(T[:3, :3].T) + T[:3, 3]
 
     return points
-
-def reference_trees():
-    # Load point data
-    car_points = np.loadtxt(MLS_all_trees_xyz_path, delimiter=',')    # shape: (N, 3)
-    drone_points = np.loadtxt(ALS_all_trees_xyz_path, delimiter=',')  # shape: (M, 3)
-
-    print('car_points:', np.shape(car_points),' drone_points:',np.shape(drone_points))
-
-    valid_rows_car = car_points[:,0] < 398600
-    valid_rows_drone = drone_points[:,0] < 398600
-
-    # x and y coordinates
-    # car_xy = car_points[valid_rows_car, :2]
-    # drone_xy = drone_points[valid_rows_drone, :2]
-
-    car_xy = car_points[valid_rows_car]
-    drone_xy = drone_points[valid_rows_drone]
-    car_xy[:,2] -= car_xy[0,2]
-    drone_xy[:,2] -= drone_xy[0,2]
-
-    print('Filtered car_points:', np.shape(car_xy),' drone_points:',np.shape(drone_xy))
-
-    # plt.figure(figsize=(10, 9))
-    # plt.scatter(car_xy[:, 0], car_xy[:, 1], c='green', label='Car-based Detection', s=50, marker='o', alpha=0.5)
-    # plt.scatter(drone_xy[:, 0], drone_xy[:, 1], c='blue', label='Drone-based Detection', s=25, marker='*', alpha=1)
-
-    # plt.xlabel('X (meters)')
-    # plt.ylabel('Y (meters)')
-    # plt.title('Tree Locations Detected by Car and Drone Platforms')
-    # plt.legend()
-    # plt.axis('equal')
-    # plt.grid(True)
-    # plt.tight_layout()
-    # plt.draw()
-
-    return car_xy, drone_xy
-
-def AssociateTrees(query_trees, reference_trees, dist_threshold = 1, title = '', plot = False):
-    # Build KD-tree from reference points
-    tree = cKDTree(reference_trees)
-
-    distances, indices = tree.query(query_trees, k=1)
-
-    # Mask of matches within 1 meter
-    within_1m = distances < dist_threshold
-    matched_indices = indices[within_1m]
-    print('matched_indices:', np.shape(matched_indices),' with threshold of ',dist_threshold)
-
-    #unique_matched_ref_points = reference_trees[np.unique(matched_indices)]
-
-    
-    colors = np.where(distances < dist_threshold, 'red', 'black')
-    alphas = np.full(query_trees.shape[0], 0.1)  # Default: faded out
-    alphas[distances < dist_threshold] = 1.0    # Highlight matched ones
-
-    if plot:
-        plt.figure(figsize=(8, 8))
-        for i, point in enumerate(query_trees):
-            plt.scatter(point[0], point[1], color=colors[i], alpha=alphas[i], label='VUX points', s=10)
-        #plt.scatter(query_trees[:, 0], query_trees[:, 1], c=colors, s=10, label='VUX points')
-        plt.scatter(reference_trees[:, 0], reference_trees[:, 1], c='blue', s=60, alpha=0.3, label='Reference Points')
-        #plt.scatter(unique_matched_ref_points[:, 0], unique_matched_ref_points[:, 1], c='blue', s=60, alpha=0.3, label='Reference trees')
-
-        #plt.legend()
-
-        # Add legend manually
-        ref_handle = plt.Line2D([0], [0], marker='o', color='w', label='Reference Trees',
-                                markerfacecolor='blue', alpha=0.3, markersize=10)
-        query_handle = plt.Line2D([0], [0], marker='o', color='w', label=title +' Query Trees',
-                                markerfacecolor='red', markersize=8)
-
-        plt.legend(handles=[ref_handle, query_handle], loc='best')
-
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.title('Nearest Neighbor Check (< 1m → red, ≥ 1m → black)')
-        plt.axis('equal')
-        plt.grid(True)
-        plt.tight_layout()
-        plt.draw()  
-
-    #plt.show()
-    # Build a map from reference index to its closest query index
-    ref_to_best_query = {}
-    for query_idx, (ref_idx, dist) in enumerate(zip(indices, distances)):
-        if dist >= dist_threshold:
-            continue
-        if ref_idx not in ref_to_best_query or dist < ref_to_best_query[ref_idx][1]:
-            ref_to_best_query[ref_idx] = (query_idx, dist)
-
-    # Final matched query and reference trees (1-to-1, closest only)
-    final_query_indices = [v[0] for v in ref_to_best_query.values()]
-    final_ref_indices = list(ref_to_best_query.keys())
-
-    query_matched = query_trees[final_query_indices]
-    ref_matched = reference_trees[final_ref_indices]
-
-    return query_matched, ref_matched
-    #------------------------------------------------
-    
-
-car_xy, drone_xy = reference_trees()
 
 def read_query_tree_file(file_path):
     data = []
@@ -179,124 +116,74 @@ def read_query_tree_file(file_path):
 
         except (IndexError, ValueError):
             continue  # skip lines that can't be parsed
-    
+        
     rv = np.array(data)
-    print('rv ', np.shape(rv))
-    rv[:,2] -= rv[0,2]
+    rv = rv[(rv[:,1] < 670), :]
 
-    return rv
+    return rv[:,:2] #x y
+    #return rv[:,:3] #x y height
 
-vux_trees = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_1/results/Results/Stem_curves/Found_stem_tree_attributes.txt"
+def AssociateTrees(query_trees, reference_trees, dist_threshold = 1, title = '', plot = False):
+    tree = cKDTree(reference_trees) # Build KD-tree from reference points
 
-tree_data = read_query_tree_file(vux_trees)  
-print('tree_data ', np.shape(tree_data))
+    distances, indices = tree.query(query_trees, k=1)
 
-#np.savetxt("/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_1/point_cloud.txt", tree_data, fmt="%.6f")
+    # Mask of matches within 1 meter
+    within_1m = distances < dist_threshold
+    matched_indices = indices[within_1m]
+    print('matched_indices:', np.shape(matched_indices),' with threshold of ',dist_threshold)
 
-#convert to MLS frame 
-apply_transformation(tree_data, T_als2mls)
+    #unique_matched_ref_points = reference_trees[np.unique(matched_indices)]
 
-#convert to MLS frame 
-apply_transformation(car_xy, T_als2mls)
-apply_transformation(drone_xy, T_als2mls)
+    
+    colors = np.where(distances < dist_threshold, 'red', 'black')
+    #alphas = np.full(query_trees.shape[0], 0.1)  # Default: faded out
+    #alphas[distances < dist_threshold] = 1.0    # Highlight matched ones
+    alphas = np.full(query_trees.shape[0], 1)  
 
-d_trees = tree_data #[:,:2]
+    if plot:
+        plt.figure(figsize=(8, 8))
+        for i, point in enumerate(query_trees):
+            plt.scatter(point[0], point[1], color=colors[i], alpha=alphas[i], label='VUX points', s=10)
+        #plt.scatter(query_trees[:, 0], query_trees[:, 1], c=colors, s=10, label='VUX points')
+        plt.scatter(reference_trees[:, 0], reference_trees[:, 1], c='green', s=60, alpha=0.3, label='Reference Points')
+        #plt.scatter(unique_matched_ref_points[:, 0], unique_matched_ref_points[:, 1], c='blue', s=60, alpha=0.3, label='Reference trees')
 
-def plot_car_drone_vux(car_xy, drone_xy, d_trees):
-    plt.figure(figsize=(10, 9))
-    plt.scatter(car_xy[:, 0], car_xy[:, 1], c='green', label='Car-based Detection', s=60, marker='o', alpha=0.5)
-    plt.scatter(drone_xy[:, 0], drone_xy[:, 1], c='blue', label='Drone-based Detection', s=35, marker='*', alpha=1)
+        #plt.legend()
 
-    plt.scatter(d_trees[:, 0], d_trees[:, 1], c='red', label='VUX-based Detection', s=10, alpha=1)
+        # Add legend manually
+        ref_handle = plt.Line2D([0], [0], marker='o', color='w', label='Reference Trees',
+                                markerfacecolor='green', alpha=0.3, markersize=10)
+        query_handle = plt.Line2D([0], [0], marker='o', color='w', label=title +' Query Trees',
+                                markerfacecolor='red', markersize=8)
 
-    plt.xlabel('X (meters)')
-    plt.ylabel('Y (meters)')
-    plt.title('Tree Locations Detected by Car and Drone Platforms')
-    plt.legend()
-    plt.axis('equal')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.draw()
+        plt.legend(handles=[ref_handle, query_handle], loc='best')
 
-plot_car_drone_vux(car_xy, drone_xy, d_trees)
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.title('Nearest Neighbor Check (< {}m → red, ≥ {}m → black)'.format(dist_threshold,dist_threshold))
+        plt.axis('equal')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.draw()  
 
-query_trees,ref_trees = AssociateTrees(d_trees, car_xy, dist_threshold = 1)
-#AssociateTrees(d_trees, drone_xy, dist_threshold = 1)
+    #plt.show()
+    # Build a map from reference index to its closest query index
+    ref_to_best_query = {}
+    for query_idx, (ref_idx, dist) in enumerate(zip(indices, distances)):
+        if dist >= dist_threshold:
+            continue
+        if ref_idx not in ref_to_best_query or dist < ref_to_best_query[ref_idx][1]:
+            ref_to_best_query[ref_idx] = (query_idx, dist)
 
-plt.draw()
-plt.show()
+    # Final matched query and reference trees (1-to-1, closest only)
+    final_query_indices = [v[0] for v in ref_to_best_query.values()]
+    final_ref_indices = list(ref_to_best_query.keys())
 
-def align_3d_points(source, target):
-    # Step 1: Compute the centroids of both arrays
-    centroid_source = np.mean(source, axis=0)
-    centroid_target = np.mean(target, axis=0)
+    query_matched = query_trees[final_query_indices]
+    ref_matched = reference_trees[final_ref_indices]
 
-    # Step 2: Center the points around the centroids
-    source_centered = source - centroid_source
-    target_centered = target - centroid_target
-
-    # Step 3: Compute the covariance matrix
-    H = np.dot(source_centered.T, target_centered)
-
-    # Step 4: Compute the Singular Value Decomposition (SVD)
-    U, S, Vt = np.linalg.svd(H)
-
-    # Step 5: Compute the rotation matrix
-    R = np.dot(Vt.T, U.T)
-
-    # Step 6: Check for reflection and correct it
-    if np.linalg.det(R) < 0:
-        Vt[-1, :] *= -1
-        R = np.dot(Vt.T, U.T)
-
-    # Step 7: Compute the translation vector
-    t = centroid_target - np.dot(R, centroid_source)
-
-    # Step 8: Apply the rotation and translation to align the source points
-    aligned_source = np.dot(source_centered, R) + centroid_target
-
-    return aligned_source, R, t
-
-#--------------------------------------------------------------------------------------
-
-methods = {
-    'GNSS-IMU 0': '/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_0/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
-    'GNSS-IMU 1': "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_2/results/Results/Stem_curves/Found_stem_tree_attributes.txt",
-    'GNSS-IMU 2': "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_4/results/Results/Stem_curves/Found_stem_tree_attributes.txt",
-    'GNSS-IMU 3': "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_6/results/Results/Stem_curves/Found_stem_tree_attributes.txt",
-
-    'Hesai 0': '/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_1/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
-    'Hesai 1': "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_3/results/Results/Stem_curves/Found_stem_tree_attributes.txt",
-    'Hesai 2': "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_5/results/Results/Stem_curves/Found_stem_tree_attributes.txt",
-    'Hesai 3': "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/config_7/results/Results/Stem_curves/Found_stem_tree_attributes.txt",
-}
-
-models = {
-    # "Model A": (query_A, reference),  # shape (N,2), (N,2)
-}
-
-dist_threshold =  1
-for label, folder in methods.items():
-    model_trees = read_query_tree_file(folder)[:,:3] #x y height
-
-    #convert to MLS frame 
-    apply_transformation(model_trees, T_als2mls)
-
-    print('\n{} loaded {} trees'.format(label, np.shape(model_trees)))
-
-    query_trees,ref_trees = AssociateTrees(model_trees[:,:2], car_xy[:,:2], dist_threshold = dist_threshold, title=label, plot=True)
-
-    #query_trees, R, t = align_3d_points(query_trees, ref_trees)
-
-    print('query_trees:{}, ref_trees:{}'.format(np.shape(query_trees), np.shape(ref_trees)))
-
-    #query_trees,ref_trees = AssociateTrees(query_trees,ref_trees, dist_threshold = 1, title=label, plot=True)
-    #query_trees, R, t = align_3d_points(query_trees, ref_trees)
-    #print('query_trees:{}, ref_trees:{}'.format(np.shape(query_trees), np.shape(ref_trees)))
-
-    models[label] = (query_trees, ref_trees)
-
-#plt.show()
+    return query_matched, ref_matched, final_ref_indices
 
 # Containers for errors
 abs_errors_dict = {}
@@ -320,12 +207,6 @@ def compute_relative_error(query, reference):
 
     return np.abs(np.array(est_distances) - np.array(ref_distances))
 
-# Compute errors
-for name, (query, reference) in models.items():
-    abs_errors_dict[name] = compute_absolute_error(query, reference)
-    rel_errors_dict[name] = compute_relative_error(query, reference)
-
-# Summary printing
 def summarize(errors, name):
     print(f"\n{name}")
     for model, errs in errors.items():
@@ -333,13 +214,112 @@ def summarize(errors, name):
         median = np.median(errs)
         rmse = np.sqrt(mean_squared_error(np.zeros_like(errs), errs))
         std = np.std(errs)
-        print(f"{model}: Mean={mean:.4f}, Median={median:.4f}, RMSE={rmse:.4f}, Std={std:.4f}")
+
+        #ci = calculate_confidence_interval(mean, std, len(errs), alpha = 0.05)
+        #print('\n \n prev ci:',ci)
+        print('len errors:', len(errs))
+        ci = bootstrap_ci(errs, n_resamples=00, ci=95)
+        ci_mean = (mean - ci[0])
+
+        print(f"{model}: Mean={mean:.4f}, Median={median:.4f}, RMSE={rmse:.4f}, Std={std:.4f}, ci={ci}, , ci_mean={ci_mean}")
+
+
+ref_trees = "/media/eugeniu/T7/las_georeferenced/Ref_ALS_Hesai_fused/results/Results/Stem_curves/Found_stem_tree_attributes.txt"
+
+ref_tree_data = read_query_tree_file(ref_trees)  
+print('\nref_tree_data ', np.shape(ref_tree_data))
+#print('ref_tree_data:\n', ref_tree_data[:3])
+
+#np.savetxt('/media/eugeniu/T7/las_georeferenced/Ref_ALS_Hesai_fused/results/Results/Stem_curves/xyz_hesai0_estimated.txt', ref_tree_data, fmt='%.6f', delimiter=',')
+
+
+#convert to ALS frame 
+#ref_tree_data = apply_transformation(ref_tree_data, T_mls2als)
+#print('ref_tree_data als :\n', ref_tree_data[:3])
+
+methods = {
+    'GNSS-IMU 0': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss0/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'GNSS-IMU 1': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss1/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'GNSS-IMU 2': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss2/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'GNSS-IMU 3': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss3/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+
+    'Hesai 0': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai0/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'Hesai 1': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai1/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'Hesai 2': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai2/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'Hesai 3': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai3/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+}
+
+lab = ['A','B','C','D','E','F','G','H']
+
+def plot_trees(tree, ref_tree, label, c='green', s=60, marker='o', alpha=0.5):
+    plt.figure(figsize=(10, 9))
+    
+    plt.scatter(ref_tree[:, 0], ref_tree[:, 1], c='green', s=60, marker='o', alpha=0.5)
+    plt.scatter(tree[:, 0], tree[:, 1], c=c, label=label, s=s, marker=marker, alpha=alpha)
+
+    plt.xlabel('X (meters)')
+    plt.ylabel('Y (meters)')
+    plt.title('Tree Locations')
+    plt.legend()
+    plt.axis('equal')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.draw()
+
+plot = False 
+
+matches = {}
+
+for label, folder in methods.items():
+    model_trees = read_query_tree_file(folder)
+
+    print('{} - model_trees{}'.format(label, np.shape(model_trees)))
+
+    #if plot:
+    #    plot_trees(model_trees, ref_tree_data, label='{} tree'.format(label), c='blue', s=35, marker='*', alpha=1)
+
+    #model_trees, ref_tree_data = model_trees[:,:2], ref_tree_data[:,:2]
+    query_trees, ref_trees, ref_indices = AssociateTrees(model_trees, ref_tree_data, dist_threshold = 1, title = label, plot = plot)
+    
+    #if plot:
+    #    plot_trees(query_trees, ref_trees, label='After DA {} tree'.format(label), c='blue', s=35, marker='*', alpha=1)
+
+    matches[label] = {
+        'matched_query': query_trees,
+        'matched_ref': ref_trees,
+        'ref_indices': ref_indices
+    }
+
+all_ref_sets = [set(match['ref_indices']) for match in matches.values()]
+common_ref_indices = sorted(set.intersection(*all_ref_sets))
+print('common_ref_indices:', np.shape(common_ref_indices))
+
+aligned_matches = {}
+
+for label, data in matches.items():
+    ref_idx_array = np.array(data['ref_indices'])
+    mask = np.isin(ref_idx_array, common_ref_indices)
+
+    matched_query, matched_ref = data['matched_query'][mask], data['matched_ref'][mask]
+    print("method: ",label,", matched_query:",np.shape(matched_query), ", matched_ref:",np.shape(matched_ref) )
+    
+    #plot_trees(query_trees, ref_trees, label='After DA {} tree'.format(label), c='blue', s=35, marker='*', alpha=1)
+    
+    # Compute errors
+    abs_errors_dict[label] = compute_absolute_error(matched_query, matched_ref)
+    rel_errors_dict[label] = compute_relative_error(matched_query, matched_ref)
+
+    # if label == 'Hesai 0':
+    #     np.savetxt('/media/eugeniu/T7/las_georeferenced/Ref_ALS_Hesai_fused/results/Results/Stem_curves/xyz_ref.txt', matched_ref, fmt='%.6f', delimiter=',')
+    #     np.savetxt('/media/eugeniu/T7/las_georeferenced/Ref_ALS_Hesai_fused/results/Results/Stem_curves/xyz_model_hesai0.txt', matched_query, fmt='%.6f', delimiter=',')
+
 
 summarize(abs_errors_dict, "Absolute Errors")
 summarize(rel_errors_dict, "Relative Errors")
 
+add_first_legend = True
 # Boxplot plotting
-def plot_boxplots(data, metric_name, colors):
+def plot_boxplots(data, metric_name, colors, add_first_legend = True):
     plt.figure(figsize=(10, 6))
     labels = list(data.keys())
     values = [data[label] for label in labels]
@@ -347,11 +327,13 @@ def plot_boxplots(data, metric_name, colors):
     box = plt.boxplot(values, patch_artist=True, showmeans=True, meanline=True, showfliers=False)
 
     legend_handles = []
+    ind = 0
     for patch, color, label in zip(box['boxes'], colors, labels):
         patch.set_facecolor(color)
         patch.set_edgecolor('black')
         patch.set_linewidth(1.2)
-        legend_handles.append(mpatches.Patch(color=color, label=label))
+        legend_handles.append(mpatches.Patch(color=color, label=lab[ind] + " : " + label))
+        ind += 1
 
     for median_line in box['medians']:
         median_line.set_alpha(0)
@@ -363,16 +345,20 @@ def plot_boxplots(data, metric_name, colors):
         line.set(color='black', linewidth=1.2)
 
     plt.ylabel(metric_name)
-    plt.legend(handles=legend_handles, title="Model", loc='best')
+    if add_first_legend:
+        plt.legend(handles=legend_handles, title="Model", loc='best')
+        add_first_legend = False
     plt.grid(False)
     plt.tight_layout()
     #plt.xticks([])
+    plt.xticks([1, 2, 3, 4, 5, 6, 7, 8], lab) 
     plt.draw()
 
-colors = ['tab:blue', 'tab:orange', 'tab:red', 'tab:purple', 'tab:cyan', 'tab:brown', 'skyblue', 'lightgoldenrodyellow', 'lightblue', 'lightgreen', 'lightcoral', 'lightblue', 'lightgreen', 'lightcoral' ][:len(models)]
+colors = ['tab:blue', 'tab:orange', 'tab:red', 'tab:purple', 'tab:cyan', 'tab:brown', 'skyblue', 'lightgoldenrodyellow', 'lightblue', 'lightgreen', 'lightcoral', 'lightblue', 'lightgreen', 'lightcoral' ][:len(methods)]
 
 # Plotting
-plot_boxplots(abs_errors_dict, "Absolute Error (m)", colors)
-plot_boxplots(rel_errors_dict, "Relative Error (m)", colors)
+plot_boxplots(abs_errors_dict, "Absolute Error (m)", colors, True)
+plot_boxplots(rel_errors_dict, "Relative Error (m)", colors, False)
+
 
 plt.show()

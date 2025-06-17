@@ -197,9 +197,9 @@ SET(MAIN_SOURCE_FILES2 src2/Vux_publisher.cpp src/utils.cpp )
 #the code with vux
 #-----------------------------------------------------------------------------------
 SET(TARGET_LINK_LIBS3 ${TARGET_LINK_LIBS} RiVLib::scanlib gtsam)  
-set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
+set(SOURCE_FILES_VUX ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
 
-# set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src3/test.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
+# set(SOURCE_FILES_VUX ${MAIN_SOURCE_FILES3} src3/test.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
 
 
 
@@ -208,8 +208,15 @@ set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean
 #     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/include/p2p ${CMAKE_CURRENT_BINARY_DIR}/p2p)
 # endif()
 # set(TARGET_LINK_LIBS3 ${TARGET_LINK_LIBS3} tsl::robin_map ) #p2p::core
-# set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src2/VoxelHash.cpp) #remove the voxel hash from here
+# set(SOURCE_FILES_VUX ${MAIN_SOURCE_FILES3} src2/VoxelHash.cpp) #remove the voxel hash from here
 
 
-add_executable(vux_main src2/main.cpp ${MAIN_SOURCE_FILES3})
+add_executable(vux_main src2/main.cpp ${SOURCE_FILES_VUX})
 target_link_libraries(vux_main ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES})
+
+
+#------------------------
+#test tightly coupled
+set(SOURCE_FILES_TEST ${MAIN_SOURCE_FILES3} src3/DataHandler_vux.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
+add_executable(test_fusion src2/main.cpp ${SOURCE_FILES_TEST})
+target_link_libraries(test_fusion ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES})

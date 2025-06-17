@@ -908,6 +908,31 @@ void publishBACloud(ros::Publisher &pub, const pcl::PointCloud<pcl::PointXYZ>::P
     pub.publish(msg);
 }
 
+void publishPointCloud_vux(pcl::PointCloud<VUX_PointType>::Ptr &cloud, const ros::Publisher &point_cloud_pub)
+{
+    if (point_cloud_pub.getNumSubscribers() == 0)
+    {
+        return;
+    }
+
+    if (cloud->empty())
+    {
+        std::cerr << "VUX Point cloud is empty. Skipping publish.\n";
+        return;
+    }
+
+    sensor_msgs::PointCloud2 cloud_msg;
+    pcl::toROSMsg(*cloud, cloud_msg);
+
+    // Get the first point's GPS time and convert to ROS time
+    ros::Time first_point_time_ros(cloud->points[0].time);
+
+    cloud_msg.header.stamp = first_point_time_ros; // ros::Time::now();
+    cloud_msg.header.frame_id = "world";
+
+    point_cloud_pub.publish(cloud_msg);
+}
+
 namespace custom_factor
 {
     // Custom factor for point-to-point constraints
@@ -1042,6 +1067,15 @@ namespace custom_factor
             }
 
             return (Vector(1) << error * robust_weight).finished();
+
+            // // Zero out derivatives w.r.t X translation (col 0) and Roll (col 3)
+            // (*H).setZero(1, 6);  // Initialize full Jacobian
+            // (*H).block<1, 1>(0, 1) = weighted_jacobian.block<1, 1>(0, 1); // Y
+            // (*H).block<1, 1>(0, 2) = weighted_jacobian.block<1, 1>(0, 2); // Z
+            // (*H).block<1, 1>(0, 4) = weighted_jacobian.block<1, 1>(0, 4); // Pitch
+            // (*H).block<1, 1>(0, 5) = weighted_jacobian.block<1, 1>(0, 5); // Yaw
+            // Vector mask = (Vector(6) << 0, 1, 1, 0, 1, 1).finished(); // 0:X, 1:Y, 2:Z, 3:Roll, 4:Pitch, 5:Yaw
+            //*H = full_J.array().rowwise() * mask.transpose().array();
         }
 
         // Clone method for deep copy
@@ -1260,14 +1294,12 @@ struct Vector3dEqual
     }
 };
 
-//double robust_kernel = .1;
-
-double robust_kernel = .5;
+double robust_kernel = .1;
 
 double landmarks_sigma = 1; // this was used for all the tests so far
 
-bool use_artificial_uncertainty = false;
-//bool use_artificial_uncertainty = true;
+// bool use_artificial_uncertainty = false;
+bool use_artificial_uncertainty = true;
 
 auto plane_noise_cauchy = gtsam::noiseModel::Robust::Create(
     // gtsam::noiseModel::mEstimator::Cauchy::Create(.2), // Less aggressive than Tukey
@@ -1307,7 +1339,7 @@ void publishPose(ros::Publisher &pose_pub, const Sophus::SE3 &pose, double cloud
     /*
         trans_var and rot_var should be in the 'frame_id = "world";' frame
     */
-    //std::cout << "\n publishPose :" << cloud_time << ", t:" << pose.translation().transpose() << std::endl;
+    // std::cout << "\n publishPose :" << cloud_time << ", t:" << pose.translation().transpose() << std::endl;
     nav_msgs::Odometry pose_msg;
     pose_msg.header.frame_id = "world";
     pose_msg.child_frame_id = "VUX_B"; // moving platform
@@ -1347,7 +1379,7 @@ void publishPose(ros::Publisher &pose_pub, const Sophus::SE3 &pose, double cloud
 }
 
 std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks(
-    pcl::PointCloud<VUX_PointType>::Ptr &scan,                       // scan in sensor frame
+    const pcl::PointCloud<VUX_PointType>::Ptr &scan,                 // scan in sensor frame
     const Sophus::SE3 &T,                                            // init guess
     const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,       // reference kdtree
     const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud, // reference cloud
@@ -1362,7 +1394,7 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
     double uncertainty_scale = 15;
 
     uncertainty_scale = 1.;
-    uncertainty_scale = 10;
+    // uncertainty_scale = 10;
 
     // this can be done in parallel BTW-----------------------------
     for (int i = 0; i < scan->size(); i++)
@@ -1780,21 +1812,37 @@ std::unordered_map<V3D, landmark_new, Vector3dHash, Vector3dEqual> get_Landmarks
 std::default_random_engine generator(42);
 namespace latest_code
 {
-    //V3D r_sigma = V3D(.01, .01, .01);    //1cm
-    //V3D t_sigma = V3D(.005, .005, .005); //2degrees
+    // used for prev
+    // V3D r_sigma = V3D(.001, .001, .001); // .1 degrees
+    // V3D t_sigma = V3D(.002, .002, .002); // .1 cm
 
-    
-    
+    // int optimize_iterations = 10; // for clean data
+    // just a new test used for big covs
+    // V3D r_sigma = V3D(.001, .001, .01); //  .5 degrees
+    // V3D t_sigma = V3D(.002, .002, .01); //  1 cm
 
+    int vux_cloud_id_ = 0;
 
-    //with added noise--------------------------------
-    //double std_noise = .1; //for trnslation
-    double std_noise = .05; //for rotation
-    V3D t_sigma = V3D(.001, std_noise, std_noise);        // Y and Z axis noise
-    V3D r_sigma = V3D(.001, .001, std_noise);         //r
+    // with added noise--------------------------------
+    // double std_noise_t = .05; // for translation
+    // double std_noise_r = .05; //for rotation
 
-    
+    std::vector<double> noise_values_t = {.05, .1, .15, .2, .25, .3, .4}; // m  at .5 m is becomming bad
+    std::vector<double> noise_values_r = {
+        1.,
+        2.,
+        3.,
+        4.,
+        5.}; // degrees
 
+    int index = 0; // start from this
+
+    double std_noise_t = .2;// latest_code::noise_values_t[index];
+    double std_noise_r = 2. * 3.14 / 180.;// latest_code::noise_values_r[index] * 3.14 / 180.;
+
+    V3D t_sigma = V3D(std_noise_t, .001, .001 );       
+    V3D r_sigma = V3D(std_noise_r, .001, .001); // V3D(.001, .001, std_noise_r);                      // r
+    int optimize_iterations = 50;               // for noisy data
 
     Sophus::SE3 addNoiseToPose(const Sophus::SE3 &T,
                                const double &trans_noise_std,
@@ -1807,36 +1855,124 @@ namespace latest_code
             return dist(generator);
         };
 
-        // V3D delta_t(0, 0, 0);
-        // V3D delta_rpy(0, 0, 0);
-        // // delta_rpy[2] = sampleGaussian(rot_noise_std);
-        // // Convert RPY noise to rotation matrix
-        // Eigen::AngleAxisd rx(delta_rpy[0], Eigen::Vector3d::UnitX());
-        // Eigen::AngleAxisd ry(delta_rpy[1], Eigen::Vector3d::UnitY());
-        // Eigen::AngleAxisd rz(delta_rpy[2], Eigen::Vector3d::UnitZ());
+        double sample_rotation_noise = sampleGaussian(rot_noise_std);
+        if (true)
+        { // no coupling between rotation and translation - works with Diagonal::Sigmas since no off fiagonal are required
+            V3D delta_t(0, 0, 0);
+            V3D delta_rpy(0, 0, 0);
 
-        // Eigen::Matrix3d delta_R = (rz * ry * rx).toRotationMatrix();
-        // // Sophus::SE3 noise(delta_R, delta_t);
+            delta_t[0] = sampleGaussian(trans_noise_std); //translation on vux X is same as mls Z axis
+            
+            //delta_rpy[2] = sample_rotation_noise; // z-yaw of the vux
 
-        // translation and then rotation
+
+            delta_rpy[0] = sample_rotation_noise; // around x - the best so far 
+
+
+            
+
+
+
+
+            //delta_rpy[1] = sample_rotation_noise;//  sampleGaussian(rot_noise_std); // y- pitch to be tested
+            
+
+            // Convert RPY noise to rotation matrix
+            Eigen::AngleAxisd rx(delta_rpy[0], Eigen::Vector3d::UnitX());
+            Eigen::AngleAxisd ry(delta_rpy[1], Eigen::Vector3d::UnitY());
+            Eigen::AngleAxisd rz(delta_rpy[2], Eigen::Vector3d::UnitZ());
+
+            Eigen::Matrix3d delta_R = (rz * ry * rx).toRotationMatrix();
+            Sophus::SE3 noise(delta_R, delta_t); // no rotation-translation coupling
+
+            Sophus::SE3 T_noisy = T * noise;
+            // std::cout << "\nnoise init:\n"
+            //           << noise.matrix() << std::endl;
+
+            // Empirical Covariance Estimation
+            //  Sample many noisy poses
+            if (false)
+            {
+                int N = 100;
+                std::vector<Eigen::Matrix<double, 6, 1>> delta_samples;
+                for (int i = 0; i < N; i++)
+                {
+                    Eigen::Matrix<double, 6, 1> delta = Eigen::Matrix<double, 6, 1>::Zero();
+                    
+                    delta[2] = sampleGaussian(trans_noise_std);  //translation on Z axis
+
+                    delta[5] = sampleGaussian(rot_noise_std);    //rotation around Z axis
+
+                    
+
+                    auto noise = Sophus::SE3::exp(delta);
+
+                    Sophus::SE3 T_noisy = T * noise;
+                    Sophus::SE3 T_error = T.inverse() * T_noisy;
+                    Eigen::Matrix<double, 6, 1> log_error = T_error.log(); // true delta in tangent space
+                    // std::cout << "log_error:" << log_error.transpose() << std::endl;
+                    // std::cout << "sample_rotation_noise:" << sample_rotation_noise << std::endl;
+
+                    delta_samples.push_back(log_error);
+                }
+                // Compute sample mean and covariance
+                Eigen::Matrix<double, 6, 1> mean = Eigen::Matrix<double, 6, 1>::Zero();
+                for (const auto &d : delta_samples)
+                    mean += d;
+                mean /= delta_samples.size();
+                std::cout<<"mean:"<<mean.transpose()<<std::endl;
+                Eigen::Matrix<double, 6, 6> empirical_cov = Eigen::Matrix<double, 6, 6>::Zero();
+                for (const auto &d : delta_samples)
+                {
+                    Eigen::Matrix<double, 6, 1> centered = d - mean;
+                    empirical_cov += centered * centered.transpose();
+                }
+                empirical_cov /= (delta_samples.size() - 1);
+
+                std::cout << "empirical_cov:\n"
+                          << empirical_cov << std::endl;
+                // Extract standard deviations
+                Eigen::Matrix<double, 6, 1> stdev = empirical_cov.diagonal().cwiseSqrt();
+
+                std::cout << "Standard deviations:\n"
+                          << stdev << std::endl;
+                std::cout << "Set noise, press enter..." << std::endl;
+                std::cin.get();
+            }
+
+            // // Now use this in GTSAM
+            // auto odom_noise_model = gtsam::noiseModel::Gaussian::Covariance(empirical_cov);
+
+            return T_noisy;
+        }
+
+        // TODO - use the above bc this one has rotation translation coupling
+        //  translation and then rotation
         Eigen::Matrix<double, 6, 1> delta = Eigen::Matrix<double, 6, 1>::Zero();
 
-        //delta[0] = sampleGaussian(trans_noise_std); // translation on local X - not working
-        //delta[3] = sampleGaussian(rot_noise_std); // rotation around local x not working, no constraints, maybe IMU can do it  
-        //delta[4] = sampleGaussian(rot_noise_std); // rotation around local Y  - WORKS but not stable enough
+        // delta[0] = sampleGaussian(trans_noise_std); // translation on local X - not working
+        // delta[3] = sampleGaussian(rot_noise_std); // rotation around local x not working, no constraints, maybe IMU can do it
+        // delta[4] = sampleGaussian(rot_noise_std); // rotation around local Y  - WORKS but not stable enough
+        // delta[1] = sampleGaussian(trans_noise_std); // translation on local Y - WORKS - not good enough, slides too much
 
-        delta[1] = sampleGaussian(trans_noise_std); // translation on local Y - WORKS
-        delta[2] = sampleGaussian(trans_noise_std); // translation on local Z - WORKS
-        delta[5] = sampleGaussian(rot_noise_std); // rotation around local Z yaw angle 
+        // delta[2] =  sampleGaussian(trans_noise_std); // translation on local Z - WORKS
+        // delta[5] = sample_rotation_noise;// sampleGaussian(rot_noise_std);   // rotation around local Z yaw angle
 
-        auto noise = Sophus::SE3::exp(delta);
+        // delta[5] = sample_rotation_noise;
+
+        delta[4] = sample_rotation_noise; //  // rotation around local Y
+        delta[3] = sample_rotation_noise; // rotation x
+
+        auto noise = Sophus::SE3::exp(delta); // couples rotation & translation - requires Gaussian::Covariance(full_6x6)
 
         std::cout << "noise:\n"
                   << noise.matrix() << std::endl;
 
         Sophus::SE3 T_noisy = T * noise; // perturbation is applied in the local (sensor) frame.
 
-        // Sophus::SE3 T_noisy = noise * T;
+        Sophus::SE3 T_error = T.inverse() * T_noisy;
+        Eigen::Matrix<double, 6, 1> log_error = T_error.log(); // true delta in tangent space
+        std::cout << "exp log_error:" << log_error.transpose() << std::endl;
 
         return T_noisy;
     }
@@ -1849,14 +1985,14 @@ namespace latest_code
             return dist(generator);
         };
         Vector6 noise_local_;
-        noise_local_ << 0., 0., 0., 0., 0., 0.; //6D vector [rx ry rz tx ty tz] in the local frame
+        noise_local_ << 0., 0., 0., 0., 0., 0.; // 6D vector [rx ry rz tx ty tz] in the local frame
 
         for (int i = 0; i < 6; i++)
         {
             noise_local_[i] += sampleGaussian(noise_local_std[i]);
         }
 
-        //Convert to gtsam::Pose3 via exponential map (on tangent space)
+        // Convert to gtsam::Pose3 via exponential map (on tangent space)
         Pose3 noise = Pose3::Expmap(noise_local_);
 
         Pose3 noisy_pose = true_pose.compose(noise);
@@ -1865,7 +2001,7 @@ namespace latest_code
 
     void updateDataAssociation(ros::Publisher &_pub_debug, int pose_key,
                                const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
-                               pcl::PointCloud<VUX_PointType>::Ptr &scan, // scan in sensor frame
+                               const pcl::PointCloud<VUX_PointType>::Ptr &scan, // scan in sensor frame
                                const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
                                const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud,
                                const Sophus::SE3 &nn_init_guess_T, NonlinearFactorGraph &this_Graph, bool use_prev_scans_landmarks = false)
@@ -1997,27 +2133,20 @@ namespace latest_code
             std::cout << "added_constraints:" << added_constraints << std::endl;
     }
 
-    
-
-    auto odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
-        (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
-         gtsam::Vector3(t_sigma)                      //. translation stddev (m): x, y, z
-         ).finished());
-    // the issues is that is should be // rad,rad,rad,m, m, m
-
     Vector6 noise_in_sensor = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
 
     Vector6 sigmas_prior = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
     // auto prior_noise_model_loose_world = noiseModel::Diagonal::Sigmas(sigmas_prior);
     auto prior_noise_model_loose_world = noiseModel::Gaussian::Covariance(sigmas_prior.array().square().matrix().asDiagonal());
 
-    // Vector6 sigmas_anchor = (Vector6() << 1e-6, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6).finished();
-    Vector6 sigmas_anchor = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
-    // auto anchor_noise_model_world = noiseModel::Diagonal::Sigmas(sigmas_anchor);
+    Vector6 sigmas_anchor = (Vector6() << 1e-6, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6).finished();
+    // Vector6 sigmas_anchor = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
+    //  auto anchor_noise_model_world = noiseModel::Diagonal::Sigmas(sigmas_anchor);
     auto anchor_noise_model_world = noiseModel::Gaussian::Covariance(sigmas_anchor.array().square().matrix().asDiagonal());
 
-    std::deque<Sophus::SE3> pose_buffer;
+    std::deque<Sophus::SE3> pose_buffer, original_pose_buffer;
     std::deque<pcl::PointCloud<VUX_PointType>::Ptr> scan_buffer;
+    std::deque<pcl::PointCloud<VUX_PointType>::Ptr> original_scan_buffer;
 
     const size_t max_buffer_size = 50; // 25; // 3;
     const size_t step_size = 45;       // 10;  // Number of poses to slide each time
@@ -2026,34 +2155,146 @@ namespace latest_code
 
     Pose3 anchor_pose, relative_anchor;
     pcl::PointCloud<VUX_PointType>::Ptr anchor_scan(new pcl::PointCloud<VUX_PointType>);
+    pcl::PointCloud<VUX_PointType>::Ptr dense_anchor_scan(new pcl::PointCloud<VUX_PointType>);
 
     double prev_error = 9999., current_error;  // std::numeric_limits<double>::max();
     const double convergence_threshold = .001; // .05; // 5cm  // when to stop
 
-    Sophus::SE3 updateSimple(
+    // Diagonal::Sigmas assumes independent noise per DoF. - Does the Noise Model Account for Coupling
+    // TO BE SOLVED
+
+    auto odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
+        (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
+         gtsam::Vector3(t_sigma)                      //. translation stddev (m): x, y, z
+         )
+            .finished());
+
+
+    auto relative_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
+        (gtsam::Vector6() << gtsam::Vector3(.2,.2,.2), // rotation stddev (radians): roll, pitch, yaw
+         gtsam::Vector3(.5,.5,.5)                      //. translation stddev (m): x, y, z
+         )
+            .finished());
+    // the issues is that is should be // rad,rad,rad,m, m, m
+
+    // gtsam::noiseModel::Gaussian::shared_ptr odom_noise_model;
+
+    bool setNoise = false;
+    Sophus::SE3 updateBatch(
         ros::Publisher &_pub_debug, volatile bool &flag,
         ros::Publisher &_pub_prev, ros::Publisher &_pub_curr,
         const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
-        const pcl::PointCloud<VUX_PointType>::Ptr &scan,           // scan in sensor frame
+        const pcl::PointCloud<VUX_PointType>::Ptr &scan, // scan in sensor frame
+        const pcl::PointCloud<VUX_PointType>::Ptr &dense_scan,
         const Sophus::SE3 &initial_pose_clean, Sophus::SE3 &rel_T, // absolute T, odometry
         const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
         const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud,
-        ros::Publisher &pubOptimizedVUX, ros::Publisher &pose_pub, double time = 0)
+        ros::Publisher &pubOptimizedVUX, ros::Publisher &pubOptimizedVUX2, ros::Publisher &pose_pub, double time = 0)
     {
+        // if(!setNoise)
+        // {
+        //     setNoise = true;
+        //     Eigen::Matrix<double, 6, 6> cov = Eigen::Matrix<double, 6, 6>::Zero();
+        //     // Rotation part
+        //     for (int i = 0; i < 3; ++i)
+        //         for (int j = i; j < 3; ++j)
+        //             cov(i, j) = cov(j, i) = r_sigma[i] * r_sigma[j];
+
+        //     // Translation part
+        //     for (int i = 0; i < 3; ++i)
+        //         for (int j = i; j < 3; ++j)
+        //             cov(i + 3, j + 3) = cov(j + 3, i + 3) = t_sigma[i] * t_sigma[j];
+
+        //     // Rotation-Translation coupling
+        //     for (int i = 0; i < 3; ++i)
+        //         for (int j = 0; j < 3; ++j)
+        //             cov(i, j + 3) = cov(j + 3, i) = r_sigma[i] * t_sigma[j];
+
+        //     std::cout << "Full 6x6 Covariance Matrix:\n" << cov << std::endl;
+        //     odom_noise_model = gtsam::noiseModel::Gaussian::Covariance(cov);
+
+        //     std::cout << "Set noise, press enter..." << std::endl;
+        //     std::cin.get();
+        // }
+
         Sophus::SE3 initial_pose = initial_pose_clean;
 
-        bool debug = true;// false;
+        bool debug = false;
+
+        bool save_georeferenced_vux_ = true;
+        bool save_trajectory = false;// true;
+
+        bool refine_init = true;
 
         bool add_noise = true; // false;
         if (add_noise)
         {
-            double translation_std = std_noise; //.1; // .3;// .05; // 5cm meters
-            double rotation_std = std_noise;// .1;//.05;   // radians - 5.7 degrees
-
-            Sophus::SE3 T_noisy = addNoiseToPose(initial_pose, translation_std, rotation_std, generator);
+            Sophus::SE3 T_noisy = addNoiseToPose(initial_pose, std_noise_t, std_noise_r, generator);
 
             initial_pose = T_noisy;
+            if (debug)
+            {
+                std::cout << "\nr_sigma:" << r_sigma.transpose() << std::endl;
+                std::cout << "t_sigma:" << t_sigma.transpose() << std::endl;
+            }
+
+            // Vector6 noise_local_ = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
+            // Pose3 T_true = sophusToGtsam(initial_pose);
+
+            // Matrix66 Ad_T = T_true.AdjointMap(); // transforms from world to local
+            // Vector6 noise_local = (Ad_T * noise_local_).cwiseAbs();
+
+            // r_sigma = noise_local.head<3>(); // First 3 elements (rotation)
+            // //t_sigma = noise_local.tail<3>(); // Last 3 elements (translation)
+
+            // std::cout << "r_sigma:" << r_sigma.transpose() << std::endl;
+            // std::cout << "t_sigma:" << t_sigma.transpose() << std::endl;
+
+            // // odom_noise_model = noiseModel::Diagonal::Sigmas(noise_local);
+
+            // odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
+            //     (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
+            //      gtsam::Vector3(t_sigma)                      //. translation stddev (m): x, y, z
+            //      )
+            //         .finished());
         }
+
+        if (!refine_init) // no refinement required
+        {
+            if (pubOptimizedVUX2.getNumSubscribers() != 0 || save_georeferenced_vux_)
+            {
+                *dense_anchor_scan = *dense_scan;
+// TransformPoints(initial_pose, dense_anchor_scan);
+#pragma omp parallel for
+                for (int j = 0; j < dense_anchor_scan->size(); j++)
+                {
+                    V3D p_src(dense_anchor_scan->points[j].x, dense_anchor_scan->points[j].y, dense_anchor_scan->points[j].z);
+                    V3D p_transformed = initial_pose * p_src;
+
+                    auto &p = dense_anchor_scan->points[j];
+                    p.x = p_transformed.x();
+                    p.y = p_transformed.y();
+                    p.z = p_transformed.z();
+                }
+
+                if (save_georeferenced_vux_)
+                {
+                    std::string filename = "/home/eugeniu/x_vux-georeferenced-final/test/vux_" + std::to_string(vux_cloud_id_) + "_cloud.pcd";
+
+                    pcl::io::savePCDFile(filename, *dense_anchor_scan, true); // Binary format
+
+                    std::cout << "Saved cloud " << filename << std::endl;
+                    vux_cloud_id_++;
+                }
+
+                if (pubOptimizedVUX2.getNumSubscribers() != 0)
+                    publishPointCloud_vux(dense_anchor_scan, pubOptimizedVUX2);
+            }
+
+            return initial_pose;
+        }
+
+        
 
         {
             /*
@@ -2138,17 +2379,17 @@ namespace latest_code
 
         if (false)
         {
-            //Vector6 noise_local;
-            //noise_local << 001, .001, .001, .001, .1, .001; // rotation then translation
-            
-             t_sigma = V3D(.001, .001, .001); // Y and Z axis noise
-             r_sigma = V3D(.001, .1, .001);         //rotation around y axis noise 
+            // Vector6 noise_local;
+            // noise_local << 001, .001, .001, .001, .1, .001; // rotation then translation
+
+            t_sigma = V3D(.001, .001, .001); // Y and Z axis noise
+            r_sigma = V3D(.001, .1, .001);   // rotation around y axis noise
 
             Vector6 noise_local = (Vector6() << gtsam::Vector3(r_sigma), gtsam::Vector3(t_sigma)).finished();
 
             Pose3 T_true = sophusToGtsam(initial_pose_clean);
 
-            Pose3 T_noisy = addNoiseToPose_gtsam(T_true, noise_local); //Simulate noisy measurement
+            Pose3 T_noisy = addNoiseToPose_gtsam(T_true, noise_local); // Simulate noisy measurement
             initial_pose = GtsamToSophus(T_noisy);
 
             r_sigma = noise_local.head<3>(); // First 3 elements (rotation)
@@ -2157,15 +2398,17 @@ namespace latest_code
             std::cout << "r_sigma:" << r_sigma.transpose() << std::endl;
             std::cout << "t_sigma:" << t_sigma.transpose() << std::endl;
 
-            odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
-                (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
-                 gtsam::Vector3(t_sigma)                      //. translation stddev (m): x, y, z
-                 )
-                .finished());
+            // odom_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
+            //     (gtsam::Vector6() << gtsam::Vector3(r_sigma), // rotation stddev (radians): roll, pitch, yaw
+            //      gtsam::Vector3(t_sigma)                      //. translation stddev (m): x, y, z
+            //      )
+            //         .finished());
         }
 
         pose_buffer.push_back(initial_pose);
+        original_pose_buffer.push_back(initial_pose_clean);
         scan_buffer.push_back(scan);
+        original_scan_buffer.push_back(dense_scan); // update here - save the original density scan
 
         debugPoint(initial_pose.translation(), _pub_prev);
 
@@ -2186,7 +2429,7 @@ namespace latest_code
             current_values.insert(A(0), anchor_pose);
         }
 
-        //std::cout << "updateSimple pose_buffer size:" << pose_buffer.size() << std::endl;
+        // std::cout << "updateSimple pose_buffer size:" << pose_buffer.size() << std::endl;
         for (size_t i = 0; i < pose_buffer.size(); i++)
         {
             Pose3 pose = sophusToGtsam(pose_buffer[i]);
@@ -2197,7 +2440,7 @@ namespace latest_code
 
         // optimization refinement
         NonlinearFactorGraph graph;
-        for (int iter = 0; iter < 50; ++iter)
+        for (int iter = 0; iter < optimize_iterations; ++iter)
         {
             ros::spinOnce();
             if (flag || !ros::ok())
@@ -2222,7 +2465,8 @@ namespace latest_code
                 {
                     Pose3 prev_pose = current_values.at<Pose3>(X(i - 1));
                     Pose3 rel_pose = prev_pose.between(curr_pose);
-                    // graph.add(BetweenFactor<Pose3>(X(i - 1), X(i), rel_pose, odom_noise_model));
+
+                    graph.add(BetweenFactor<Pose3>(X(i - 1), X(i), rel_pose, relative_noise_model));
                     graph.add(PriorFactor<Pose3>(X(i), curr_pose, odom_noise_model));
                 }
 
@@ -2387,43 +2631,65 @@ namespace latest_code
 
             // break;
         }
-        
+
         if (debug)
         {
             std::cout << "Accepted press enter... pose_buffer.size():" << pose_buffer.size() << std::endl;
             std::cin.get();
         }
-        
-        has_prev_solution = true; //do not use anchor for now, untill figure how noise works which frame
+
+        has_prev_solution = true; // do not use anchor for now, untill figure how noise works which frame
 
         // Estimate new uncertainty for prior
-        gtsam::Marginals marginals(graph, current_values);
+        // gtsam::Marginals marginals(graph, current_values);
 
-        gtsam::Matrix anchor_covariance;
-        gtsam::Matrix next_prior_covariance;
+        // gtsam::Matrix anchor_covariance;
+        // gtsam::Matrix next_prior_covariance;
+
+        std::cout << "scan_buffer:" << scan_buffer.size() << ", original_scan_buffer:" << original_scan_buffer.size() << std::endl;
+
         if (pose_buffer.size() >= max_buffer_size)
         {
             buffer_clouds->clear();
+
+            // for (size_t i = step_size; i < pose_buffer.size(); i++) // update the remaining pose_buffer.size() - step_size poses
+            // {
+            //     // the updated values
+            //     pose_buffer[i] = GtsamToSophus(current_values.at<Pose3>(X(i)));
+            // }
+
             for (size_t i = 0; i < step_size; i++) // remove first step_size poses
             {
+                ros::spinOnce();
+                if (flag || !ros::ok())
+                    break;
+
                 if (!pose_buffer.empty())
                 {
+                    vux_cloud_id_++;
                     anchor_scan = scan_buffer.front();
+                    dense_anchor_scan = original_scan_buffer.front();
+
+                    auto noisy_pose = pose_buffer.front();
+                    auto GT_pose = original_pose_buffer.front();
 
                     pose_buffer.pop_front();
+                    original_pose_buffer.pop_front();
                     scan_buffer.pop_front();
+                    original_scan_buffer.pop_front();
 
                     anchor_pose = current_values.at<Pose3>(X(i));
                     relative_anchor = anchor_pose.between(current_values.at<Pose3>(X(i + 1)));
 
-                    anchor_covariance = marginals.marginalCovariance(X(i)); // the covariances are in frame X(i)
-                    next_prior_covariance = marginals.marginalCovariance(X(i + 1));
+                    // anchor_covariance = marginals.marginalCovariance(X(i)); // the covariances are in frame X(i)
+                    // next_prior_covariance = marginals.marginalCovariance(X(i + 1));
+
+                    Sophus::SE3 anchor_T = GtsamToSophus(anchor_pose);
 
                     if (pubOptimizedVUX.getNumSubscribers() != 0)
                     {
                         debugPoint(GtsamToSophus(current_values.at<Pose3>(X(i))).translation(), _pub_curr);
 
-                        Sophus::SE3 anchor_T = GtsamToSophus(anchor_pose);
                         for (int j = 0; j < anchor_scan->size(); j++)
                         {
                             V3D p_src(anchor_scan->points[j].x, anchor_scan->points[j].y, anchor_scan->points[j].z);
@@ -2438,8 +2704,94 @@ namespace latest_code
                             buffer_clouds->push_back(p);
                         }
                     }
+
+                    if (pubOptimizedVUX2.getNumSubscribers() != 0 || save_georeferenced_vux_)
+                    {
+                        // TransformPoints(anchor_T, dense_anchor_scan);
+                        // #pragma omp parallel for
+                        for (int j = 0; j < dense_anchor_scan->size(); j++)
+                        {
+                            V3D p_src(dense_anchor_scan->points[j].x, dense_anchor_scan->points[j].y, dense_anchor_scan->points[j].z);
+                            V3D p_transformed = anchor_T * p_src;
+
+                            auto &p = dense_anchor_scan->points[j];
+                            p.x = p_transformed.x();
+                            p.y = p_transformed.y();
+                            p.z = p_transformed.z();
+                        }
+
+                        if (save_georeferenced_vux_)
+                        {
+                            std::string filename = "/home/eugeniu/x_vux-georeferenced-final/test/vux_" + std::to_string(vux_cloud_id_) + "_cloud.pcd";
+
+                            pcl::io::savePCDFile(filename, *dense_anchor_scan, true); // Binary format
+
+                            std::cout << "Saved cloud " << filename << std::endl;
+                        }
+
+                        if (pubOptimizedVUX2.getNumSubscribers() != 0)
+                            publishPointCloud_vux(dense_anchor_scan, pubOptimizedVUX2);
+                    }
+
+                    if (save_trajectory)
+                    {
+                        // file name should have the t_std and r_std
+                        // save the GT and the noisy and corrected trajectory as evo format
+
+                        std::string path_ = "/home/eugeniu/xz_final_clouds/Added_noise/";
+
+                        std::string f_GT = path_ + "t_" + std::to_string(std_noise_t) + "_r" + std::to_string(std_noise_r) + "_GT.txt";
+                        std::string f_noisy = path_ + "t_" + std::to_string(std_noise_t) + "_r" + std::to_string(std_noise_r) + "_noisy.txt";
+                        std::string f_model = path_ + "t_" + std::to_string(std_noise_t) + "_r" + std::to_string(std_noise_r) + "_model.txt";
+
+                        // GT - GT_pose
+                        {
+                            V3D t_model = GT_pose.translation();
+                            Eigen::Quaterniond q_model(GT_pose.so3().matrix());
+                            q_model.normalize();
+
+                            std::ofstream foutMLS(f_GT, std::ios::app);
+                            foutMLS.setf(std::ios::fixed, std::ios::floatfield);
+                            foutMLS.precision(20);
+                            // # ' id time tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds, translation and rotation quaternion)
+                            foutMLS << vux_cloud_id_ << " " << std::to_string(time) << " " << t_model(0) << " " << t_model(1) << " " << t_model(2) << " "
+                                    << q_model.x() << " " << q_model.y() << " " << q_model.z() << " " << q_model.w() << std::endl;
+                            foutMLS.close();
+                        }
+
+                        // noise - noisy_pose
+                        {
+                            V3D t_model = noisy_pose.translation();
+                            Eigen::Quaterniond q_model(noisy_pose.so3().matrix());
+                            q_model.normalize();
+
+                            std::ofstream foutMLS(f_noisy, std::ios::app);
+                            foutMLS.setf(std::ios::fixed, std::ios::floatfield);
+                            foutMLS.precision(20);
+                            // # ' id time tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds, translation and rotation quaternion)
+                            foutMLS << vux_cloud_id_ << " " << std::to_string(time) << " " << t_model(0) << " " << t_model(1) << " " << t_model(2) << " "
+                                    << q_model.x() << " " << q_model.y() << " " << q_model.z() << " " << q_model.w() << std::endl;
+                            foutMLS.close();
+                        }
+
+                        // noise - model
+                        {
+                            V3D t_model = anchor_T.translation();
+                            Eigen::Quaterniond q_model(anchor_T.so3().matrix());
+                            q_model.normalize();
+
+                            std::ofstream foutMLS(f_model, std::ios::app);
+                            foutMLS.setf(std::ios::fixed, std::ios::floatfield);
+                            foutMLS.precision(20);
+                            // # ' id time tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds, translation and rotation quaternion)
+                            foutMLS << vux_cloud_id_ << " " << std::to_string(time) << " " << t_model(0) << " " << t_model(1) << " " << t_model(2) << " "
+                                    << q_model.x() << " " << q_model.y() << " " << q_model.z() << " " << q_model.w() << std::endl;
+                            foutMLS.close();
+                        }
+                    }
                 }
             }
+
             if (pubOptimizedVUX.getNumSubscribers() != 0)
             {
                 sensor_msgs::PointCloud2 cloud_msg;
@@ -2448,10 +2800,272 @@ namespace latest_code
                 pubOptimizedVUX.publish(cloud_msg);
             }
 
-            prior_noise_model_loose_world = gtsam::noiseModel::Gaussian::Covariance(next_prior_covariance);
-            anchor_noise_model_world = gtsam::noiseModel::Gaussian::Covariance(anchor_covariance);
+            // prior_noise_model_loose_world = gtsam::noiseModel::Gaussian::Covariance(next_prior_covariance);
+            // anchor_noise_model_world = gtsam::noiseModel::Gaussian::Covariance(anchor_covariance);
         }
 
         return GtsamToSophus(anchor_pose);
+    }
+
+    //------------------------------------------------------------------
+    bool doneFirstOpt = false;
+    bool systemInitialized = false;
+    int key = 0;
+    Pose3 prevPose_;
+    Sophus::SE3 prevOptimized_pose = Sophus::SE3();
+    gtsam::ISAM2 isam;
+
+    NonlinearFactorGraph reference_graph;
+    Values reference_values;
+
+    void resetOptimization()
+    {
+        std::cout << "\n\nresetOptimization\n\n"
+                  << std::endl;
+        gtsam::ISAM2Params optParameters;
+
+        // optParameters.relinearizeThreshold = 0.1; //0.1 means if the change in a variable (like pose or velocity) exceeds 0.1 in norm, then it will be relinearized.
+        optParameters.relinearizeThreshold = 0.01;
+
+        optParameters.relinearizeSkip = 1;
+        isam = gtsam::ISAM2(optParameters);
+
+        gtsam::NonlinearFactorGraph newGraphFactors;
+        reference_graph = newGraphFactors;
+
+        gtsam::Values NewGraphValues;
+        reference_values = NewGraphValues;
+
+        global_seen_landmarks.clear();
+    }
+
+    Sophus::SE3 updateOnline(
+        ros::Publisher &_pub_debug, volatile bool &flag,
+        ros::Publisher &_pub_prev, ros::Publisher &_pub_curr,
+        const ros::Publisher &cloud_pub, const ros::Publisher &normals_pub,
+        const pcl::PointCloud<VUX_PointType>::Ptr &scan, // scan in sensor frame
+        pcl::PointCloud<VUX_PointType>::Ptr &dense_scan,
+        const Sophus::SE3 &initial_pose_clean, Sophus::SE3 &rel_T, // absolute T, odometry
+        const pcl::KdTreeFLANN<PointType>::Ptr &refference_kdtree,
+        const pcl::PointCloud<PointType>::Ptr &reference_localMap_cloud,
+        ros::Publisher &pubOptimizedVUX, ros::Publisher &pubOptimizedVUX2, ros::Publisher &pose_pub, double time = 0)
+    {
+        if (doneFirstOpt)
+        {
+            Sophus::SE3 initial_pose = initial_pose_clean;
+
+            debugPoint(initial_pose.translation(), _pub_prev);
+            if (pose_pub.getNumSubscribers() != 0)
+            {
+                publishPose(pose_pub, initial_pose, time, t_sigma, r_sigma);
+            }
+
+            Pose3 pose = sophusToGtsam(initial_pose);
+
+            // Add odometry or priors to graph
+            reference_values.insert(X(key), pose);
+            // reference_graph.emplace_shared<BetweenFactor<Pose3>>(X(key - 1), X(key), gtsam_relative, odometry_noise_);
+            reference_graph.add(gtsam::PriorFactor<gtsam::Pose3>(X(key), pose, odom_noise_model));
+
+            // Add point-to-plane factors using updated poses--------------------------------------
+            bool use_prev_scans_landmarks = (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0); // true;
+            updateDataAssociation(_pub_debug, key,                                                                        // add planes for graph from pose i
+                                  cloud_pub, normals_pub,
+                                  scan, // scan in sensor frame
+                                  refference_kdtree, reference_localMap_cloud,
+                                  initial_pose, reference_graph, use_prev_scans_landmarks);
+
+            // isam.update(reference_graph); // graph only includes current iteration's factors
+            isam.update(reference_graph, reference_values);
+            isam.update(); // Repeatedly relinearizes and refines
+
+            auto latest_estimate = isam.calculateEstimate();
+            std::cout << "Isam Total factors: " << isam.getFactorsUnsafe().size() << std::endl;
+
+            reference_graph.resize(0);
+            reference_values.clear(); // this is required to clean the graph, isam has its copy
+
+            prevPose_ = latest_estimate.at<gtsam::Pose3>(X(key));
+
+            auto optimized_T = GtsamToSophus(prevPose_);
+            debugPoint(optimized_T.translation(), _pub_curr);
+
+            if (normals_pub.getNumSubscribers() != 0 || cloud_pub.getNumSubscribers() != 0)
+            {
+                pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointXYZINormal>());
+                // add the map landmarks
+                for (const auto &[index, land] : global_seen_landmarks)
+                // for (const auto &[index, land] : prev_seen_landmarks)
+                {
+                    // break; // just for now do not show them
+                    pcl::PointXYZINormal pt;
+
+                    if (land.is_edge)
+                    {
+                        pt.curvature = -2; // edges
+                    }
+                    else
+                    {
+                        // pt.curvature = -1; //prev planes
+                        pt.curvature = 1; // <0 plotted as blue
+                    }
+
+                    pt.x = land.landmark_point.x();
+                    pt.y = land.landmark_point.y();
+                    pt.z = land.landmark_point.z();
+
+                    pt.normal_x = land.norm.x();
+                    pt.normal_y = land.norm.y();
+                    pt.normal_z = land.norm.z();
+
+                    pt.intensity = land.sigma; // just for test
+
+                    cloud_with_normals->push_back(pt);
+                }
+                // // add the new landmarks
+                // for (const auto &[index, land] : landmarks_map)
+                // {
+                //     if (land.is_edge)
+                //     {
+                //         pcl::PointXYZINormal pt;
+                //         pt.x = land.landmark_point.x();
+                //         pt.y = land.landmark_point.y();
+                //         pt.z = land.landmark_point.z();
+
+                //         pt.normal_x = land.edge_direction.x();
+                //         pt.normal_y = land.edge_direction.y();
+                //         pt.normal_z = land.edge_direction.z();
+
+                //         pt.curvature = -2;
+
+                //         cloud_with_normals->push_back(pt);
+                //     }
+                //     else if (land.is_plane)
+                //     {
+                //         pcl::PointXYZINormal pt;
+                //         pt.x = land.landmark_point.x();
+                //         pt.y = land.landmark_point.y();
+                //         pt.z = land.landmark_point.z();
+
+                //         pt.normal_x = land.norm.x();
+                //         pt.normal_y = land.norm.y();
+                //         pt.normal_z = land.norm.z();
+
+                //         pt.curvature = -1;
+
+                //         pt.intensity = land.sigma; // just for test
+
+                //         cloud_with_normals->push_back(pt);
+                //     }
+                // }
+
+                debug_CloudWithNormals2(cloud_with_normals, cloud_pub, normals_pub);
+            }
+
+            if (pubOptimizedVUX.getNumSubscribers() != 0)
+            {
+                pcl::PointCloud<pcl::PointXYZI>::Ptr buffer_clouds(new pcl::PointCloud<pcl::PointXYZI>());
+
+                for (int j = 0; j < scan->size(); j++)
+                {
+                    V3D p_src(scan->points[j].x, scan->points[j].y, scan->points[j].z);
+                    V3D p_transformed = optimized_T * p_src;
+
+                    pcl::PointXYZI p;
+                    p.x = p_transformed.x();
+                    p.y = p_transformed.y();
+                    p.z = p_transformed.z();
+
+                    buffer_clouds->push_back(p);
+                }
+
+                sensor_msgs::PointCloud2 cloud_msg;
+                pcl::toROSMsg(*buffer_clouds, cloud_msg);
+                cloud_msg.header.frame_id = "world";
+                pubOptimizedVUX.publish(cloud_msg);
+            }
+
+            if (pubOptimizedVUX2.getNumSubscribers() != 0) //|| save_georeferenced_vux_
+            {
+                // TransformPoints(anchor_T, dense_scan);
+                // #pragma omp parallel for
+                for (int j = 0; j < dense_scan->size(); j++)
+                {
+                    V3D p_src(dense_scan->points[j].x, dense_scan->points[j].y, dense_scan->points[j].z);
+                    V3D p_transformed = optimized_T * p_src;
+
+                    auto &p = dense_scan->points[j];
+                    p.x = p_transformed.x();
+                    p.y = p_transformed.y();
+                    p.z = p_transformed.z();
+                }
+
+                // if (save_georeferenced_vux_)
+                // {
+                //     std::string filename = "/home/eugeniu/x_vux-georeferenced-final/test/vux_" + std::to_string(vux_cloud_id_) + "_cloud.pcd";
+
+                //     pcl::io::savePCDFile(filename, *dense_scan, true); // Binary format
+
+                //     std::cout << "Saved cloud " << filename << std::endl;
+                //     vux_cloud_id_++;
+                // }
+
+                if (pubOptimizedVUX2.getNumSubscribers() != 0)
+                    publishPointCloud_vux(dense_scan, pubOptimizedVUX2);
+            }
+
+            key++;
+
+            if (key >= 200)
+            {
+                std::cout << "reset graph =============================" << std::endl;
+
+                // get updated noise before reset
+                gtsam::noiseModel::Gaussian::shared_ptr updatedPoseNoise = gtsam::noiseModel::Gaussian::Covariance(isam.marginalCovariance(X(key - 1)));
+
+                // reset graph
+                resetOptimization();
+                // add pose
+                gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, updatedPoseNoise);
+                reference_graph.add(priorPose);
+
+                // add values
+                reference_values.insert(X(0), prevPose_);
+
+                // optimize once
+                isam.update(reference_graph, reference_values);
+                reference_graph.resize(0);
+                reference_values.clear();
+
+                key = 1;
+            }
+
+            return optimized_T;
+        }
+        else
+        {
+            // throw std::runtime_error("Reference graph not inited...");
+
+            resetOptimization();
+
+            Pose3 _absolute_guess = sophusToGtsam(initial_pose_clean);
+
+            reference_values.insert(X(0), _absolute_guess);
+            reference_graph.addPrior(X(0), _absolute_guess, odom_noise_model);
+            key = 1;
+
+            prevOptimized_pose = initial_pose_clean;
+
+            isam.update(reference_graph, reference_values);
+            reference_graph.resize(0); // = gtsam::NonlinearFactorGraph(); //
+            reference_values.clear();
+
+            doneFirstOpt = true;
+            systemInitialized = true;
+
+            std::cout << "Build first node" << std::endl;
+
+            return initial_pose_clean;
+        }
     }
 };

@@ -17,14 +17,9 @@
     <param name="filter_size_map" type="double" value=".3" />
 
     <param name="cube_side_length" type="double" value="120" /> <!--1000-->
-    
-    <!--
-    <node pkg="s_mls" type="mls_mapping" name="mls_mapping" output="screen" />
-    -->
-
     <node pkg="tf2_ros" type="static_transform_publisher" name="static_transform_vux_to_world" args="0 0 0 0 0 0 world VUX" />
     
-    <node pkg="s_mls" type="vux_main" name="vux_main" output="screen" /> 
+    <node pkg="s_mls" type="test_fusion" name="test_fusion" output="screen" /> 
 
     <group if="$(arg rviz)">
         <group if="$(arg rviz_car)">

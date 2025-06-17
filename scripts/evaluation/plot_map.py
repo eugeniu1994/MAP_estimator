@@ -5,6 +5,8 @@ from shapely.geometry import Point, LineString
 
 import numpy as np
 import os
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import matplotlib.image as mpimg
 
 font = 16
 
@@ -31,10 +33,14 @@ rotation_ENU_to_origin = np.array([[-0.78386212744029792887, -0.6209131775707262
                                     [0.62058202788821892337, -0.78367126767620609584, -0.02715310076057271885],
                                     [0.02093112101431114647, -0.01806018100107483967,  0.99961778597386541367]])
 
+R_origin_to_ENU = rotation_ENU_to_origin.T
+t_origin_to_ENU = -R_origin_to_ENU @ translation_ENU_to_origin
 
-trajectory_file = '/home/eugeniu/x_test/MLS.txt'
 
-def get_traj():
+
+def get_traj_old():
+    trajectory_file = '/home/eugeniu/x_test/MLS.txt'
+
     if not os.path.exists(trajectory_file):
         raise FileNotFoundError(f"Trajectory file not found: {trajectory_file}")
 
@@ -61,8 +67,22 @@ def get_traj():
     print(f"[INFO] First ENU point: {traj_ENU[0]}")
     return traj_ENU
 
-traj_points_ENU = get_traj()
+def get_traj():
+    mls_path = '/home/eugeniu/xz_final_clouds/_Hesai_ref/MLS.txt'
+    positions = np.loadtxt(mls_path, usecols=(2, 3, 4))
+    print('positions:', np.shape(positions))
+    n = len(positions)
 
+    n = n - 200
+    positions = positions[:n, :]
+
+    # Apply transformation to convert local to ENU
+    traj_ENU = (R_origin_to_ENU @ positions.T).T + t_origin_to_ENU
+
+    return traj_ENU
+
+
+traj_points_ENU = get_traj()
 print('traveled_distance:',traveled_distance(traj_points_ENU))
 
 def get_cloud():
@@ -93,31 +113,45 @@ def get_cloud():
     return combined_points[:,:2],combined_points[:,2]
 
 def get_trees():
-    trajectory_name = 'Robust MLS + Dense ALS + Map Fusion'
+    # trajectory_name = 'Robust MLS + Dense ALS + Map Fusion'
     
-    path = '/home/eugeniu/Desktop/trees/'
+    # path = '/home/eugeniu/Desktop/trees/'
         
-    method_path = path+trajectory_name
+    # method_path = path+trajectory_name
                         
-    als_trees = np.genfromtxt(method_path+"/ALS_Correspondences_xyz.txt", delimiter=',')
-    mls_trees = np.genfromtxt(method_path+"/MLS_corresponding_trees_xyz.txt", delimiter=',')
+    # als_trees = np.genfromtxt(method_path+"/ALS_Correspondences_xyz.txt", delimiter=',')
+    # mls_trees = np.genfromtxt(method_path+"/MLS_corresponding_trees_xyz.txt", delimiter=',')
             
-    print('\nmethod:{}  als_trees:{}, mls_trees:{}'.format(trajectory_name, np.shape(als_trees), np.shape(mls_trees)))
+    # 
 
+    ref_tree = "/media/eugeniu/T7/las_georeferenced/Ref_ALS_Hesai_fused/results/Results/Stem_curves/xyz_ref.txt"
+    query_tree = "/media/eugeniu/T7/las_georeferenced/Ref_ALS_Hesai_fused/results/Results/Stem_curves/xyz_model_hesai0.txt"
+    
+    als_trees = np.genfromtxt(ref_tree, delimiter=',')
+    mls_trees = np.genfromtxt(query_tree, delimiter=',')
+    
+    als_trees = np.hstack([als_trees, np.zeros((als_trees.shape[0], 1))])
+    mls_trees = np.hstack([mls_trees, np.zeros((mls_trees.shape[0], 1))])
+
+    print('\n als_trees:{}, mls_trees:{}'.format(np.shape(als_trees), np.shape(mls_trees)))
+
+    als_trees = (R_origin_to_ENU @ als_trees.T).T + t_origin_to_ENU
+    mls_trees = (R_origin_to_ENU @ mls_trees.T).T + t_origin_to_ENU
 
     return als_trees[:,:2], mls_trees[:,:2]
-    
-            
+
+
+# Coordinate reference system for Finland
 etrs_tm35fin = 'EPSG:3067'
-wgs84 = 'EPSG:4326'  # WGS84 for latitude and longitude
+epsg = 3067
 
 start = traj_points_ENU[0]
 print('start:',start)
-
+end = traj_points_ENU[len(traj_points_ENU) - 1]
 # Create a GeoDataFrame with the EVO location point in the ETRS-TM35FIN projection
 evo_point = gpd.GeoDataFrame(
-    {'geometry': [Point(398252.412, 6786205.990)]},
-    #{'geometry': [Point(start[0],start[1])]},
+    #{'geometry': [Point(398252.412, 6786205.990)]},
+    {'geometry': [Point(start[0],start[1])]},
     crs=etrs_tm35fin
 )
 
@@ -143,16 +177,16 @@ trajectory_gdf = gpd.GeoDataFrame(
     crs=etrs_tm35fin
 )
 
-# als_trees, mls_trees = get_trees()
-# print('als_trees:',np.shape(als_trees),', mls_trees:',np.shape(mls_trees))
-# als_trees_gdf = gpd.GeoDataFrame(
-#     {'geometry': [Point(x, y) for x, y in als_trees]},
-#     crs=etrs_tm35fin
-# )
-# mls_trees_gdf = gpd.GeoDataFrame(
-#     {'geometry': [Point(x, y) for x, y in mls_trees]},
-#     crs=etrs_tm35fin
-# )
+als_trees, mls_trees = get_trees()
+print('als_trees:',np.shape(als_trees),', mls_trees:',np.shape(mls_trees))
+als_trees_gdf = gpd.GeoDataFrame(
+    {'geometry': [Point(x, y) for x, y in als_trees]},
+    crs=etrs_tm35fin
+)
+mls_trees_gdf = gpd.GeoDataFrame(
+    {'geometry': [Point(x, y) for x, y in mls_trees]},
+    crs=etrs_tm35fin
+)
 
 #print('start iterating over the data')
 #data, intensity = get_cloud()
@@ -164,12 +198,12 @@ trajectory_gdf = gpd.GeoDataFrame(
 #print('here1')
 
 # Reproject to Web Mercator (EPSG:3857) to match the tile provider
-evo_area = evo_area.to_crs(epsg=3857)
+evo_area = evo_area.to_crs(epsg=epsg)
 # Reproject the trajectory back to Web Mercator (EPSG:3857) for plotting with the basemap
-trajectory_gdf_mercator = trajectory_gdf.to_crs(epsg=3857)
+trajectory_gdf_mercator = trajectory_gdf.to_crs(epsg=epsg)
 
-#als_trees_gdf_mercator = als_trees_gdf.to_crs(epsg=3857)
-#mls_trees_gdf_mercator = mls_trees_gdf.to_crs(epsg=3857)
+als_trees_gdf_mercator = als_trees_gdf.to_crs(epsg=epsg)
+mls_trees_gdf_mercator = mls_trees_gdf.to_crs(epsg=epsg)
 
 
 #cloud_gdf_mercator = cloud_gdf.to_crs(epsg=3857)
@@ -184,29 +218,53 @@ evo_area.boundary.plot(ax=ax, color='red')
 # Plot the trajectory points in Web Mercator (projected for plotting)
 trajectory_gdf_mercator.plot(ax=ax, color='red', marker='o', markersize=15, label='Trajectory')
 
-# mls_trees_gdf_mercator.plot(ax=ax, color='tab:orange', marker='o', markersize=130, label='MLS trees')
-# als_trees_gdf_mercator.plot(ax=ax,  marker='*', markersize=100, label='Reference ALS trees')
+
+mls_trees_gdf_mercator.plot(ax=ax, color='tab:orange', marker='o', markersize=40, label='MLS trees')
+als_trees_gdf_mercator.plot(ax=ax,  marker='*', markersize=30, label='Reference ALS trees')
+
 
 
 #cloud_gdf_mercator.plot(ax=ax, c=intensity, cmap='rainbow', markersize=.5, label='MLS')
 #print('done plot')
 
 # Add the satellite basemap using ESRI's satellite imagery
-ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)
+#ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)
+
+ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, crs=etrs_tm35fin)
 
 #ctx.add_basemap(ax, source="http://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")
 #ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, zoom=30)  # Adjust zoom level for higher detail
 
 
 # Set axis limits based on the area
-ax.set_xlim(evo_area.total_bounds[[0, 2]])  # X limits (longitude)
-ax.set_ylim(evo_area.total_bounds[[1, 3]])  # Y limits (latitude)
+#ax.set_xlim(evo_area.total_bounds[[0, 2]])  # X limits (longitude)
+#ax.set_ylim(evo_area.total_bounds[[1, 3]])  # Y limits (latitude)
 
 ax.set_xlabel('East (m)')
 ax.set_ylabel('North (m)')
 plt.legend()
+
 # Set the formatter for x and y axis to avoid scientific notation
 ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: '{:.0f}'.format(x)))
 ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0f}'.format(y)))
-# Display the plot
+
+image = mpimg.imread('/home/eugeniu/x_vux_mls_als_paper/car_small.png')  # Use a small PNG file
+from scipy.ndimage import rotate
+image = rotate(image, angle=15, reshape=True)
+
+# Create the image box
+imagebox = OffsetImage(image, zoom=.2)  # Adjust zoom to make the image smaller or larger
+
+
+# Specify the data coordinates where to place the image
+xy = (end[0], end[1])
+
+ab = AnnotationBbox(imagebox, xy,
+                    xycoords='data',
+                    frameon=False,
+                    zorder=10)  # No frame around image
+
+ax.add_artist(ab)
+
+
 plt.show()
