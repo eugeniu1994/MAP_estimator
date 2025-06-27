@@ -356,7 +356,7 @@ double scan2map_GN_omp(pcl::PointCloud<PointType>::Ptr &src,
                                 //     break;
                                 // }
 
-                                // pose_estimate = Sophus::SE3d::exp(dx) * pose_estimate;
+                                // pose_estimate = Sophus::SE3::exp(dx) * pose_estimate;
                             }
 
                             V3D target_point(
@@ -1837,10 +1837,10 @@ namespace latest_code
 
     int index = 0; // start from this
 
-    double std_noise_t = .2;// latest_code::noise_values_t[index];
-    double std_noise_r = 2. * 3.14 / 180.;// latest_code::noise_values_r[index] * 3.14 / 180.;
+    double std_noise_t = .2;               // latest_code::noise_values_t[index];
+    double std_noise_r = 2. * 3.14 / 180.; // latest_code::noise_values_r[index] * 3.14 / 180.;
 
-    V3D t_sigma = V3D(std_noise_t, .001, .001 );       
+    V3D t_sigma = V3D(std_noise_t, .001, .001);
     V3D r_sigma = V3D(std_noise_r, .001, .001); // V3D(.001, .001, std_noise_r);                      // r
     int optimize_iterations = 50;               // for noisy data
 
@@ -1861,21 +1861,13 @@ namespace latest_code
             V3D delta_t(0, 0, 0);
             V3D delta_rpy(0, 0, 0);
 
-            delta_t[0] = sampleGaussian(trans_noise_std); //translation on vux X is same as mls Z axis
-            
-            //delta_rpy[2] = sample_rotation_noise; // z-yaw of the vux
+            delta_t[0] = sampleGaussian(trans_noise_std); // translation on vux X is same as mls Z axis
 
+            // delta_rpy[2] = sample_rotation_noise; // z-yaw of the vux
 
-            delta_rpy[0] = sample_rotation_noise; // around x - the best so far 
+            delta_rpy[0] = sample_rotation_noise; // around x - the best so far
 
-
-            
-
-
-
-
-            //delta_rpy[1] = sample_rotation_noise;//  sampleGaussian(rot_noise_std); // y- pitch to be tested
-            
+            // delta_rpy[1] = sample_rotation_noise;//  sampleGaussian(rot_noise_std); // y- pitch to be tested
 
             // Convert RPY noise to rotation matrix
             Eigen::AngleAxisd rx(delta_rpy[0], Eigen::Vector3d::UnitX());
@@ -1898,12 +1890,10 @@ namespace latest_code
                 for (int i = 0; i < N; i++)
                 {
                     Eigen::Matrix<double, 6, 1> delta = Eigen::Matrix<double, 6, 1>::Zero();
-                    
-                    delta[2] = sampleGaussian(trans_noise_std);  //translation on Z axis
 
-                    delta[5] = sampleGaussian(rot_noise_std);    //rotation around Z axis
+                    delta[2] = sampleGaussian(trans_noise_std); // translation on Z axis
 
-                    
+                    delta[5] = sampleGaussian(rot_noise_std); // rotation around Z axis
 
                     auto noise = Sophus::SE3::exp(delta);
 
@@ -1920,7 +1910,7 @@ namespace latest_code
                 for (const auto &d : delta_samples)
                     mean += d;
                 mean /= delta_samples.size();
-                std::cout<<"mean:"<<mean.transpose()<<std::endl;
+                std::cout << "mean:" << mean.transpose() << std::endl;
                 Eigen::Matrix<double, 6, 6> empirical_cov = Eigen::Matrix<double, 6, 6>::Zero();
                 for (const auto &d : delta_samples)
                 {
@@ -2169,10 +2159,9 @@ namespace latest_code
          )
             .finished());
 
-
     auto relative_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
-        (gtsam::Vector6() << gtsam::Vector3(.2,.2,.2), // rotation stddev (radians): roll, pitch, yaw
-         gtsam::Vector3(.5,.5,.5)                      //. translation stddev (m): x, y, z
+        (gtsam::Vector6() << gtsam::Vector3(.2, .2, .2), // rotation stddev (radians): roll, pitch, yaw
+         gtsam::Vector3(.5, .5, .5)                      //. translation stddev (m): x, y, z
          )
             .finished());
     // the issues is that is should be // rad,rad,rad,m, m, m
@@ -2222,7 +2211,7 @@ namespace latest_code
         bool debug = false;
 
         bool save_georeferenced_vux_ = true;
-        bool save_trajectory = false;// true;
+        bool save_trajectory = false; // true;
 
         bool refine_init = true;
 
@@ -2293,8 +2282,6 @@ namespace latest_code
 
             return initial_pose;
         }
-
-        
 
         {
             /*
@@ -3069,3 +3056,287 @@ namespace latest_code
         }
     }
 };
+
+////////////////////////////////////////////////////
+
+using SE3 = Sophus::SE3;
+using SO3 = Sophus::SO3;
+using Vec6 = Eigen::Matrix<double, 6, 1>;
+
+// Log map (SE3 -> se3)
+Vec6 Log(const SE3 &T) {
+    return T.log();
+}
+
+// Exp map (se3 -> SE3)
+SE3 Exp(const Vec6 &xi) {
+    return SE3::exp(xi);
+}
+
+// Residual: log(A_i * X * B_i^-1 * X^-1)
+Vec6 computeResidual(const SE3 &A, const SE3 &B, const SE3 &X) {
+    SE3 res = A * X * B.inverse() * X.inverse();
+    return res.log();
+}
+
+// Numerical Jacobian
+Eigen::Matrix<double, 6, 6> numericalJacobian(const SE3 &A, const SE3 &B, const SE3 &X, double eps = 1e-6) {
+    Eigen::Matrix<double, 6, 6> J;
+    Vec6 r0 = computeResidual(A, B, X);
+    for (int i = 0; i < 6; ++i) {
+        Vec6 delta = Vec6::Zero();
+        delta[i] = eps;
+        SE3 X_perturbed = Exp(delta) * X;
+        Vec6 ri = computeResidual(A, B, X_perturbed);
+        J.col(i) = (ri - r0) / eps;
+    }
+    return J;
+}
+
+Eigen::Matrix<double, 6, 6> rightJacobianInverseSE3(const Eigen::Matrix<double, 6, 1>& xi) {
+    Eigen::Vector3d rho = xi.tail<3>();   // translation part
+    Eigen::Vector3d phi = xi.head<3>();   // rotation part
+
+    double theta = phi.norm();
+    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
+    Eigen::Matrix3d phi_hat = Sophus::SO3::hat(phi);
+
+    Eigen::Matrix3d J_inv_rot;
+    if (theta < 1e-5) {
+        // Use Taylor expansion for small angles
+        J_inv_rot = I + 0.5 * phi_hat + (1.0 / 12.0) * (phi_hat * phi_hat);
+    } else {
+        double half_theta = 0.5 * theta;
+        double cot_half_theta = 1.0 / std::tan(half_theta);
+        J_inv_rot = I + 0.5 * phi_hat + (1 - (theta * cot_half_theta) / 2.0) / (theta * theta) * (phi_hat * phi_hat);
+    }
+
+    Eigen::Matrix3d V_inv = J_inv_rot;  // For SE(3), translation Jacobian inverse is usually same as rotation block for small motion.
+
+    Eigen::Matrix<double, 6, 6> J_inv = Eigen::Matrix<double, 6, 6>::Zero();
+    J_inv.topLeftCorner<3, 3>() = J_inv_rot;
+    J_inv.bottomRightCorner<3, 3>() = V_inv;
+    return J_inv;
+}
+
+
+Eigen::Matrix<double, 6, 6> computeJacobian(const SE3& A, const SE3& B, const SE3& X) {
+    SE3 E = A * X * B.inverse() * X.inverse();
+    Vector6d xi_E = E.log();
+
+    Eigen::Matrix<double, 6, 6> J_r_inv = rightJacobianInverseSE3(xi_E);
+    Eigen::Matrix<double, 6, 6> Ad_A = A.Adj();
+    Eigen::Matrix<double, 6, 6> Ad_E = E.Adj();
+
+    return J_r_inv * (Ad_A - Ad_E);
+}
+
+SE3 handEyeGaussNewton(const std::vector<SE3> &As, const std::vector<SE3> &Bs, int max_iter = 100) {
+    SE3 X = SE3();  // initial guess: identity
+
+    for (int iter = 0; iter < max_iter; ++iter) {
+        Vec6 total_residual = Vec6::Zero();
+        Eigen::Matrix<double, 6, 6> H = Eigen::Matrix<double, 6, 6>::Zero();
+        Vec6 b = Vec6::Zero();
+
+        for (size_t i = 0; i < As.size(); ++i) {
+            Vec6 ri = computeResidual(As[i], Bs[i], X);
+
+            Eigen::Matrix<double, 6, 6> Ji = numericalJacobian(As[i], Bs[i], X);
+            //Eigen::Matrix<double, 6, 6> Ji = computeJacobian(As[i], Bs[i], X);
+            
+            H += Ji.transpose() * Ji;
+            b += Ji.transpose() * ri;
+        }
+
+        Vec6 dx = -H.ldlt().solve(b);
+        X = Exp(dx) * X;
+
+        if (dx.norm() < 1e-10) break;
+    }
+    return X;
+}
+
+void generateToyTrajectories(std::vector<Sophus::SE3> &A, std::vector<Sophus::SE3> &B, Sophus::SE3 &X_gt)
+{
+    X_gt = Sophus::SE3(
+        Eigen::AngleAxisd(0.2, Eigen::Vector3d::UnitZ()) *
+        Eigen::AngleAxisd(0.1, Eigen::Vector3d::UnitY()),
+        Eigen::Vector3d(1.5, 2.1, -0.2)
+    );
+
+    A.clear();
+    B.clear();
+
+    Sophus::SE3 T = Sophus::SE3();
+    A.push_back(T);
+    B.push_back(X_gt.inverse() * T * X_gt);
+
+    for (int i = 0; i < 50; i++) {
+        Sophus::SE3 motion(
+            Eigen::AngleAxisd(0.05 * (i + 1), Eigen::Vector3d::UnitZ()) *
+            Eigen::AngleAxisd(0.02 * (i + 1), Eigen::Vector3d::UnitY()),
+            Eigen::Vector3d(0.1 * i, 0.02 * i, 0.01 * i)
+        );
+        T = T * motion;
+        A.push_back(T);
+        B.push_back(X_gt.inverse() * T * X_gt);
+    }
+}
+
+
+int test2() {
+    // Ground truth X
+    SE3 X_gt = SE3(Sophus::SO3::exp(Eigen::Vector3d(0.1, 0.05, 0.2)), Eigen::Vector3d(0.5, 0.1, 0.2));
+
+    std::vector<SE3> As, Bs;
+    for (int i = 0; i < 100; ++i) {
+        Eigen::Vector3d w = Eigen::Vector3d::Random() * 0.2;
+        Eigen::Vector3d t = Eigen::Vector3d::Random() * 0.2;
+        SE3 A = SE3(Sophus::SO3::exp(w), t);
+        SE3 B = X_gt.inverse() * A * X_gt;
+        As.push_back(A);
+        Bs.push_back(B);
+    }
+
+    SE3 X_est = handEyeGaussNewton(As, Bs);
+
+    std::cout << "Ground Truth X:\n" << X_gt.matrix() << "\n\n";
+    std::cout << "Estimated X:\n" << X_est.matrix() << "\n\n";
+
+    SE3 error = X_gt.inverse() * X_est;
+    std::cout << "Error norm (Lie algebra):\n" << error.log().norm() << "\n";
+
+
+    {
+        std::cout<<"\nSecond trajectory test..."<<std::endl;
+        std::vector<Sophus::SE3> A_traj, B_traj;
+        Sophus::SE3 X_gt;
+        std::vector<Sophus::SE3> A_rel, B_rel;
+
+        generateToyTrajectories(A_traj, B_traj, X_gt);
+
+        for(int i=1;i<A_traj.size();i++)
+        {
+            auto Ai = A_traj[i-1].inverse() * A_traj[i];
+            auto Bi = B_traj[i-1].inverse() * B_traj[i];
+
+            A_rel.push_back(Ai);
+            B_rel.push_back(Bi);
+        }
+
+        SE3 X_est = handEyeGaussNewton(A_rel, B_rel);
+
+        std::cout << "Ground Truth X:\n" << X_gt.matrix() << "\n\n";
+        std::cout << "Estimated X:\n" << X_est.matrix() << "\n\n";
+
+        SE3 error = X_gt.inverse() * X_est;
+        std::cout << "Error norm (Lie algebra):\n" << error.log().norm() << "\n";
+
+    }
+    return 0;
+}
+
+
+
+
+//---------------------------------------------------------
+
+//
+//namespace hand_eye{
+    
+
+    // Cost function: log(A_i * X * B_i^{-1} * X^{-1})
+// struct HandEyeCost {
+//     HandEyeCost(const Sophus::SE3& A_, const Sophus::SEd& B_) : A(A_), B(B_) {}
+
+//     template <typename T>
+//     bool operator()(const T* const x, T* residuals) const {
+
+//         Sophus::SE3<T> X = Sophus::SE3<T>::exp(Eigen::Map<const Eigen::Matrix<T,6,1>>(x));
+//         Sophus::SE3<T> lhs = A.cast<T>() * X;
+//         Sophus::SE3<T> rhs = X * B.cast<T>();
+//         Sophus::SE3<T> error = lhs.inverse() * rhs;
+//         Eigen::Map<Eigen::Matrix<T,6,1>> res(residuals);
+//         res = error.log();
+//         return true;
+//     }
+
+//     const Sophus::SE3 A, B;
+// };
+
+    // Residual block for AX = XB
+    // struct HandEyeError {
+    //     HandEyeError(const Sophus::SE3d& A, const Sophus::SE3d& B) : A_(A), B_(B) {}
+
+    //     template <typename T>
+    //     bool operator()(const T* const x_param, T* residuals) const {
+    //         // Map parameter to SE3
+    //         Eigen::Map<const Eigen::Matrix<T,6,1>> xi(x_param);
+    //         Sophus::SE3<T> X = Sophus::SE3<T>::exp(xi);
+
+    //         Sophus::SE3<T> A_T = A_.cast<T>();
+    //         Sophus::SE3<T> B_T = B_.cast<T>();
+
+    //         // Residual: log( A * X * B⁻¹ * X⁻¹ )
+    //         Sophus::SE3<T> err = A_T * X * B_T.inverse() * X.inverse();
+    //         Eigen::Map<Eigen::Matrix<T,6,1>> res(residuals);
+    //         res = err.log();
+    //         return true;
+    //     }
+
+    //     static ceres::CostFunction* Create(const Sophus::SE3d& A, const Sophus::SE3d& B) {
+    //         return new ceres::AutoDiffCostFunction<HandEyeError, 6, 6>(
+    //             new HandEyeError(A, B));
+    //     }
+
+    // private:
+    //     const Sophus::SE3d A_, B_;
+    // };
+//}
+
+
+// Sophus::SE3d handEyeCalibration(const std::vector<Sophus::SE3d>& As,
+//                                 const std::vector<Sophus::SE3d>& Bs) {
+//     Eigen::Matrix<double, 6, 1> x = Eigen::Matrix<double, 6, 1>::Zero(); // SE3 pose in Lie algebra
+
+//     ceres::Problem problem;
+//     for (size_t i = 0; i < As.size(); ++i) {
+//         ceres::CostFunction* cost = HandEyeError::Create(As[i], Bs[i]);
+//         problem.AddResidualBlock(cost, nullptr, x.data());
+//     }
+
+//     ceres::Solver::Options options;
+//     options.linear_solver_type = ceres::DENSE_QR;
+//     options.minimizer_progress_to_stdout = true;
+
+//     ceres::Solver::Summary summary;
+//     ceres::Solve(options, &problem, &summary);
+//     std::cout << summary.FullReport() << "\n";
+
+//     return Sophus::SE3d::exp(x);
+// }
+//  void tthis()
+//  {
+//     std::vector<Sophus::SE3d> As, Bs;
+// Sophus::SE3d X_gt = Sophus::SE3d::exp((Eigen::Matrix<double, 6, 1>() <<
+//     0.5, 0.1, 0.2, 0.1, -0.05, 0.2).finished()); // Some SE(3) GT
+
+// for (int i = 0; i < 50; ++i) {
+//     Eigen::Matrix<double,6,1> a_i;
+//     a_i.head<3>() = Eigen::Vector3d::Random() * 0.1;
+//     a_i.tail<3>() = Eigen::Vector3d::Random() * 0.1;
+
+//     Sophus::SE3d A = Sophus::SE3d::exp(a_i);
+//     Sophus::SE3d B = X_gt.inverse() * A * X_gt;
+
+//     As.push_back(A);
+//     Bs.push_back(B);
+// }
+
+// Sophus::SE3d X_est = handEyeCalibration(As, Bs);
+// std::cout << "Ground Truth:\n" << X_gt.matrix() << "\n";
+// std::cout << "Estimated X:\n" << X_est.matrix() << "\n";
+// std::cout << "Error:\n" << (X_gt.inverse() * X_est).log().transpose() << "\n";
+
+//  }

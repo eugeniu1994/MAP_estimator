@@ -45,6 +45,22 @@ void publish_refined_ppk_gnss(const Sophus::SE3 &_pose, const double &msg_time)
     br.sendTransform(tf::StampedTransform(transformGPS, ros::Time().fromSec(msg_time), "world", "VUX_B"));
 }
 
+void publish_ppk_gnss(const Sophus::SE3 &_pose, const double &msg_time)
+{
+    tf::Transform transformGPS;
+    tf::Quaternion q;
+    static tf::TransformBroadcaster br;
+
+    auto t = _pose.translation();
+    auto R_yaw = _pose.so3().matrix();
+
+    transformGPS.setOrigin(tf::Vector3(t[0], t[1], t[2]));
+    Eigen::Quaterniond quat_(R_yaw);
+    q = tf::Quaternion(quat_.x(), quat_.y(), quat_.z(), quat_.w());
+    transformGPS.setRotation(q);
+    br.sendTransform(tf::StampedTransform(transformGPS, ros::Time().fromSec(msg_time), "world", "PPK_GNSS"));
+}
+
 struct vux_gnss_post
 {
     double gps_tod;
@@ -228,7 +244,7 @@ Sophus::SE3 interpolateSE3(const std::vector<vux_gnss_post> &gnss_vux_data, doub
 }
 
 Sophus::SE3 interpolateSE3(const Sophus::SE3 &pose1, const double time1,
-                           const Sophus::SE3 &pose2, const double time2, 
+                           const Sophus::SE3 &pose2, const double time2,
                            const double t)
 {
     Sophus::SE3 delta = pose1.inverse() * pose2;
@@ -240,6 +256,121 @@ Sophus::SE3 interpolateSE3(const Sophus::SE3 &pose1, const double time1,
     Sophus::SE3 interpolated = pose1 * Sophus::SE3::exp(alpha * delta.log());
 
     return interpolated;
+}
+
+Sophus::SE3 interpolateSE3Log(
+    const std::vector<Sophus::SE3> &poses,
+    const std::vector<double> &times,
+    double query_time)
+{
+    if (poses.size() != times.size() || poses.size() < 2)
+    {
+        throw std::runtime_error("Invalid input: poses and times must be same size and >= 2");
+    }
+
+    // Find the interval [i, i+1] such that times[i] <= query_time < times[i+1]
+    size_t i = 0;
+    while (i + 1 < times.size() && query_time >= times[i + 1])
+    {
+        ++i;
+    }
+
+    if (i + 1 >= times.size())
+    {
+        throw std::out_of_range("Query time is out of bounds.");
+    }
+
+    double t1 = times[i];
+    double t2 = times[i + 1];
+    double alpha = (query_time - t1) / (t2 - t1);
+
+    const Sophus::SE3 &T1 = poses[i];
+    const Sophus::SE3 &T2 = poses[i + 1];
+
+    // Relative transform from T1 to T2
+    Sophus::SE3 T_rel = T1.inverse() * T2;
+
+    // Interpolate in tangent space
+    Eigen::Matrix<double, 6, 1> xi = T_rel.log();            // twist vector
+    Eigen::Matrix<double, 6, 1> xi_scaled = alpha * xi;      // scaled twist
+    Sophus::SE3 T_interp = T1 * Sophus::SE3::exp(xi_scaled); // apply scaled motion to T1
+
+    return T_interp;
+}
+
+
+
+
+
+
+std::vector<std::pair<std::vector<Sophus::SE3>, std::vector<Sophus::SE3>>> generateInterpolatedPoses(
+    const std::vector<Sophus::SE3>& posesA, const std::vector<Sophus::SE3>& posesB,
+    const std::vector<double>& timesA, const std::vector<double>& timesB, std::vector<double> &all_deltas
+) {
+
+        // int N_ = mls_times.size();
+        //                     std::cout << " mls_times[0]:" << mls_times[0] << ", gnss_times[0]:" << gnss_times[0] << std::endl;
+        //                     std::cout << " mls_times[end]:" << mls_times[N_ - 1] << ", gnss_times[end]:" << gnss_times[N_ - 1] << std::endl;
+
+        //                     std::cout << "delta time :" << mls_times[N_ - 1] - mls_times[0] << std::endl;
+
+    double t_start = std::max(timesA.front(), timesB.front());
+    double t_end   = std::min(timesA.back(), timesB.back());
+    double total_duration = t_end - t_start;
+
+    std::cout<<"total_duration:"<<total_duration<<" s"<<std::endl;
+
+    std::vector<std::pair<std::vector<Sophus::SE3>, std::vector<Sophus::SE3>>> all_trajectories;
+
+    //add relative poses
+    for(int i=0;i<all_deltas.size()-1;i++)
+    //for (double delta_t : all_deltas) 
+    {
+        double &delta_t = all_deltas[i];
+        std::vector<Sophus::SE3> trajectoryA, trajectoryB;
+
+        for (double t = t_start; t <= t_end; t += delta_t) {
+            if (t > timesA.back() || t > timesB.back()) break;
+
+            Sophus::SE3 interpA = interpolateSE3Log(posesA, timesA, t);
+            Sophus::SE3 interpB = interpolateSE3Log(posesB, timesB, t);
+
+            trajectoryA.push_back(interpA);
+            trajectoryB.push_back(interpB);
+        }
+
+        all_trajectories.emplace_back(trajectoryA, trajectoryB);
+    }
+    //add absolute poses
+    std::vector<Sophus::SE3> trajectoryA, trajectoryB;
+
+    for(int i=0;i<timesA.size();i++)
+    {
+        if(timesA[i] > t_start && timesA[i] < t_end)
+        {
+            Sophus::SE3 interpA = interpolateSE3Log(posesA, timesA, timesA[i]);
+            Sophus::SE3 interpB = interpolateSE3Log(posesB, timesB, timesA[i]);
+
+            trajectoryA.push_back(interpA);
+            trajectoryB.push_back(interpB);
+        }
+    }
+
+    all_trajectories.emplace_back(trajectoryA, trajectoryB);
+
+    return all_trajectories;
+}
+
+
+
+Sophus::SE3 averageSE3Log(const std::vector<Eigen::Matrix<double, 6, 1>> &logs)
+{
+    Eigen::Matrix<double, 6, 1> mean = Eigen::Matrix<double, 6, 1>::Zero();
+    for (const auto &xi : logs)
+        mean += xi;
+    mean /= static_cast<double>(logs.size());
+    std::cout << "\n averageSE3Log mean:" << mean.transpose() << std::endl;
+    return Sophus::SE3::exp(mean);
 }
 
 #include "clean_registration3.hpp"
@@ -282,6 +413,8 @@ void DataHandler::Subscribe()
 #endif
 
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>("/cloud_registered", 100000);
+    ros::Publisher pubLaserCloudLocal = nh.advertise<sensor_msgs::PointCloud2>("/cloud_local", 100000);
+
     ros::Publisher pubLaserCloudMap = nh.advertise<sensor_msgs::PointCloud2>("/Laser_map", 100);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry>("/Odometry", 100);
 
@@ -358,9 +491,16 @@ void DataHandler::Subscribe()
     pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointNormal>());
     bool raw_vux_imu_time_aligned = false;
     bool perform_mls_registration = true;
-
+    bool als_integrated = false;
     Sophus::SE3 als2mls;
     Sophus::SE3 mls2als;
+
+    //----------------------------------------------------------------------------
+    M3D Rz;
+    double angle = -M_PI / 2.0; // -90 degrees in radians
+    Rz << cos(angle), -sin(angle), 0,
+        sin(angle), cos(angle), 0,
+        0, 0, 1;
 
     M3D R_vux2mls; // from vux scanner to mls point cloud
     R_vux2mls << 0.0064031121, -0.8606533346, -0.5091510953,
@@ -369,6 +509,22 @@ void DataHandler::Subscribe()
     V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
     Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(R_vux2mls, t_vux2mls); // refined - vux to mls cloud
 
+    Eigen::Matrix4d T_lidar2gnss;
+    T_lidar2gnss << 
+        0.0131683606, -0.9998577263, 0.0105414145,  0.0154123047,
+        0.9672090675, 0.0100627670, -0.2537821120, -2.6359450601,
+        0.2536399297, 0.0135376461, 0.9672039693,  -0.5896374492,
+        0.0, 0.0, 0.0, 1.0;
+
+    M3D R_lidar2gnss = T_lidar2gnss.block<3, 3>(0, 0); // Rotation
+    V3D t_lidar2gnss = T_lidar2gnss.block<3, 1>(0, 3); // Translation
+
+    // gnss should be rtansformed to mls frame
+    Sophus::SE3 lidar2gnss(R_lidar2gnss, t_lidar2gnss); // FROM LIDAR 2 GNSS   T_lidar = T_gnss * lidar2gnss.inverse()
+    Sophus::SE3 gnss2lidar = lidar2gnss.inverse();
+    //----------------------------------------------------------------------------
+    ros::Publisher pose_pub2 = nh.advertise<nav_msgs::Odometry>("/se3_pose2", 100);
+
     bool use_als = true;
 
     bool get_closest_vux_once = false;
@@ -376,7 +532,14 @@ void DataHandler::Subscribe()
     std::vector<pcl::PointCloud<VUX_PointType>::Ptr> vux_scans;
     std::vector<double> vux_scans_time;
 
+    std::vector<Sophus::SE3> mls_poses, gnss_poses, gnss_poses_original;
+    std::vector<double> mls_times, gnss_times;
+    std::vector<Eigen::Vector6d> log_gnss_lidar_relative;
+
+    std::vector<pcl::PointCloud<PointType>::Ptr> mls_clouds;
+    int estimated_total_points = 0;
 //#define integrate_vux
+//#define perform_extrinsic
 
     for (const rosbag::MessageInstance &m : view)
     {
@@ -441,7 +604,141 @@ void DataHandler::Subscribe()
                 // undistort and provide initial guess
                 imu_obj->Process(Measures, estimator_, feats_undistort);
 
+                double t_IMU_process = omp_get_wtime();
+
+                //publish_frame_debug(pubLaserCloudDebug, feats_undistort);
+
+                if (imu_obj->imu_need_init_)
+                {
+                    std::cout << "IMU was not initialised " << std::endl;
+                    continue;
+                }
+
+                if (feats_undistort->empty() || (feats_undistort == NULL))
+                {
+                    ROS_WARN("No feats_undistort point, skip this scan!\n");
+                    std::cout << "feats_undistort:" << feats_undistort->size() << std::endl;
+                    // throw std::runtime_error("NO points -> ERROR: check your data");
+                    continue;
+                }
+                state_point = estimator_.get_x();
+
+                flg_EKF_inited = (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? false : true;
+
+                downSizeFilterSurf.setInputCloud(feats_undistort);
+                downSizeFilterSurf.filter(*feats_down_body);
+
+                feats_down_size = feats_down_body->points.size();
+                if (feats_down_size < 5)
+                {
+                    ROS_WARN("No feats_down_body point, skip this scan!\n");
+                    std::cout << "feats_undistort:" << feats_undistort->size() << std::endl;
+                    std::cout << "feats_down_body:" << feats_down_size << std::endl;
+                    throw std::runtime_error("NO feats_down_body points -> ERROR");
+                }
+
+                double t_cloud_voxelization = omp_get_wtime();
+
+                if (!map_init)
+                {
+                    feats_down_size = feats_undistort->size();
+                    feats_down_world->resize(feats_down_size);
+
+                    tbb::parallel_for(tbb::blocked_range<int>(0, feats_down_size),
+                                      [&](tbb::blocked_range<int> r)
+                                      {
+                                          for (int i = r.begin(); i < r.end(); i++)
+                                          // for (int i = 0; i < feats_down_size; i++)
+                                          {
+                                              // pointBodyToWorld(&(feats_down_body->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
+                                              pointBodyToWorld(&(feats_undistort->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
+                                          }
+                                      });
+
+                    *laserCloudSurfMap += *feats_down_world;
+                    map_init = true;
+                    continue;
+                }
+
+                // register to MLS map  ----------------------------------------------
+                Nearest_Points.resize(feats_down_size);
+
+                if (use_als)
+                {
+                    if (!als_obj->refine_als) // als was not setup
+                    {
+                        estimator_.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en);
+                        if (gnss_obj->GNSS_extrinsic_init)
+                        {
+                            *featsFromMap = *laserCloudSurfMap;
+                            als_obj->init(gnss_obj->origin_enu, gnss_obj->R_GNSS_to_MLS, featsFromMap);
+                            gnss_obj->updateExtrinsic(als_obj->R_to_mls); // use the scan-based refined rotation for GNSS
+                            als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
+                        }
+                    }
+                    else // als was set up
+                    {
+                        als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
+                        // update tighly fusion from MLS and ALS
+                        if (!estimator_.update_tighly_fused(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, als_obj->als_cloud, als_obj->localKdTree_map_als, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
+                        {
+                            std::cout << "\n------------------FUSION ALS-MLS update failed--------------------------------" << std::endl;
+                        }
+                        als_integrated = true;
+                    }
+
+                    if (pubLaserALSMap.getNumSubscribers() != 0)
+                    {
+                        als_obj->getCloud(featsFromMap);
+                        publish_map(pubLaserALSMap);
+                    }
+                }
+                else if (!estimator_.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
+                {
+                    std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
+                }
+                // double t_LiDAR_update = omp_get_wtime();
+                // std::cout << "\nIMU_process time(ms):  " << (t_IMU_process - t00) * 1000 <<
+                //", cloud_voxelization (ms): " << (t_cloud_voxelization - t_IMU_process) * 1000 <<
+                //", LiDAR_update (ms): " << (t_LiDAR_update - t_cloud_voxelization) * 1000 << std::endl;
+
+                // Crop the local map------
+                state_point = estimator_.get_x();
+                // get and publish the GNSS pose--------
+                gnss_obj->Process(gps_buffer, lidar_end_time, state_point.pos);
+
+                Sophus::SE3 gnss_pose = (gnss_obj->use_postprocessed_gnss) ? gnss_obj->postprocessed_gps_pose : gnss_obj->gps_pose;
+                // gnss_pose.so3() = state_point.rot; // use the MLS orientation
+                if (use_gnss)
+                    publish_gnss_odometry(gnss_pose);
+
+                if (gnss_obj->GNSS_extrinsic_init && use_gnss) // if gnss aligned
+                {
+                    const bool global_error = false; // set this true for global error of gps
+                    // auto gps_cov_ = V3D(GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR);
+                    // auto gps_cov_ = gnss_obj->gps_cov;
+                    auto gps_cov_ = Eigen::Vector3d(GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR);
+                    if (global_error)
+                    {
+                        const V3D &gnss_in_enu = gnss_obj->carthesian;
+                        estimator_.update(gnss_in_enu, gps_cov_, NUM_MAX_ITERATIONS, global_error, gnss_obj->R_GNSS_to_MLS.transpose());
+                    }
+                    else
+                    {
+                        const V3D &gnss_in_mls = gnss_pose.translation();
+                        estimator_.update(gnss_in_mls, gps_cov_, NUM_MAX_ITERATIONS, global_error);
+                    }
+                }
+
+                // Update the local map--------------------------------------------------
+                feats_down_world->resize(feats_down_size);
+
+                local_map_update(); // this will update local map with curr measurements and crop the map
+
 #ifdef integrate_vux
+
+                curr_mls = Sophus::SE3(state_point.rot, state_point.pos);
+                curr_mls_time = Measures.lidar_end_time;
 
                 double time_of_day_sec = gnss_obj->tod;
                 if (gnss_obj->gps_init_origin && time_of_day_sec > .0001)
@@ -483,7 +780,7 @@ void DataHandler::Subscribe()
                                 {
                                     std::cout << "\nsynchronised\n, press enter..." << std::endl;
                                     vux_mls_time_aligned = true;
-                                    //std::cin.get();
+                                    // std::cin.get();
                                     break;
                                 }
 
@@ -506,6 +803,7 @@ void DataHandler::Subscribe()
                     {
                         vux_scans.clear();
                         vux_scans_time.clear();
+                        estimated_total_points = 0;
                         while (readVUX.next(next_line))
                         {
                             ros::spinOnce();
@@ -517,19 +815,21 @@ void DataHandler::Subscribe()
                             if (!next_line->empty())
                             {
                                 const auto &cloud_time = next_line->points[0].time;
+
+                                // accumulate vux scans
+
+                                pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
+                                downSizeFilter_vux.setInputCloud(next_line);
+                                downSizeFilter_vux.filter(*downsampled_line);
+                                TransformPoints(vux2mls_extrinsics, downsampled_line); // transform the vux cloud first to mls
+
+                                vux_scans.push_back(downsampled_line);
+                                vux_scans_time.push_back(cloud_time);
+                                estimated_total_points += downsampled_line->size();
+
                                 if (cloud_time > time_of_day_sec)
                                 {
                                     break;
-                                }
-                                else // accumulate vux scans
-                                {
-                                    pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
-                                    downSizeFilter_vux.setInputCloud(next_line);
-                                    downSizeFilter_vux.filter(*downsampled_line);
-                                    TransformPoints(vux2mls_extrinsics, downsampled_line); // transform the vux cloud first to mls
-                                    
-                                    vux_scans.push_back(downsampled_line);
-                                    vux_scans_time.push_back(cloud_time);
                                 }
                             }
                             else
@@ -539,419 +839,270 @@ void DataHandler::Subscribe()
                         }
                     }
 
-                    imu_obj->Propagate2D(vux_scans, vux_scans_time, Measures.lidar_beg_time, Measures.lidar_end_time, time_of_day_sec, prev_mls, prev_mls_time);
+                    // is is based on IMU
+                    // imu_obj->Propagate2D(vux_scans, vux_scans_time, Measures.lidar_beg_time, Measures.lidar_end_time, time_of_day_sec, prev_mls, prev_mls_time);
 
-                    if (point_cloud_pub.getNumSubscribers() != 0)
+                    // if (point_cloud_pub.getNumSubscribers() != 0)
                     {
                         pcl::PointCloud<VUX_PointType>::Ptr all_lines(new pcl::PointCloud<VUX_PointType>);
-                        for(int j = 0;j<vux_scans.size();j++)
+
+                        auto delta_predicted = (prev_mls.inverse() * curr_mls).log();
+                        double scan_duration = curr_mls_time - prev_mls_time; // e.g., 0.1s
+                        double tod_beg_scan = time_of_day_sec - scan_duration;
+                        auto dt_tod = time_of_day_sec - tod_beg_scan;
+                        
+                        pcl::PointCloud<PointType>::Ptr all_lines_added_for_mapping(new pcl::PointCloud<PointType>);
+                        all_lines_added_for_mapping->points.reserve(estimated_total_points);  // Optional: pre-allocate if you can estimate
+
+                        for (size_t j = 0; j < vux_scans.size(); ++j)
                         {
+                            const double t = vux_scans_time[j];
+                            double alpha = (t - tod_beg_scan) / dt_tod;
+
+                            Sophus::SE3 interpolated_pose_mls = prev_mls * Sophus::SE3::exp(alpha * delta_predicted);
+
+                            TransformPoints(interpolated_pose_mls, vux_scans[j]);
+
                             *all_lines += *vux_scans[j];
-                            //publishPointCloud_vux(vux_scans[j], point_cloud_pub);
+
+                            auto& pts = vux_scans[j]->points;
+                            all_lines_added_for_mapping->points.reserve(all_lines_added_for_mapping->points.size() + pts.size());
+                            
+                            for (const auto& pt : pts)
+                            {
+                                all_lines_added_for_mapping->points.emplace_back(PointType{pt.x, pt.y, pt.z});
+                            }
                         }
-                        publishPointCloud_vux(all_lines, point_cloud_pub);
+
+
+                        *laserCloudSurfMap += *all_lines_added_for_mapping;
+                        //laserCloudSurfMap->width = laserCloudSurfMap->points.size();
+                        //laserCloudSurfMap->height = 1;
+                        //laserCloudSurfMap->is_dense = true;
+
+                        if (point_cloud_pub.getNumSubscribers() != 0)
+                            publishPointCloud_vux(all_lines, point_cloud_pub);
                     }
-
-
-                    // problem here   -   check in which frame are vux (hesai or imu)
-
-                    // vux should be pre-voxelized before fusing with hesai 
-
-                    // put them in the same frame as feats_undistort 
-
-                    // use them for registration 
-
-                    // after the registration - use again the prev and curr pose 
-                    //     interpolate for better vux positioning 
-
-                    // map with all the points 
-
-
-                    // for (const auto& scan : vux_scans)
-                    // {
-                    //     for (const auto& pt : scan->points)
-                    //     {
-                    //         PointType new_pt;
-                    //         new_pt.x = pt.x;
-                    //         new_pt.y = pt.y;
-                    //         new_pt.z = pt.z;
-                    //         new_pt.intensity = sqrt(pt.range);
-
-                    //         feats_undistort->points.emplace_back(new_pt);
-                    //     }
-                    // }
-
-                    
                 }
 #endif
 
-                if (false) // vux will be integrated here
-                {
-                    if (als_obj->refine_als && gnss_obj->GNSS_extrinsic_init)
-                    {
-                        double timestamp = Measures.lidar_end_time;
-                        std::time_t time_sec = static_cast<std::time_t>(timestamp);
-                        // Convert to GMT time
-                        std::tm *gmt_timeinfo = std::gmtime(&time_sec);
-                        double time_of_day_sec = gmt_timeinfo->tm_hour * 3600 +
-                                                 gmt_timeinfo->tm_min * 60 +
-                                                 gmt_timeinfo->tm_sec +
-                                                 (timestamp - time_sec); // Extract fractional part
-
-                        // get the tod from GNSS not hesai
-                        time_of_day_sec = gnss_obj->tod;
-
-                        if (!vux_mls_time_aligned)
-                        {
-                            mls2als = als2mls.inverse();
-                            curr_mls = Sophus::SE3(state_point.rot, state_point.pos);
-                            prev_mls = curr_mls;
-                            if (!raw_vux_imu_time_aligned)
-                            {
-                                double first_vux_time = 0;
-                                if (!readVUX.timeAlign(time_of_day_sec))
-                                {
-                                    throw std::runtime_error("There is an issue with time aligning of raw vux and hesai mls");
-                                }
-
-                                if (readVUX.next(next_line))
-                                {
-                                    if (!next_line->empty())
-                                    {
-                                        first_vux_time = next_line->points[0].time;
-                                        std::cout << "first_vux_time:" << first_vux_time << std::endl;
-                                    }
-                                }
-
-                                // synch raw vux with ppk------------------------------------
-                                while (readVUX.next(next_line))
-                                {
-                                    ros::spinOnce();
-                                    if (flg_exit || !ros::ok())
-                                        break;
-
-                                    V3D lla;
-                                    uint32_t raw_gnss_tod;
-                                    if (readVUX.nextGNSS(lla, raw_gnss_tod)) // get the raw GNSS into lla - if there is raw gnss
-                                    {
-                                        if (!time_aligned)
-                                        {
-                                            const auto &cloud_time = next_line->points[0].time;
-                                            std::cout << "\nreadVUX.next raw vux cloud time:" << cloud_time << std::endl;
-
-                                            std::cout << "Start RAW-PPK VUX time alignment" << std::endl;
-                                            std::cout << "Post time:" << gnss_vux_data[tmp_index].gps_tod << " raw time:" << raw_gnss_tod << ", first_vux_time:" << first_vux_time << std::endl;
-                                            // skip the measurements based on time untill aligned properly
-                                            while (tmp_index < gnss_vux_data.size() && gnss_vux_data[tmp_index].gps_tod < raw_gnss_tod)
-                                            {
-                                                // std::cout<<"Post time:"<<gnss_vux_data[tmp_index].gps_tod<<" raw time:"<<raw_gnss_tod<<std::endl;
-                                                tmp_index++;
-                                            }
-
-                                            std::cout << "tmp_index:" << tmp_index << std::endl;
-                                            init_guess_index = tmp_index;
-
-                                            {
-                                                int time_of_day_seconds = gnss_vux_data[tmp_index].gps_tod;
-                                                // Calculate hours, minutes, and seconds
-                                                int hours = time_of_day_seconds / 3600; // 1 hour = 3600 seconds
-                                                int remaining_seconds = time_of_day_seconds % 3600;
-                                                int minutes = remaining_seconds / 60; // 1 minute = 60 seconds
-                                                int seconds = remaining_seconds % 60;
-
-                                                // Print in "h minus seconds" format
-                                                std::cout << hours << "h " << minutes << "m " << seconds << "s" << std::endl;
-                                            }
-
-                                            std::cout << "Post time:" << gnss_vux_data[tmp_index].gps_tod << " raw time:" << raw_gnss_tod << ", first_vux_time:" << first_vux_time << std::endl;
-                                            std::cout << "Finished time alignment\n"
-                                                      << std::endl;
-                                            time_aligned = true;
-                                            break;
-                                        }
-                                    }
-
-                                    rate.sleep();
-                                }
-
-                                raw_vux_imu_time_aligned = true;
-                            }
-
-                            //---------------------------------------------------------------------------------------------------------
-                            double diff = fabs(gnss_vux_data[tmp_index].gps_tod - time_of_day_sec);
-                            std::cout << " vux-gnss:" << gnss_vux_data[tmp_index].gps_tod << ", time_of_day_sec:" << time_of_day_sec << ", diff:" << diff << std::endl;
-
-                            prev_mls = Sophus::SE3(state_point.rot, state_point.pos);
-                            prev_mls_time = time_of_day_sec;
-
-                            if (diff < 0.1)
-                            {
-                                std::cout << "\nsynchronised\n"<< std::endl;
-                                vux_mls_time_aligned = true;
-                                first_vux_pose = gnss_vux_data[tmp_index].se3;
-                                continue;
-                            }
-                            if (gnss_vux_data[tmp_index].gps_tod > time_of_day_sec) // vux is ahead on time - we do not have vux for this hesai data
-                            {
-                                // drop hesai frames
-                                std::cout << "Do nothing - wating till we get the VUX data based on time" << std::endl;
-                            }
-                            else
-                            {
-                                // drop vux frames
-                                while (tmp_index < gnss_vux_data.size() && gnss_vux_data[tmp_index].gps_tod <= time_of_day_sec)
-                                {
-                                    if (flg_exit || !ros::ok())
-                                        break;
-
-                                    diff = fabs(gnss_vux_data[tmp_index].gps_tod - time_of_day_sec);
-                                    std::cout << "\ndrop vux frames Post time:" << gnss_vux_data[tmp_index].gps_tod << " time_of_day_sec time:" << time_of_day_sec << ", diff:" << diff << std::endl;
-
-                                    // get the scanner to this time
-                                    while (readVUX.next(next_line))
-                                    {
-                                        if (flg_exit || !ros::ok())
-                                            break;
-
-                                        if (next_line->empty())
-                                            break;
-
-                                        const auto &cloud_time = next_line->points[0].time;
-                                        if (cloud_time > gnss_vux_data[tmp_index].gps_tod)
-                                            break;
-                                    }
-                                    if (!next_line->empty())
-                                    {
-                                        const auto &cloud_time = next_line->points[0].time;
-                                        std::cout << "raw vux cloud time:" << cloud_time << std::endl;
-                                    }
-
-                                    tmp_index++;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            std::cout << "start reading VUX, vux-time:" << gnss_vux_data[tmp_index].gps_tod << ", hesai-time:" << time_of_day_sec << std::endl;
-                            curr_mls = Sophus::SE3(state_point.rot, state_point.pos);
-                            curr_mls_time = time_of_day_sec;
-
-                            // set the current map to kdtree----------------------------------------
-                            std::cout << "kdtree set input MLS points: " << laserCloudSurfMap->size() << std::endl;
-                            const auto &reference_localMap_cloud = laserCloudSurfMap;
-
-                            // std::cout << "kdtree set input ALS points: " << als_obj->als_cloud->size() << std::endl;
-                            // const auto &reference_localMap_cloud = als_obj->als_cloud;
-
-                            //------------------------------------------------------------------------
-                            estimator_.localKdTree_map->setInputCloud(reference_localMap_cloud);
-                            const auto &refference_kdtree = estimator_.localKdTree_map;
-
-                            while (gnss_vux_data[tmp_index].gps_tod <= time_of_day_sec && tmp_index < gnss_vux_data.size())
-                            {
-                                ros::spinOnce();
-                                if (flg_exit || !ros::ok())
-                                    break;
-
-                                double diff = fabs(gnss_vux_data[tmp_index].gps_tod - time_of_day_sec);
-                                std::cout << " vux-gnss:" << gnss_vux_data[tmp_index].gps_tod << ", time_of_day_sec:" << time_of_day_sec << ", diff:" << diff << std::endl;
-
-                                const double &msg_time = gnss_vux_data[tmp_index].gps_tod;
-
-                                tmp_index++;
-                                rate.sleep();
-
-                                while (readVUX.next(next_line))
-                                {
-                                    if (flg_exit || !ros::ok())
-                                        break;
-
-                                    if (next_line->empty())
-                                    {
-                                        std::cout << "Break - line empty" << std::endl;
-                                        break;
-                                    }
-
-                                    // const auto &cloud_time = next_line->points[0].time;
-                                    const auto cloud_time = next_line->points.back().time;
-
-                                    some_index++;
-
-                                    if (time_aligned) // && some_index % 10
-                                    {
-                                        // TransformPoints(vux2mls_extrinsics, next_line); //transform the vux cloud first to mls
-
-                                        pcl::PointCloud<VUX_PointType>::Ptr downsampled_line(new pcl::PointCloud<VUX_PointType>);
-                                        downSizeFilter_vux.setInputCloud(next_line);
-                                        downSizeFilter_vux.filter(*downsampled_line);
-
-                                        pcl::PointCloud<VUX_PointType>::Ptr transformed_cloud(new pcl::PointCloud<VUX_PointType>);
-                                        *transformed_cloud = *downsampled_line;
-
-                                        Sophus::SE3 interpolated_pose_ppk = interpolateSE3(gnss_vux_data, cloud_time, tmp_index, false); // interpolated from ppk-gnss
-                                        Sophus::SE3 interpolated_pose_mls = interpolateSE3(prev_mls, prev_mls_time, curr_mls, curr_mls_time, cloud_time);
-
-                                        Sophus::SE3 pose4georeference;
-
-                                        // prev approach
-                                        //  MLS pose as init guess ---- first extrinsics, then georeference  // mls pose
-                                        pose4georeference = interpolated_pose_mls * vux2mls_extrinsics;
-
-                                        // PPK/GNSS transformed to mls, interpolated, transformed to hesai, and then extrinsics to hesai
-                                        // pose4georeference = als2mls * interpolated_pose_ppk * gnss2lidar * vux2mls_extrinsics;
-
-                                        std::cout << "pose4georeference:\n"
-                                                  << pose4georeference.matrix() << std::endl;
-
-                                        publish_refined_ppk_gnss(pose4georeference, cloud_time);
-
-                                        if (point_cloud_pub.getNumSubscribers() != 0)
-                                        {
-                                            for (size_t i = 0; i < transformed_cloud->size(); i++)
-                                            {
-                                                V3D point_scanner(transformed_cloud->points[i].x, transformed_cloud->points[i].y, transformed_cloud->points[i].z);
-
-                                                V3D point_global = pose4georeference * point_scanner;
-
-                                                transformed_cloud->points[i].x = point_global.x();
-                                                transformed_cloud->points[i].y = point_global.y();
-                                                transformed_cloud->points[i].z = point_global.z();
-                                            }
-
-                                            publishPointCloud_vux(transformed_cloud, point_cloud_pub);
-                                        }
-                                    }
-
-                                    if (cloud_time > gnss_vux_data[tmp_index].gps_tod)
-                                    {
-                                        std::cout << "\nCloud time in the future - this will drop a scan " << std::endl;
-                                        std::cout << "cloud_time:" << cloud_time << ", gnss_vux_data:" << gnss_vux_data[tmp_index].gps_tod << std::endl;
-                                        // const auto &last_point_time = next_line->points.back().time;
-                                        //  std::cout<<"last_point_time:"<<last_point_time<<std::endl;
-
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        prev_mls = Sophus::SE3(state_point.rot, state_point.pos);
-                        prev_mls_time = time_of_day_sec;
-                    }
-                }
-
-                double t_IMU_process = omp_get_wtime();
-
-                // publish_frame_debug(pubLaserCloudDebug, feats_undistort);
-
-                if (imu_obj->imu_need_init_)
-                {
-                    std::cout << "IMU was not initialised " << std::endl;
-                    continue;
-                }
-
-                if (feats_undistort->empty() || (feats_undistort == NULL))
-                {
-                    ROS_WARN("No feats_undistort point, skip this scan!\n");
-                    std::cout << "feats_undistort:" << feats_undistort->size() << std::endl;
-                    // throw std::runtime_error("NO points -> ERROR: check your data");
-                    continue;
-                }
-                state_point = estimator_.get_x();
-
-                pos_lid = state_point.pos + state_point.rot.matrix() * state_point.offset_T_L_I;
-                flg_EKF_inited = (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? false : true;
-
-                downSizeFilterSurf.setInputCloud(feats_undistort);
-                downSizeFilterSurf.filter(*feats_down_body);
-
-                feats_down_size = feats_down_body->points.size();
-                if (feats_down_size < 5)
-                {
-                    ROS_WARN("No feats_down_body point, skip this scan!\n");
-                    std::cout << "feats_undistort:" << feats_undistort->size() << std::endl;
-                    std::cout << "feats_down_body:" << feats_down_size << std::endl;
-                    throw std::runtime_error("NO feats_down_body points -> ERROR");
-                }
-
-                double t_cloud_voxelization = omp_get_wtime();
-
-                if (!map_init)
-                {
-                    feats_down_size = feats_undistort->size();
-                    feats_down_world->resize(feats_down_size);
-
-                    tbb::parallel_for(tbb::blocked_range<int>(0, feats_down_size),
-                                      [&](tbb::blocked_range<int> r)
-                                      {
-                                          for (int i = r.begin(); i < r.end(); i++)
-                                          // for (int i = 0; i < feats_down_size; i++)
-                                          {
-                                              // pointBodyToWorld(&(feats_down_body->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
-                                              pointBodyToWorld(&(feats_undistort->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
-                                          }
-                                      });
-
-                    *laserCloudSurfMap += *feats_down_world;
-                    map_init = true;
-                    continue;
-                }
-
-                // register to MLS map  ----------------------------------------------
-                Nearest_Points.resize(feats_down_size);
-
-                if(use_als)
-                {
-                    if(!als_obj->refine_als) //als was not setup
-                    {
-                        estimator_.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en);
-                        if(gnss_obj->GNSS_extrinsic_init)
-                        {
-                            *featsFromMap = *laserCloudSurfMap;
-                            als_obj->init(gnss_obj->origin_enu, gnss_obj->R_GNSS_to_MLS, featsFromMap);
-                            gnss_obj->updateExtrinsic(als_obj->R_to_mls); // use the scan-based refined rotation for GNSS
-                            als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
-                        }
-                    }
-                    else //als was set up
-                    {   
-                        als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
-                        //update tighly fusion from MLS and ALS 
-                        if (!estimator_.update_tighly_fused(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, als_obj->als_cloud, als_obj->localKdTree_map_als, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
-                        {
-                            std::cout << "\n------------------FUSION ALS-MLS update failed--------------------------------" << std::endl;
-                        }
-                    }
-
-                    if (pubLaserALSMap.getNumSubscribers() != 0)
-                    {
-                        als_obj->getCloud(featsFromMap);
-                        publish_map(pubLaserALSMap);
-                    }
-                }
-                else if (!estimator_.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
-                {
-                    std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
-                }
-                // double t_LiDAR_update = omp_get_wtime();
-                // std::cout << "\nIMU_process time(ms):  " << (t_IMU_process - t00) * 1000 <<
-                //", cloud_voxelization (ms): " << (t_cloud_voxelization - t_IMU_process) * 1000 <<
-                //", LiDAR_update (ms): " << (t_LiDAR_update - t_cloud_voxelization) * 1000 << std::endl;
-
-                // Crop the local map------
-                state_point = estimator_.get_x();
-                pos_lid = state_point.pos + state_point.rot.matrix() * state_point.offset_T_L_I;
-                RemovePointsFarFromLocation();
-
-                // get and publish the GNSS pose--------
-                gnss_obj->Process(gps_buffer, lidar_end_time, state_point.pos);
-
-                // Update the local map--------------------------------------------------
-                feats_down_world->resize(feats_down_size);
-
-                local_map_update(); // this will update local map with curr measurements and crop the map
-
                 prev_mls = Sophus::SE3(state_point.rot, state_point.pos);
                 prev_mls_time = Measures.lidar_end_time;
+
+#ifdef perform_extrinsic
+                double time_of_day_sec = gnss_obj->tod;
+
+                while (tmp_index < gnss_vux_data.size() - 1 && als_integrated) //
+                {
+                    tmp_index++;
+
+                    double time_diff_curr = fabs(time_of_day_sec - gnss_vux_data[tmp_index].gps_tod);
+                    double time_diff_next = fabs(time_of_day_sec - gnss_vux_data[tmp_index + 1].gps_tod);
+
+                    //std::cout << "time_diff_curr:" << time_diff_curr << ", time_diff_next:" << time_diff_next << std::endl;
+                    if (time_diff_curr > time_diff_next) // get to the closest message on time
+                    {
+                        continue; // continue to go to the next message
+                    }
+
+                    const auto &msg_time = gnss_vux_data[tmp_index].gps_tod;
+                    //std::cout << "Closest GNSS time diff = " << time_diff_curr << std::endl;
+
+                    auto ppk_gnss_imu = als2mls * gnss_vux_data[tmp_index].se3; // in mls frame
+
+                    // a test move the gnss to hesai-imu frame with gnss2lidar
+                    // ppk_gnss_imu = ppk_gnss_imu * gnss2lidar;
+
+                    publish_ppk_gnss(ppk_gnss_imu, msg_time);
+
+                    // std::vector<Sophus::SE3> mls_poses, gnss_poses, gnss_poses_original;
+
+                    if (true) // perform extrinsic
+                    {
+                        mls_poses.push_back(prev_mls);
+                        gnss_poses.push_back(ppk_gnss_imu);
+                        gnss_poses_original.push_back(gnss_vux_data[tmp_index].se3);
+
+                        mls_times.push_back(time_of_day_sec);
+                        gnss_times.push_back(msg_time);
+
+                        //feats_down_body is points in lidar frame
+
+                        pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
+                        *cloud = *feats_down_body;
+                        mls_clouds.push_back(cloud);//save the raw mls clouds
+
+                        std::cout << "prev_mls    :" << prev_mls.translation().transpose() << std::endl;
+                        std::cout << "ppk_gnss_imu:" << ppk_gnss_imu.translation().transpose() << std::endl;
+                        std::cout << "log:" << (prev_mls.inverse() * ppk_gnss_imu).log().transpose() << std::endl;
+                        // from lidar to mls
+                        // auto lidar2gnss_extrinsic = prev_mls.inverse() * ppk_gnss_imu;
+                        log_gnss_lidar_relative.push_back((prev_mls.inverse() * ppk_gnss_imu).log());
+
+                        int N_data = 100;
+
+
+                        if (mls_poses.size() > N_data) // got enough poses
+                        {
+                            std::cout << "Start extrinsic estimation press enter..." << std::endl;
+                            std::cin.get();
+
+                            Sophus::SE3 lidar2gnss_extrinsic = averageSE3Log(log_gnss_lidar_relative);
+                            std::cout << "\nAveraged lidar2gnss_extrinsic SE3:\n"
+                                      << lidar2gnss_extrinsic.matrix() << std::endl;
+
+                            // Sophus::SE3 gnss2lidar = lidar2gnss.inverse();
+                            // ppk_gnss_imu = ppk_gnss_imu * lidar2gnss_extrinsic.inverse();
+                            // ppk_gnss_imu = ppk_gnss_imu * gnss2lidar;
+
+                            std::vector<Sophus::SE3> A_rel, B_rel, B_rel_artificial;
+                            //std::vector<double> all_deltas = {.01, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1.}; //s
+                            std::vector<double> all_deltas = {.1, .5,  1., 2., 3., 4., 5., -1}; //s 
+                            std::vector<Eigen::Vector6d> relative_logs;
+                            //add absolute poses
+                            double delta_t = .01;
+                            double t_start = std::max(mls_times.front(), gnss_times.front());
+                            double t_end   = std::min(mls_times.back(), gnss_times.back());
+                            double total_duration = t_end - t_start;
+                            for (double t = t_start; t <= t_end; t += delta_t) {
+                                if (t > mls_times.back() || t > gnss_times.back()) break;
+
+                                Sophus::SE3 interpA = interpolateSE3Log(mls_poses, mls_times, t);
+                                Sophus::SE3 interpB = interpolateSE3Log(gnss_poses, gnss_times, t);
+
+                                relative_logs.push_back((interpA.inverse() * interpB).log());
+                            }
+                            
+                            auto all_trajectories = generateInterpolatedPoses(mls_poses, gnss_poses, mls_times, gnss_times, all_deltas);
+                            
+                            for (size_t i = 0; i < all_trajectories.size(); ++i) {
+                                double delta = all_deltas[i];
+                                std::cout << "Δt = " << delta << "s: " << all_trajectories[i].first.size() << " samples\n";
+
+                                int N = all_trajectories[i].first.size();
+                                for(int j = 1; j<N; j++)
+                                {
+                                    auto Ai = all_trajectories[i].first[j - 1].inverse() * all_trajectories[i].first[j];
+                                    auto Bi = all_trajectories[i].second[j - 1].inverse() * all_trajectories[i].second[j];
+
+                                    A_rel.push_back(Ai);
+                                    B_rel.push_back(Bi);
+
+                                }
+                            }
+                            
+                            std::cout<<"A_rel:"<<A_rel.size()<<", B_rel:"<<B_rel.size()<<std::endl;
+
+                            // lidar2gnss_extrinsic = averageSE3Log(relative_logs);
+                            // std::cout << "\nAveraged relative_logs SE3:\n"
+                            //           << lidar2gnss_extrinsic.matrix() << std::endl;
+
+                            {
+                                // test with some artificially created data
+                                // auto X_gt = Sophus::SE3(
+                                //     Eigen::AngleAxisd(0.2, Eigen::Vector3d::UnitZ()) *
+                                //         Eigen::AngleAxisd(0.1, Eigen::Vector3d::UnitY()),
+                                //     Eigen::Vector3d(1.5, 2.1, -1.2));
+
+                                // take the time interval from the begin and end
+                                // and for some delta t interpolate
+
+                                // for (int i = 1; i < mls_poses.size(); i++)
+                                // {
+                                //     auto Ai = mls_poses[i - 1].inverse() * mls_poses[i];
+
+                                //     // auto Bi = gnss_poses[i-1].inverse() * gnss_poses[i];
+                                //     auto Bi = gnss_poses_original[i - 1].inverse() * gnss_poses_original[i];
+
+                                //     auto Bi_Artificial = X_gt.inverse() * Ai * X_gt;
+
+                                //     A_rel.push_back(Ai);
+                                //     B_rel.push_back(Bi);
+                                //     B_rel_artificial.push_back(Bi_Artificial);
+                                // }
+                            }
+
+                            auto X_est = ConventionalAXXBSVDSolver(A_rel, B_rel);
+                            std::cout << "X_est ConventionalAXXBSVDSolver:\n"
+                                      << X_est.matrix() << std::endl;
+
+                            X_est = handEyeGaussNewton(A_rel, B_rel);
+                            std::cout << "X_est handEyeGaussNewton       :\n"
+                                      << X_est.matrix() << std::endl;
+
+                            
+                            // X_est = handEyeGaussNewton(mls_poses, gnss_poses_original);
+                            // std::cout << "X_est handEyeGaussNewton(mls_poses, gnss_poses_original)       :\n"
+                            //           << X_est.matrix() << std::endl;
+
+                            
+                            // X_est = handEyeGaussNewton(mls_poses, gnss_poses);
+                            // std::cout << "X_est handEyeGaussNewton(mls_poses, gnss_poses)       :\n"
+                            //           << X_est.matrix() << std::endl;
+                            
+                            ppk_gnss_imu = ppk_gnss_imu * X_est.inverse();
+
+                            //ppk_gnss_imu = ppk_gnss_imu * lidar2gnss_extrinsic.inverse();
+
+                            // auto X_est_artificial = handEyeGaussNewton(A_rel, B_rel_artificial);
+                            // auto X_est_artificial2 = ConventionalAXXBSVDSolver(A_rel, B_rel_artificial);
+
+                            // std::cout << "\nX_est_artificial:\n"
+                            //           << X_est_artificial.matrix() << std::endl;
+                            // std::cout << "Error X_est_artificial norm (Lie algebra):" << (X_gt.inverse() * X_est_artificial).log().norm() << "\n";
+
+                            // std::cout << "\n\nX_est_artificial2:\n"
+                            //           << X_est_artificial2.matrix() << std::endl;
+                            // std::cout << "Error X_est_artificial2 norm (Lie algebra):" << (X_gt.inverse() * X_est_artificial2).log().norm() << "\n";
+
+                            // throw std::runtime_error("Finished the extrinsic estimation");
+                        }
+
+
+                        {
+                                /*
+                                    try to recreate some existing map
+                                    this can be used also for flying helicopters
+                                        given gnss and 2d raw data
+                                        given a known reference map
+                                        
+                                        gnss can be used with ALS or MLS, MLS can be transformed to global
+                                        georeferencing the 2d vux with gnss should result in same map 
+
+                                        scan_registered = GNSS * X * scan
+                                        error = scan_registered(X) - ref_scan_registered_
+
+                                        use this as a constraint to find the transformation between the GNSS and 2D vux 
+
+                                    a paper for both 
+                                */        
+                            }
+
+
+
+                        nav_msgs::Odometry pose_msg;
+                        pose_msg.header.frame_id = "world";
+                        pose_msg.header.stamp = ros::Time().fromSec(msg_time);
+                        V3D trans = ppk_gnss_imu.translation();
+                        pose_msg.pose.pose.position.x = trans.x();
+                        pose_msg.pose.pose.position.y = trans.y();
+                        pose_msg.pose.pose.position.z = trans.z();
+                        Eigen::Quaterniond q(ppk_gnss_imu.so3().matrix());
+                        pose_msg.pose.pose.orientation.x = q.x();
+                        pose_msg.pose.pose.orientation.y = q.y();
+                        pose_msg.pose.pose.orientation.z = q.z();
+                        pose_msg.pose.pose.orientation.w = q.w();
+
+                        pose_pub2.publish(pose_msg);
+                    }
+
+                     
+                    
+
+                    break;
+                    
+                }
+#endif
 
                 // Publish odometry and point clouds------------------------------------
                 publish_odometry(pubOdomAftMapped);
@@ -959,6 +1110,7 @@ void DataHandler::Subscribe()
                 {
                     if (pubLaserCloudFull.getNumSubscribers() != 0)
                         publish_frame_world(pubLaserCloudFull);
+
                 }
 
                 if (pubLaserCloudMap.getNumSubscribers() != 0)

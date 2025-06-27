@@ -423,9 +423,9 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
     auto it_pcl = pcl_out.points.end() - 1;
     auto begin_pcl = pcl_out.points.begin();
 
-    auto end_R_T = imu_state.rot.matrix().transpose();
-    auto R_L2I = imu_state.offset_R_L_I.matrix();
-    auto R_I2L = imu_state.offset_R_L_I.matrix().transpose();
+    const auto &end_R_T = imu_state.rot.matrix().transpose();
+    const auto &R_L2I = imu_state.offset_R_L_I.matrix();
+    const auto &R_I2L = imu_state.offset_R_L_I.matrix().transpose();
 
     for (auto it_kp = IMU_Buffer.end() - 1; it_kp != IMU_Buffer.begin(); it_kp--)
     {

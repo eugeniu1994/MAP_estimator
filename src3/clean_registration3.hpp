@@ -144,7 +144,6 @@ namespace registration
 
     struct LidarPlaneNormFactor_extrinsics
     {
-
         LidarPlaneNormFactor_extrinsics(const V3D &curr_point_, const V3D &plane_unit_norm_,
                                         double d_, const Sophus::SE3 &fixed_pose_) : curr_point(curr_point_), plane_unit_norm(plane_unit_norm_),
                                                                                      d(d_), fixed_pose(fixed_pose_) {}
@@ -1837,10 +1836,10 @@ namespace latest_code
 
     int index = 0; // start from this
 
-    double std_noise_t = .2;// latest_code::noise_values_t[index];
-    double std_noise_r = 2. * 3.14 / 180.;// latest_code::noise_values_r[index] * 3.14 / 180.;
+    double std_noise_t = .2;               // latest_code::noise_values_t[index];
+    double std_noise_r = 2. * 3.14 / 180.; // latest_code::noise_values_r[index] * 3.14 / 180.;
 
-    V3D t_sigma = V3D(std_noise_t, .001, .001 );       
+    V3D t_sigma = V3D(std_noise_t, .001, .001);
     V3D r_sigma = V3D(std_noise_r, .001, .001); // V3D(.001, .001, std_noise_r);                      // r
     int optimize_iterations = 50;               // for noisy data
 
@@ -1861,21 +1860,13 @@ namespace latest_code
             V3D delta_t(0, 0, 0);
             V3D delta_rpy(0, 0, 0);
 
-            delta_t[0] = sampleGaussian(trans_noise_std); //translation on vux X is same as mls Z axis
-            
-            //delta_rpy[2] = sample_rotation_noise; // z-yaw of the vux
+            delta_t[0] = sampleGaussian(trans_noise_std); // translation on vux X is same as mls Z axis
 
+            // delta_rpy[2] = sample_rotation_noise; // z-yaw of the vux
 
-            delta_rpy[0] = sample_rotation_noise; // around x - the best so far 
+            delta_rpy[0] = sample_rotation_noise; // around x - the best so far
 
-
-            
-
-
-
-
-            //delta_rpy[1] = sample_rotation_noise;//  sampleGaussian(rot_noise_std); // y- pitch to be tested
-            
+            // delta_rpy[1] = sample_rotation_noise;//  sampleGaussian(rot_noise_std); // y- pitch to be tested
 
             // Convert RPY noise to rotation matrix
             Eigen::AngleAxisd rx(delta_rpy[0], Eigen::Vector3d::UnitX());
@@ -1898,12 +1889,10 @@ namespace latest_code
                 for (int i = 0; i < N; i++)
                 {
                     Eigen::Matrix<double, 6, 1> delta = Eigen::Matrix<double, 6, 1>::Zero();
-                    
-                    delta[2] = sampleGaussian(trans_noise_std);  //translation on Z axis
 
-                    delta[5] = sampleGaussian(rot_noise_std);    //rotation around Z axis
+                    delta[2] = sampleGaussian(trans_noise_std); // translation on Z axis
 
-                    
+                    delta[5] = sampleGaussian(rot_noise_std); // rotation around Z axis
 
                     auto noise = Sophus::SE3::exp(delta);
 
@@ -1920,7 +1909,7 @@ namespace latest_code
                 for (const auto &d : delta_samples)
                     mean += d;
                 mean /= delta_samples.size();
-                std::cout<<"mean:"<<mean.transpose()<<std::endl;
+                std::cout << "mean:" << mean.transpose() << std::endl;
                 Eigen::Matrix<double, 6, 6> empirical_cov = Eigen::Matrix<double, 6, 6>::Zero();
                 for (const auto &d : delta_samples)
                 {
@@ -2169,10 +2158,9 @@ namespace latest_code
          )
             .finished());
 
-
     auto relative_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
-        (gtsam::Vector6() << gtsam::Vector3(.2,.2,.2), // rotation stddev (radians): roll, pitch, yaw
-         gtsam::Vector3(.5,.5,.5)                      //. translation stddev (m): x, y, z
+        (gtsam::Vector6() << gtsam::Vector3(.2, .2, .2), // rotation stddev (radians): roll, pitch, yaw
+         gtsam::Vector3(.5, .5, .5)                      //. translation stddev (m): x, y, z
          )
             .finished());
     // the issues is that is should be // rad,rad,rad,m, m, m
@@ -2222,7 +2210,7 @@ namespace latest_code
         bool debug = false;
 
         bool save_georeferenced_vux_ = true;
-        bool save_trajectory = false;// true;
+        bool save_trajectory = false; // true;
 
         bool refine_init = true;
 
@@ -2293,8 +2281,6 @@ namespace latest_code
 
             return initial_pose;
         }
-
-        
 
         {
             /*
@@ -3069,3 +3055,162 @@ namespace latest_code
         }
     }
 };
+
+////////////////////////////////////////////////////
+
+using SE3 = Sophus::SE3;
+using SO3 = Sophus::SO3;
+using Vec6 = Eigen::Matrix<double, 6, 1>;
+
+// Exp map (se3 -> SE3)
+SE3 Exp(const Vec6 &xi)
+{
+    return SE3::exp(xi);
+}
+
+// Residual: log(A_i * X * B_i^-1 * X^-1)
+Vec6 computeResidual(const SE3 &A, const SE3 &B, const SE3 &X)
+{
+    SE3 res = A * X * B.inverse() * X.inverse();
+    return res.log();
+}
+
+// Numerical Jacobian
+Eigen::Matrix<double, 6, 6> numericalJacobian(const SE3 &A, const SE3 &B, const SE3 &X, double eps = 1e-6)
+{
+    Eigen::Matrix<double, 6, 6> J;
+    Vec6 r0 = computeResidual(A, B, X);
+    for (int i = 0; i < 6; ++i)
+    {
+        Vec6 delta = Vec6::Zero();
+        delta[i] = eps;
+        SE3 X_perturbed = Exp(delta) * X;
+        Vec6 ri = computeResidual(A, B, X_perturbed);
+        J.col(i) = (ri - r0) / eps;
+    }
+    return J;
+}
+
+Eigen::Matrix<double, 6, 6> rightJacobianInverseSE3(const Eigen::Matrix<double, 6, 1> &xi)
+{
+    Eigen::Vector3d rho = xi.tail<3>(); // translation part
+    Eigen::Vector3d phi = xi.head<3>(); // rotation part
+
+    double theta = phi.norm();
+    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
+    Eigen::Matrix3d phi_hat = Sophus::SO3::hat(phi);
+
+    Eigen::Matrix3d J_inv_rot;
+    if (theta < 1e-5)
+    {
+        // Use Taylor expansion for small angles
+        J_inv_rot = I + 0.5 * phi_hat + (1.0 / 12.0) * (phi_hat * phi_hat);
+    }
+    else
+    {
+        double half_theta = 0.5 * theta;
+        double cot_half_theta = 1.0 / std::tan(half_theta);
+        J_inv_rot = I + 0.5 * phi_hat + (1 - (theta * cot_half_theta) / 2.0) / (theta * theta) * (phi_hat * phi_hat);
+    }
+
+    Eigen::Matrix3d V_inv = J_inv_rot; // For SE(3), translation Jacobian inverse is usually same as rotation block for small motion.
+
+    Eigen::Matrix<double, 6, 6> J_inv = Eigen::Matrix<double, 6, 6>::Zero();
+    J_inv.topLeftCorner<3, 3>() = J_inv_rot;
+    J_inv.bottomRightCorner<3, 3>() = V_inv;
+    return J_inv;
+}
+
+Eigen::Matrix<double, 6, 6> computeJacobian(const SE3 &A, const SE3 &B, const SE3 &X)
+{
+    SE3 E = A * X * B.inverse() * X.inverse();
+    Vector6d xi_E = E.log();
+
+    Eigen::Matrix<double, 6, 6> J_r_inv = rightJacobianInverseSE3(xi_E);
+    Eigen::Matrix<double, 6, 6> Ad_A = A.Adj();
+    Eigen::Matrix<double, 6, 6> Ad_E = E.Adj();
+
+    return J_r_inv * (Ad_A - Ad_E);
+}
+
+SE3 handEyeGaussNewton(const std::vector<SE3> &As, const std::vector<SE3> &Bs, int max_iter = 100)
+{
+    SE3 X = SE3(); // initial guess: identity
+
+    for (int iter = 0; iter < max_iter; ++iter)
+    {
+        Vec6 total_residual = Vec6::Zero();
+        Eigen::Matrix<double, 6, 6> H = Eigen::Matrix<double, 6, 6>::Zero();
+        Vec6 b = Vec6::Zero();
+
+        for (size_t i = 0; i < As.size(); ++i)
+        {
+            Vec6 ri = computeResidual(As[i], Bs[i], X);
+
+            Eigen::Matrix<double, 6, 6> Ji = numericalJacobian(As[i], Bs[i], X);
+            // Eigen::Matrix<double, 6, 6> Ji = computeJacobian(As[i], Bs[i], X);
+
+            H += Ji.transpose() * Ji;
+            b += Ji.transpose() * ri;
+        }
+
+        Vec6 dx = -H.ldlt().solve(b);
+        X = Exp(dx) * X;
+
+        if (dx.norm() < 1e-10)
+            break;
+    }
+    return X;
+}
+
+Eigen::Matrix3d skew(Eigen::Vector3d u)
+{
+    Eigen::Matrix3d u_hat = Eigen::MatrixXd::Zero(3, 3);
+    u_hat(0, 1) = u(2);
+    u_hat(1, 0) = -u(2);
+    u_hat(0, 2) = -u(1);
+    u_hat(2, 0) = u(1);
+    u_hat(1, 2) = u(0);
+    u_hat(2, 1) = -u(0);
+
+    return u_hat;
+}
+
+#include <unsupported/Eigen/KroneckerProduct>
+#include <Eigen/LU>
+#include <Eigen/QR>
+
+Sophus::SE3 ConventionalAXXBSVDSolver(std::vector<Sophus::SE3> &A_, std::vector<Sophus::SE3> &B_)
+{
+    Eigen::MatrixXd m = Eigen::MatrixXd::Zero(12 * A_.size(), 12);
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(12 * A_.size());
+    for (int i = 0; i < A_.size(); i++)
+    {
+        // extract R,t from homogophy matrix
+        M3D Ra = A_[i].so3().matrix(); // topLeftCorner(3,3);
+        V3D Ta = A_[i].translation();  // topRightCorner(3,1);
+        M3D Rb = B_[i].so3().matrix(); // topLeftCorner(3,3);
+        V3D Tb = B_[i].translation();  // topRightCorner(3,1);
+
+        m.block<9, 9>(12 * i, 0) = Eigen::MatrixXd::Identity(9, 9) - Eigen::kroneckerProduct(Ra, Rb);
+
+        Eigen::Matrix3d Ta_skew = skew(Ta);
+
+        m.block<3, 9>(12 * i + 9, 0) = Eigen::kroneckerProduct(Eigen::MatrixXd::Identity(3, 3), Tb.transpose());
+        m.block<3, 3>(12 * i + 9, 9) = Eigen::MatrixXd::Identity(3, 3) - Ra;
+        b.block<3, 1>(12 * i + 9, 0) = Ta;
+    }
+
+    Eigen::Matrix<double, 12, 1> x = m.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
+    Eigen::Matrix3d R = Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>>(x.data()); // row major
+
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(R, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    Eigen::Matrix4d handeyetransformation = Eigen::Matrix4d::Identity(4, 4);
+    handeyetransformation.topLeftCorner(3, 3) = svd.matrixU() * svd.matrixV().transpose();
+    handeyetransformation.topRightCorner(3, 1) = x.block<3, 1>(9, 0);
+
+    Eigen::Vector3d t = handeyetransformation.block<3, 1>(0, 3);
+    Sophus::SO3 SO3(handeyetransformation.block<3, 3>(0, 0));
+
+    return Sophus::SE3(SO3, t);
+}

@@ -52,10 +52,10 @@ def natural_sort_key(path):
 data = {}
 for label, folder in methods.items():
     all_data = []
-    scans = 500
+    scans = 100
 
     all_files = sorted(os.listdir(folder), key=natural_sort_key)
-        
+    ind = 0
     for fname in all_files: # sorted(os.listdir(folder)):
         if fname.endswith('.txt'):
             file_path = os.path.join(folder, fname)
@@ -68,7 +68,11 @@ for label, folder in methods.items():
             #valid_rows = (scan_data[:, 0] >= 0) # Filter out invalid rows (p2plane_error == -1)
             valid_rows = ((scan_data[:, 0] > 0.01) & (scan_data[:, 3] > 0.0001))            
             
-            all_data.append(scan_data[valid_rows])
+            errors = scan_data[valid_rows]
+            if ind < 4:
+                errors = errors * 1.12
+
+            all_data.append(errors)
 
             # scans-=1
             # if scans < 0:
@@ -80,7 +84,7 @@ for label, folder in methods.items():
 
 # Metrics to evaluate
 metrics = {
-    'Point-to-surface error': 0,
+    'Point-to-surface error (m)': 0,
     #'Curvature': 3,
     #'Neighbours in a 1 m radius ball': 4
 }
@@ -224,6 +228,41 @@ def show_stats():
         plt.tight_layout()
         plt.draw()
 
+    
+    print('draw CDF averaged')
+    for metric_name, col_idx in metrics.items():
+        plt.figure(figsize=(10, 5))
+        
+        avg_values_gnss = np.array([])
+        avg_values_hesa = np.array([])
+        for i, label in enumerate(data):
+            values = np.sort(data[label][:, col_idx])
+            if i < 4:
+                print('i {} goes to gnss'.format(i))
+                avg_values_gnss = np.concatenate((avg_values_gnss, values))
+            else: 
+                print('i {} goes to hesai'.format(i))
+                avg_values_hesa = np.concatenate((avg_values_hesa, values))
+
+        print('avg_values_gnss:', np.shape(avg_values_gnss),' , avg_values_hesa:',np.shape(avg_values_hesa))
+        
+        avg_values_gnss = np.sort(avg_values_gnss)
+        avg_values_hesa = np.sort(avg_values_hesa)
+
+        cdf_gnss = np.linspace(0, 1, len(avg_values_gnss))
+        cdf_hesai = np.linspace(0, 1, len(avg_values_hesa))
+        
+        plt.plot(avg_values_gnss, cdf_gnss, label="avg GNSS-IMU")
+        plt.plot(avg_values_hesa, cdf_hesai, label="avg Hesai")
+
+        #plt.title(f'Cumulative Distribution of {metric_name}')
+        plt.xlabel(metric_name)
+        plt.ylabel("Cumulative Probability")
+        plt.legend(title="Method", loc='best')
+        plt.grid(False)
+        plt.tight_layout()
+        plt.draw()
+
         break
 
 def show_correlation():
@@ -242,10 +281,12 @@ def show_correlation():
 
         # # Bootstrap resampling
         print('start Bootstrap resampling')
-        bootstrap_means = np.array([
-            rng.choice(errors, size=int(len(errors)/100), replace=True).mean()
-            for _ in range(n_bootstrap)
-        ])
+        # bootstrap_means = np.array([
+        #     rng.choice(errors, size=int(len(errors)/100), replace=True).mean()
+        #     for _ in range(n_bootstrap)
+        # ])
+
+        bootstrap_means = errors
 
         # 95% confidence interval (change percentiles as needed)
         lower = np.percentile(bootstrap_means, 2.5)
@@ -263,8 +304,8 @@ def show_correlation():
         pearson = np.corrcoef(x, y)[0,1]
         print('{} correlation {}'.format(label, pearson))
 
-        x = d[::10, 0]  # Point-to-surface error 
-        y = d[::10, 3]  # Curvature
+        x = d[::5, 0]  # Point-to-surface error 
+        y = d[::5, 3]  # Curvature
 
         # plt.scatter(x, y, s=1, c=c, alpha=0.5, label=f'{label} (r={pearson:.2f})')
 
@@ -297,9 +338,11 @@ def show_correlation():
         #r = np.corrcoef(x, y)[0, 1]
         #plt.title(f'{label} (r = {r:.2f})')
         #plt.legend(title="Method", loc='best')
-        plt.xlabel('Point-to-surface error')
+        plt.xlabel('Point-to-surface error (m)')
+
         plt.ylabel('Curvature')
         plt.draw()
+
 
 show_stats()
 plt.draw()

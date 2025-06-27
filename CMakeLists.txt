@@ -128,7 +128,10 @@ set(USE_EKF TRUE)
 set(USE_STATIC_KDTREE TRUE) # or FALSE to disable
 
 #add_definitions(-DADAPTIVE_KERNEL=1)
-add_definitions(-DUSE_ALS)
+
+
+add_definitions(-DUSE_ALS) 
+
 
 #------------------------------------------------------------------------
 
@@ -169,11 +172,11 @@ else()
     set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src/estimators/ICP.cpp src/Graph.cpp src/estimators/ALS_icp.cpp)
 endif()
 
-# message(STATUS "MAIN_SOURCE_FILES: ${MAIN_SOURCE_FILES}")
-# add_executable(mls_mapping src/main.cpp ${MAIN_SOURCE_FILES} src/DataHandler_arvo.cpp) 
-# target_link_libraries(mls_mapping ${TARGET_LINK_LIBS} ) 
-# add_dependencies(mls_mapping ${catkin_EXPORTED_TARGETS})
-# target_include_directories(mls_mapping PRIVATE ${PYTHON_INCLUDE_DIRS} ${MATPLOTLIB_CPP_INCLUDE_DIRS})
+message(STATUS "MAIN_SOURCE_FILES: ${MAIN_SOURCE_FILES}")
+add_executable(mls_mapping src/main.cpp ${MAIN_SOURCE_FILES} src/DataHandler_arvo.cpp) 
+target_link_libraries(mls_mapping ${TARGET_LINK_LIBS} ) 
+add_dependencies(mls_mapping ${catkin_EXPORTED_TARGETS})
+target_include_directories(mls_mapping PRIVATE ${PYTHON_INCLUDE_DIRS} ${MATPLOTLIB_CPP_INCLUDE_DIRS})
 
 
 
@@ -211,8 +214,8 @@ set(SOURCE_FILES_VUX ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean_D
 # set(SOURCE_FILES_VUX ${MAIN_SOURCE_FILES3} src2/VoxelHash.cpp) #remove the voxel hash from here
 
 
-add_executable(vux_main src2/main.cpp ${SOURCE_FILES_VUX})
-target_link_libraries(vux_main ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES})
+# add_executable(vux_main src2/main.cpp ${SOURCE_FILES_VUX})
+# target_link_libraries(vux_main ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES})
 
 
 #------------------------

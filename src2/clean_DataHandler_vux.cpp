@@ -21,7 +21,7 @@
 void DataHandler::publish_odometry(const ros::Publisher &pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = "world";
-    odomAftMapped.child_frame_id = "MLS";
+    odomAftMapped.child_frame_id = "MLS";    //"MLS" moves relative to "world"
     odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
     pubOdomAftMapped.publish(odomAftMapped);
@@ -99,6 +99,27 @@ void DataHandler::publish_frame_world(const ros::Publisher &pubLaserCloudFull_)
     laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
     laserCloudmsg.header.frame_id = "world";
     pubLaserCloudFull_.publish(laserCloudmsg);
+}
+
+void DataHandler::publish_frame_body(const ros::Publisher &pubLaserCloudFull_body)
+{
+    PointCloudXYZI::Ptr laserCloudFullRes(dense_pub_en ? feats_undistort : feats_down_body);
+    int size = laserCloudFullRes->points.size();
+    PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
+    tbb::parallel_for(tbb::blocked_range<int>(0, size), [&](tbb::blocked_range<int> r)
+                      {
+                    for (int i = r.begin(); i < r.end(); i++)
+                    //for (int i = 0; i < size; i++)
+                    {
+                        pointBodyLidarToIMU(&laserCloudFullRes->points[i],
+                                        &laserCloudWorld->points[i]);
+                    } });
+
+    sensor_msgs::PointCloud2 laserCloudmsg;
+    pcl::toROSMsg(*laserCloudWorld, laserCloudmsg);
+    laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
+    laserCloudmsg.header.frame_id = "world";// "MLS";
+    pubLaserCloudFull_body.publish(laserCloudmsg);
 }
 
 void DataHandler::publish_frame_debug(const ros::Publisher &pubLaserCloudFrame_, const PointCloudXYZI::Ptr &frame_)
@@ -253,6 +274,20 @@ void DataHandler::pointBodyToWorld(PointType const *const pi, PointType *const p
 #else
     V3D p_global(state_point.rot.matrix() * p_body + state_point.pos); // for icp the cloud already is in IMU frame
 #endif
+    po->x = p_global(0);
+    po->y = p_global(1);
+    po->z = p_global(2);
+    po->intensity = pi->intensity;
+    po->time = pi->time;
+}
+
+void DataHandler::pointBodyLidarToIMU(PointType const *const pi, PointType *const po)
+{
+    V3D p_body(pi->x, pi->y, pi->z);
+    V3D p_global(state_point.offset_R_L_I.matrix() * p_body + state_point.offset_T_L_I);
+
+    p_global = p_body;
+
     po->x = p_global(0);
     po->y = p_global(1);
     po->z = p_global(2);

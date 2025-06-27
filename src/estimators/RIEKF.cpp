@@ -387,6 +387,8 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, KD_TREE<Point
 void RIEKF::lidar_observation_model(residual_struct &ekfom_data, PointCloudXYZI::Ptr &feats_down_body,
                                     PointCloudXYZI::Ptr &map, std::vector<PointVector> &Nearest_Points, bool extrinsic_est)
 {
+
+    // std::cout<<"lidar_observation_model- extrinsic_est = "<<extrinsic_est<<std::endl;
     int feats_down_size = feats_down_body->points.size();
     laserCloudOri->clear();
     corr_normvect->clear();
@@ -639,10 +641,11 @@ void RIEKF::lidar_observation_model_tighly_fused(residual_struct &ekfom_data, Po
     corr_normvect->clear();
     // int p_mls = 0, p_als=0;
 
-#ifdef MP_EN
-    //omp_set_num_threads(MP_PROC_NUM);
-#pragma omp parallel for
-#endif
+    #ifdef MP_EN
+    //std::cout<<"run lidar_observation_model_tighly_fused in parallel..."<<std::endl;
+        //omp_set_num_threads(MP_PROC_NUM);
+    #pragma omp parallel for
+    #endif
     for (int i = 0; i < feats_down_size; i++)
     {
         PointType &point_body = feats_down_body->points[i];
@@ -660,6 +663,8 @@ void RIEKF::lidar_observation_model_tighly_fused(residual_struct &ekfom_data, Po
         std::vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
 
         auto &points_near = Nearest_Points[i];
+        std::vector<double> point_weights;
+
         if (ekfom_data.converge)
         {
             points_near.clear();
@@ -674,12 +679,13 @@ void RIEKF::lidar_observation_model_tighly_fused(residual_struct &ekfom_data, Po
                     for (int j = 0; j < pointSearchInd.size(); j++)
                     {
                         points_near.push_back(map_als->points[pointSearchInd[j]]);
+                        point_weights.push_back(100.);
                     }
                     // p_als++;
                 }
             }
 
-            //if (point_selected_surf[i] == false) // not valid neighbours has been found
+            // if (point_selected_surf[i] == false) // not valid neighbours has been found
             {
                 pointSearchInd.clear();
                 pointSearchSqDis.clear();
@@ -694,36 +700,40 @@ void RIEKF::lidar_observation_model_tighly_fused(residual_struct &ekfom_data, Po
                         {
                             points_near.push_back(map_mls->points[pointSearchInd[j]]);
                             // points_near.insert(points_near.begin(), map_mls->points[pointSearchInd[j]]);
+                            point_weights.push_back(1.);
                         }
                         // p_mls++;
                     }
                 }
             }
-        }
-        if (!point_selected_surf[i]) // src point does not have neighbours
-            continue;
+            //}
 
-        Eigen::Matrix<float, 4, 1> pabcd;
-        point_selected_surf[i] = false;
+            if (!point_selected_surf[i]) // src point does not have neighbours
+                continue;
 
-        if (ekf::esti_plane2(pabcd, points_near, .2f)) //.1f
-        {
-            float pd2 = pabcd(0) * point_world.x + pabcd(1) * point_world.y + pabcd(2) * point_world.z + pabcd(3);
-            // float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
-            float s = 1 - 0.9 * fabs(pd2) / point_body.intensity;
+            Eigen::Matrix<float, 4, 1> pabcd;
+            point_selected_surf[i] = false;
 
-            if (s > 0.9)
+            if (ekf::esti_plane_pca(pabcd, points_near, .03, point_weights, true))
+            // if (ekf::esti_plane2(pabcd, points_near, .2f)) //.1f
             {
-                point_selected_surf[i] = true;
-                normvec->points[i].x = pabcd(0);
-                normvec->points[i].y = pabcd(1);
-                normvec->points[i].z = pabcd(2);
-                normvec->points[i].intensity = pd2;
+                float pd2 = pabcd(0) * point_world.x + pabcd(1) * point_world.y + pabcd(2) * point_world.z + pabcd(3);
+                // float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
+                float s = 1 - 0.9 * fabs(pd2) / point_body.intensity;
+
+                if (s > 0.9)
+                {
+                    point_selected_surf[i] = true;
+                    normvec->points[i].x = pabcd(0);
+                    normvec->points[i].y = pabcd(1);
+                    normvec->points[i].z = pabcd(2);
+                    normvec->points[i].intensity = pd2;
+                }
             }
         }
     }
 
-    //std::cout<<"p_mls:"<<p_mls<<", p_als:"<<p_als<<std::endl;
+    // std::cout<<"p_mls:"<<p_mls<<", p_als:"<<p_als<<std::endl;
 
     int effct_feat_num = 0;
     for (int i = 0; i < feats_down_size; i++)
@@ -736,7 +746,7 @@ void RIEKF::lidar_observation_model_tighly_fused(residual_struct &ekfom_data, Po
         }
     }
 
-    //std::cout<<"effct_feat_num: "<<effct_feat_num<<"/"<<feats_down_size<<std::endl;
+    //std::cout << "effct_feat_num: " << effct_feat_num << "/" << feats_down_size << std::endl;
     if (effct_feat_num < 5)
     {
         ekfom_data.valid = false;
@@ -808,7 +818,7 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
     }
 
     localKdTree_map->setInputCloud(map_mls);
-    //localKdTree_map_als->setInputCloud(map_als);
+    // localKdTree_map_als->setInputCloud(map_als);
 
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
@@ -891,13 +901,12 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
         dx_new = boxminus(x_, x_propagated);
 
         const auto &H = status.h_x; // [m x 12] Jacobian
-        int m = H.rows();    // number of measurements
-        
+        int m = H.rows();           // number of measurements
+
         std::vector<double> R_vec(m, 0.05 * 0.05); // 5 cm variance for all
         Eigen::VectorXd inv_sqrt_R(m);
         for (int i = 0; i < m; ++i)
             inv_sqrt_R(i) = 1.0 / std::sqrt(R_vec[i]);
-
 
         // Weighted HᵀH with per-measurement variances
         cov HTH = cov::Zero();
@@ -927,8 +936,7 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
         KH.block(0, 0, state_size, noise_size) = K * H;
 
         vectorized_state dx_ = K * status.innovation + (KH - cov::Identity()) * dx_new;
-        x_ = boxplus(x_, dx_); 
-        
+        x_ = boxplus(x_, dx_);
 
         status.converge = true;
         for (int j = 0; j < state_size; j++)
@@ -962,6 +970,8 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
 
 void RIEKF::update(const V3D &gnss_position, const V3D &cov_pos_, int maximum_iter, bool global_error, M3D R)
 {
+    std::cout << "UPdate EKF with gps..." << std::endl;
+
     const int gps_dim = 3;
 
     residual_struct status;

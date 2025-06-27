@@ -284,12 +284,14 @@ public:
     bool sync_packages(MeasureGroup &meas);
     bool sync_packages_vux(MeasureGroup &meas);
     void pointBodyToWorld(PointType const *const pi, PointType *const po);
-
+    void pointBodyLidarToIMU(PointType const *const pi, PointType *const po);
+    
     void local_map_update();
     void local_map_update_from_ALS(const std::vector<PointVector> &Nearest_Points);
     void RemovePointsFarFromLocation();
 
     void publish_frame_world(const ros::Publisher &pubLaserCloudFull_);
+    void publish_frame_body(const ros::Publisher &pubLaserCloudFull_);
     void publish_frame_debug(const ros::Publisher &pubLaserCloudFrame_, const PointCloudXYZI::Ptr &frame_);
     void publish_map(const ros::Publisher &pubLaserCloudMap);
     void publish_odometry(const ros::Publisher &pubOdomAftMapped);

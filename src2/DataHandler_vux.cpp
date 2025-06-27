@@ -658,7 +658,7 @@ Sophus::SE3 averageSE3Log(const std::vector<Eigen::Vector6d> &logs)
     return Sophus::SE3::exp(mean);
 }
 
-
+//#include "hand_eye.hpp"
 
 void DataHandler::Subscribe()
 {
@@ -1190,7 +1190,7 @@ void DataHandler::Subscribe()
     Sophus::SE3 prev_pose, optimized_pose;
 
     std::vector<Eigen::Vector6d> gnss_lidar_extrinsic_;
-    std::vector<Sophus::SE3> lidar_poses, gnss_imu_poses;
+    std::vector<Sophus::SE3> lidar_poses, gnss_imu_poses, gnss_imu_poses_original;
 
     Eigen::Matrix4d T_lidar2gnss;
     T_lidar2gnss << 0.0131683606, -0.9998577263, 0.0105414145, 0.0154123047,
@@ -2161,18 +2161,13 @@ void DataHandler::Subscribe()
                     }
                     #endif
 
-                    if (false) // this will find the extrinsics between the lidar and the gnss poses
+                    if (true) // this will find the extrinsics between the lidar and the gnss poses
                     {
-                        if (gnss_lidar_extrinsic_.size() < 200)
+                        if (gnss_lidar_extrinsic_.size() < 50 ) //200
                         {
                             // gnss-imu transform from global als to local mls frame
                             auto GNSS_IMU_rotated_to_mls = als2mls * gnss_vux_data[tmp_index].se3;
 
-                            // V3D gnss_pos = als2mls * gnss_obj->curr_enu; //trnasformed to local frame
-                            // gnss_pos[2] = gnss_obj->carthesian[2]; //take the z from carthesian
-                            // GNSS_IMU_rotated_to_mls = Sophus::SE3(state_point.rot, gnss_pos);
-
-                            
 
                             nav_msgs::Odometry pose_msg;
                             pose_msg.header.frame_id = "world";
@@ -2193,6 +2188,7 @@ void DataHandler::Subscribe()
 
                             lidar_poses.push_back(curr_mls);
                             gnss_imu_poses.push_back(GNSS_IMU_rotated_to_mls);
+                            gnss_imu_poses_original.push_back(gnss_vux_data[tmp_index].se3);
 
                             // from lidar to mls
                             auto lidar2gnss_extrinsic = curr_mls.inverse() * GNSS_IMU_rotated_to_mls;
@@ -2216,6 +2212,84 @@ void DataHandler::Subscribe()
                                       << lidar2gnss_extrinsic.matrix() << std::endl;
 
                             std::cout << "Finished - compare the results press enter..." << std::endl;
+                            
+
+                            std::vector<Sophus::SE3> A_rel, B_rel;
+                            for(int i=1;i<lidar_poses.size();i++)
+                            {
+                                auto Ai = lidar_poses[i-1].inverse() * lidar_poses[i];
+                                auto Bi = gnss_imu_poses[i-1].inverse() * gnss_imu_poses[i];
+
+                                A_rel.push_back(Ai);
+                                B_rel.push_back(Bi);
+                            }
+
+                            auto X_est = handEyeGaussNewton(A_rel, B_rel);
+
+                            A_rel.clear();
+                            B_rel.clear();
+                            for(int i=1;i<lidar_poses.size();i++)
+                            {
+                                auto Ai = lidar_poses[i-1].inverse() * lidar_poses[i];
+                                auto Bi = gnss_imu_poses_original[i-1].inverse() * gnss_imu_poses_original[i];
+
+                                A_rel.push_back(Ai);
+                                B_rel.push_back(Bi);
+                            }
+
+                            auto X_est_original = handEyeGaussNewton(A_rel, B_rel);
+
+                            std::cout<<" handEyeGaussNewton(lidar_poses, gnss_imu_poses): \n"<<X_est.matrix()<<std::endl;
+                            std::cout<<" handEyeGaussNewton(lidar_poses, gnss_imu_poses_original): \n"<<X_est_original.matrix()<<std::endl;
+
+                            {
+                                auto X_gt = Sophus::SE3(
+                                    Eigen::AngleAxisd(0.2, Eigen::Vector3d::UnitZ()) *
+                                    Eigen::AngleAxisd(0.1, Eigen::Vector3d::UnitY()),
+                                    Eigen::Vector3d(1.5, 2.1, -1.2)
+                                );
+
+                                A_rel.clear();
+                                B_rel.clear();
+
+                                for (int i = 1; i < lidar_poses.size(); i++) 
+                                {
+                                    auto Ai = lidar_poses[i-1].inverse() * lidar_poses[i];
+                                    
+                                    auto Bi = X_gt.inverse() * Ai * X_gt;
+
+                                    A_rel.push_back(Ai);
+                                    B_rel.push_back(Bi);
+
+                                    //B.push_back(X_gt.inverse() * lidar_poses[i-1] * X_gt);
+                                }
+                                auto X_est = handEyeGaussNewton(A_rel, B_rel);
+                                std::cout<<" test last: \n"<<X_est.matrix()<<std::endl;
+
+                                A_rel.clear();
+                                B_rel.clear();
+
+                                for (int i = 1; i < lidar_poses.size(); i++) 
+                                {
+                                    auto Ai = lidar_poses[i-1].inverse() * lidar_poses[i];
+                                    
+                                    auto B_pose0 = X_gt.inverse() * lidar_poses[i-1] * X_gt; 
+                                    auto B_pose1 = X_gt.inverse() * lidar_poses[i] * X_gt; 
+
+                                    auto Bi = B_pose0.inverse() * B_pose1;
+
+                                    A_rel.push_back(Ai);
+                                    B_rel.push_back(Bi);
+
+                                    //B.push_back(X_gt.inverse() * lidar_poses[i-1] * X_gt);
+                                }
+                                auto X_est2 = handEyeGaussNewton(A_rel, B_rel);
+                                std::cout<<" test last2 : \n"<<X_est2.matrix()<<std::endl;
+
+                            }
+
+                            test2();
+
                             std::cin.get();
 
                             auto GNSS_IMU_rotated_to_mls = als2mls * gnss_vux_data[tmp_index].se3;
@@ -2238,11 +2312,13 @@ void DataHandler::Subscribe()
                             pose_msg.pose.pose.orientation.w = q.w();
 
                             pose_pub2.publish(pose_msg);
+
+                            throw std::runtime_error("Finished the extrinsic estimation");
                         }
                         
                         continue;
                     }
-
+                    
                     while (readVUX.next(next_line))
                     {
                         if (flg_exit || !ros::ok())

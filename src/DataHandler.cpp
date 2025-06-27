@@ -7,9 +7,9 @@
 #include "PoseGraph.hpp"
 #endif
 
-#ifdef USE_ALS
+//#ifdef USE_ALS
 #include "ALS.hpp"
-#endif
+//#endif
 
 void DataHandler::publish_odometry(const ros::Publisher &pubOdomAftMapped)
 {
@@ -167,13 +167,16 @@ void DataHandler::local_map_update()
     *laserCloudSurfMap += *feats_down_world;
 
     pcl::PointCloud<PointType>::Ptr tmpSurf(new pcl::PointCloud<PointType>());
+    
+    //double threshold = 75;
+    double threshold = 150;
 
-    double x_min = state_point.pos.x() - 75;
-    double y_min = state_point.pos.y() - 75;
-    double z_min = state_point.pos.z() - 75;
-    double x_max = state_point.pos.x() + 75;
-    double y_max = state_point.pos.y() + 75;
-    double z_max = state_point.pos.z() + 75;
+    double x_min = state_point.pos.x() - threshold;
+    double y_min = state_point.pos.y() - threshold;
+    double z_min = state_point.pos.z() - threshold;
+    double x_max = state_point.pos.x() + threshold;
+    double y_max = state_point.pos.y() + threshold;
+    double z_max = state_point.pos.z() + threshold;
 
     // ROS_INFO("size : %f,%f,%f,%f,%f,%f", x_min, y_min, z_min,x_max, y_max, z_max);
     cropBoxFilter.setMin(Eigen::Vector4f(x_min, y_min, z_min, 1));
@@ -399,6 +402,7 @@ void DataHandler::msg2cloud(const sensor_msgs::PointCloud2::ConstPtr &msg, Point
             int n = pl_orig.points.size();
             pcl_out->resize(n / point_step);
             first_point_time = pl_orig.points[0].timestamp;
+            //std::cout<<"first_point_time:"<<first_point_time<<std::endl;
             index = 0;
             for (int i = 0; i < n; i += point_step)
             {
@@ -704,11 +708,11 @@ void DataHandler::BagHandler()
             //continue;
 
             std::cout << "scan_id:" << scan_id << std::endl;
-            if (scan_id > 1310) // 1400
-            {
-                std::cout << "Stop here... enough data" << std::endl;
-                break;
-            }
+            // if (scan_id > 1310) // 1400
+            // {
+            //     std::cout << "Stop here... enough data" << std::endl;
+            //     break;
+            // }
 
             std::cout<<"scan_id:"<<scan_id<<", travelled_distance:"<<travelled_distance<<std::endl;
 
@@ -743,9 +747,10 @@ void DataHandler::BagHandler()
                 continue;
             }
             state_point = estimator_.get_x();
-
-            pos_lid = state_point.pos + state_point.rot.matrix() * state_point.offset_T_L_I;
+            pos_lid = state_point.pos + state_point.offset_R_L_I.matrix() * state_point.offset_T_L_I;
             flg_EKF_inited = (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? false : true;
+
+            #define USE_EKF
 
 #ifdef USE_EKF
             downSizeFilterSurf.setInputCloud(feats_undistort);
@@ -826,7 +831,7 @@ void DataHandler::BagHandler()
             travelled_distance += (state_point.pos - prev_t).norm();
             prev_t = state_point.pos;
 
-            pos_lid = state_point.pos + state_point.rot.matrix() * state_point.offset_T_L_I;
+            pos_lid = state_point.pos + state_point.offset_R_L_I.matrix() * state_point.offset_T_L_I;
             RemovePointsFarFromLocation();
 
             // get and publish the GNSS pose-----------------------------------------
@@ -840,9 +845,15 @@ void DataHandler::BagHandler()
             if (gnss_obj->GNSS_extrinsic_init && use_gnss) // if gnss aligned
             {
                 const bool global_error = false; // set this true for global error of gps
-                // auto gps_cov_ = V3D(GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR);
-                // auto gps_cov_ = gnss_obj->gps_cov;
-                auto gps_cov_ = Eigen::Vector3d(GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR);
+                
+                V3D gps_cov_ = V3D(GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR);
+                //std::cout<<"\ngps_cov_ init :"<<gps_cov_.transpose()<<std::endl;
+                
+                //gps_cov_ = gnss_obj->gps_cov;
+                //std::cout<<"gps_cov_ given:"<<gps_cov_.transpose()<<"\n"<<std::endl;
+
+                //V3D gps_cov_ = V3D(.0001, .0001, .02);
+
                 if (global_error)
                 {
                     const V3D &gnss_in_enu = gnss_obj->carthesian;
@@ -855,6 +866,8 @@ void DataHandler::BagHandler()
                 }
             }
 
+            if(false) //just for now, remove later, test without als 
+            {
 #ifdef USE_ALS
             if (!als_obj->refine_als)
             {                                      // not initialized
@@ -915,6 +928,7 @@ void DataHandler::BagHandler()
                 publish_map(pubLaserALSMap);
             }
 #endif
+        }
 
             // Update the local map--------------------------------------------------
             feats_down_world->resize(feats_down_size);
@@ -1120,6 +1134,10 @@ void DataHandler::BagHandler()
                 pcd_index++;
             }
 #endif
+
+            //state_point = estimator_.get_x();
+            //std::cout<<"extrinsic_est_en:"<<extrinsic_est_en<<std::endl;
+            //std::cout<<"\n Extrinsics R:\n"<<state_point.offset_R_L_I.matrix()<<"\nt:"<<state_point.offset_T_L_I.transpose()<<std::endl;
 
             double t11 = omp_get_wtime();
             std::cout << "Mapping time(ms):  " << (t11 - t00) * 1000 << ", feats_down_size: " << feats_down_size << ", lidar_end_time:" << lidar_end_time << std::endl;

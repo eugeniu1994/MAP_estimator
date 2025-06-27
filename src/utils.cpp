@@ -316,6 +316,23 @@ void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<VUX_PointType>::Ptr &
                       });
 }
 
+void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<PointType>::Ptr &cloud)
+{
+    tbb::parallel_for(tbb::blocked_range<int>(0, cloud->size()),
+                      [&](tbb::blocked_range<int> r)
+                      {
+                          for (int i = r.begin(); i < r.end(); ++i)
+                          {
+                              V3D p_src(cloud->points[i].x, cloud->points[i].y, cloud->points[i].z);
+                              V3D p_transformed = T * p_src;
+
+                              cloud->points[i].x = p_transformed.x();
+                              cloud->points[i].y = p_transformed.y();
+                              cloud->points[i].z = p_transformed.z();
+                          }
+                      });
+}
+
 void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D> &eigen_cloud)
 {
     // Reserve space for points to avoid reallocation

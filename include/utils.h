@@ -186,7 +186,7 @@ namespace ekf
     inline bool esti_plane2(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &points, const T &threshold)
     {
         const size_t N = points.size();
-        //std::cout<<"N:"<<N<<std::endl;
+        // std::cout<<"N:"<<N<<std::endl;
         if (N < 3)
             return false; // Need at least 3 points to define a plane
 
@@ -228,132 +228,132 @@ namespace ekf
         return true;
     }
 
-    // TODO - to be  tested in time and accuracy
-
-    /*
-    PCA method---------------------------------------------------
     template <typename T>
-inline bool esti_plane_pca(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector<T> &points)
-{
-    if (points.size() < 3) return false; // Need at least 3 points for plane fitting
-
-    // Compute the centroid
-    Eigen::Matrix<T, 3, 1> centroid(0, 0, 0);
-    for (const auto &p : points)
+    inline bool esti_plane_pca(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &points, const double &threshold, const std::vector<double> &point_weights, bool weighted_mean = false)
     {
-        centroid(0) += p.x;
-        centroid(1) += p.y;
-        centroid(2) += p.z;
-    }
-    centroid /= static_cast<T>(points.size());
+        const size_t neighbours = points.size();
+        // std::cout<<"N:"<<N<<std::endl;
+        if (neighbours < 3)
+            return false; // Need at least 3 points to define a plane
 
-    // Compute covariance matrix
-    Eigen::Matrix<T, 3, 3> covariance;
-    covariance.setZero();
-    for (const auto &p : points)
-    {
-        Eigen::Matrix<T, 3, 1> diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
-        covariance += diff * diff.transpose();
-    }
-    covariance /= static_cast<T>(points.size());
+        // Compute the centroid
+        V3D centroid(0, 0, 0);
+        // Compute covariance matrix
+        M3D covariance;
+        covariance.setZero();
 
-    // Compute Eigenvalues and Eigenvectors
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<T, 3, 3>> solver(covariance);
-    Eigen::Matrix<T, 3, 1> normal = solver.eigenvectors().col(0); // Smallest eigenvector
+        // Regularize
+        //  double lambda_reg = 1e-6;
+        //  covariance = covariance + lambda_reg * Eye3d;
 
-    // Normalize the normal
-    normal.normalize();
+        if (weighted_mean)
+        {
+            // if (weighted_mean && point_weights.size() < neighbours) {
+            //     std::cerr << "Error: point_weights has fewer elements than points." << std::endl;
+            //     std::cout<<"neighbours:"<<neighbours<<", point_weights.size():"<<point_weights.size()<<std::endl;
+            //     throw std::runtime_error("Error: point_weights has fewer elements than points.");
+            //     return false;
+            // }
 
-    // Assign to result
-    pca_result(0) = normal(0);
-    pca_result(1) = normal(1);
-    pca_result(2) = normal(2);
-    pca_result(3) = -normal.dot(centroid); // Plane equation D = -N . Centroid
+            //std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
+            
+            double weight_sum = 0.0;
+            
+            // Compute weighted centroid
+            for (int j = 0; j < neighbours; j++)
+            {
+                const double &w = point_weights[j];
 
-    return true;
-}
+                centroid(0) += w*points[j].x;
+                centroid(1) += w*points[j].y;
+                centroid(2) += w*points[j].z;
 
-// Function to estimate the plane from 3 points------------------------------------------------
-template <typename T, typename PointType>
-bool estimatePlaneFrom3Points(Eigen::Matrix<T, 4, 1>& plane_coefficients, const PointType& p1, const PointType& p2, const PointType& p3) {
-    Eigen::Matrix<T, 3, 1> v1 = {p2.x - p1.x, p2.y - p1.y, p2.z - p1.z};
-    Eigen::Matrix<T, 3, 1> v2 = {p3.x - p1.x, p3.y - p1.y, p3.z - p1.z};
-    Eigen::Matrix<T, 3, 1> normal = v1.cross(v2);
-
-    T norm = normal.norm();
-    if (norm < std::numeric_limits<T>::epsilon()) {
-        // Points are collinear
-        return false;
-    }
-
-    // Normalize the normal vector
-    normal /= norm;
-
-    // Plane equation: ax + by + cz + d = 0
-    plane_coefficients(0) = normal(0);
-    plane_coefficients(1) = normal(1);
-    plane_coefficients(2) = normal(2);
-    plane_coefficients(3) = -normal.dot(Eigen::Matrix<T, 3, 1>{p1.x, p1.y, p1.z});
-
-    return true;
-}
-
-// Function to estimate the best normal from all combinations of 3 points ---------------------------------------
-template <typename T, typename PointType>
-bool estimateBestNormal(Eigen::Matrix<T, 4, 1>& best_plane_coefficients, const std::vector<PointType>& neighbors, T threshold) {
-    const int num_neighbors = neighbors.size();
-    if (num_neighbors < 3) {
-        // Not enough neighbors to form a plane
-        return false;
-    }
-
-    // Variables to store the best plane
-    T best_error = std::numeric_limits<T>::max();
-    Eigen::Matrix<T, 4, 1> current_plane_coefficients;
-
-    // Iterate over all combinations of 3 points
-    for (int i = 0; i < num_neighbors - 2; ++i) {
-        for (int j = i + 1; j < num_neighbors - 1; ++j) {
-            for (int k = j + 1; k < num_neighbors; ++k) {
-                // Estimate the plane from the current combination of 3 points
-                if (!estimatePlaneFrom3Points(current_plane_coefficients, neighbors[i], neighbors[j], neighbors[k])) {
-                    continue; // Skip collinear points
-                }
-
-                // Calculate the error (sum of squared distances) for the current plane
-                T error = 0;
-                for (const auto& point : neighbors) {
-                    T distance = std::abs(current_plane_coefficients(0) * point.x +
-                                          current_plane_coefficients(1) * point.y +
-                                          current_plane_coefficients(2) * point.z +
-                                          current_plane_coefficients(3));
-                    error += distance * distance;
-                }
-
-                // Update the best plane if the current error is smaller
-                if (error < best_error) {
-                    best_error = error;
-                    best_plane_coefficients = current_plane_coefficients;
-                }
+                weight_sum += w;
             }
-        }
-    }
+            //std::cout<<"weight_sum:"<<weight_sum<<std::endl;
+            centroid /= weight_sum;
 
-    // Check if the best plane fits all points within the threshold
-    for (const auto& point : neighbors) {
-        T distance = std::abs(best_plane_coefficients(0) * point.x +
-                      best_plane_coefficients(1) * point.y +
-                      best_plane_coefficients(2) * point.z +
-                      best_plane_coefficients(3));
-        if (distance > threshold) {
+            // Compute weighted covariance matrix
+            for (int j = 0; j < neighbours; j++)
+            {
+                const double &w = point_weights[j];
+                const auto &p = points[j];
+                V3D diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
+                covariance += w * diff * diff.transpose();
+            }
+            covariance /= weight_sum;
+        }
+        else
+        {
+            for (int j = 0; j < neighbours; j++)
+            {
+                centroid(0) += points[j].x;
+                centroid(1) += points[j].y;
+                centroid(2) += points[j].z;
+            }
+            centroid /= neighbours;
+
+            for (int j = 0; j < neighbours; j++)
+            {
+                const auto &p = points[j];
+                V3D diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
+                covariance += diff * diff.transpose();
+            }
+            covariance /= neighbours;
+        }
+
+        // Compute Eigenvalues and Eigenvectors
+        Eigen::SelfAdjointEigenSolver<M3D> solver(covariance);
+
+        if (solver.info() != Eigen::Success) {
+            std::cerr << "Eigen solver failed!" << std::endl;
+            throw std::runtime_error("Error: Eigen solver failed!");
             return false;
         }
+
+
+
+        V3D norm = solver.eigenvectors().col(0); // Smallest eigenvector
+        norm.normalize();
+
+        // Compute plane offset: d = - (n * centroid)
+        double d = -norm.dot(centroid);
+
+        // Compute eigenvalue ratios to assess planarity
+        const auto &eigenvalues = solver.eigenvalues();
+        double lambda0 = eigenvalues(0); // smallest
+        double lambda1 = eigenvalues(1);
+        double lambda2 = eigenvalues(2);
+
+        double curvature = lambda0 / (lambda0 + lambda1 + lambda2);
+
+        // Colinear: if the two smallest eigenvalues are close to zero
+        // if ((lambda1 / lambda2) < 1e-3)
+        // {
+        //     std::cerr << "Colinear structure detected. Skipping...\n";
+        //     std::cout<<"eigenvalues:"<<eigenvalues<<std::endl;
+        //     throw std::runtime_error("Colinear structure detected. Skipping ...");
+        //     continue;
+        // }
+
+        // this can be done in the visualization
+        //  Flip normal to point consistently toward viewpoint
+        //  V3D point_on_the_plane(reference_localMap_cloud->points[point_idx[0]].x, reference_localMap_cloud->points[point_idx[0]].y, reference_localMap_cloud->points[point_idx[0]].z);
+        //  if (norm.dot(T.translation() - point_on_the_plane) < 0)
+        //  {
+        //      norm = -norm;
+        //  }
+
+        if (curvature > .0001 && curvature <= threshold)
+        {
+            pca_result.template head<3>() = norm.template cast<T>();
+            pca_result(3) = static_cast<T>(d);
+
+            return true;
+        }
+
+        return false;
     }
-
-    return true;
-}
-    */
-
 };
 
 namespace gnss
@@ -482,5 +482,7 @@ std::vector<double> NormalizeTimestamps(const std::vector<double> &timestamps);
 Sophus::SE3 registerClouds(pcl::PointCloud<PointType>::Ptr &src, pcl::PointCloud<PointType>::Ptr &tgt, pcl::PointCloud<PointType>::Ptr &cloud_aligned);
 
 void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<VUX_PointType>::Ptr &cloud);
+
+void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<PointType>::Ptr &cloud);
 
 #endif
