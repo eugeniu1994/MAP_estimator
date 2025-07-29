@@ -358,6 +358,7 @@ def plot_trajectory(xyz_enu, etrs_tm35fin = 'EPSG:3067'):
 
     plt.draw()
 
+    return fig, axis
 
 plot_trajectory(xyz_enu = traj_points_ENU, etrs_tm35fin = 'EPSG:3067')
 

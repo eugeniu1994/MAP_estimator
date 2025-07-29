@@ -50,28 +50,209 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import matplotlib
-matplotlib.rc('xtick', labelsize=14)
-matplotlib.rc('ytick', labelsize=14)
-
 from scipy.stats import linregress
 
-font = 16
+#-----------------
+import geopandas as gpd
+import contextily as ctx
+from shapely.geometry import Point, LineString
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import matplotlib.image as mpimg
+from scipy.ndimage import rotate
+# Define custom tile provider
+
+from xyzservices import TileProvider
+from PIL import Image
+
+font = 14
+
+matplotlib.rc('xtick', labelsize=font)
+matplotlib.rc('ytick', labelsize=font)
 plt.rcParams.update({'font.size': font})
 plt.rc('axes', titlesize=font)     # Set the font size of the title
-#plt.rc('axes', labelsize=font)     # Set the font size of the x and y labels
-#plt.rc('xtick', labelsize=font)    # Set the font size of the x tick labels
-#plt.rc('ytick', labelsize=font)    # Set the font size of the y tick labels
+plt.rc('axes', labelsize=font)     # Set the font size of the x and y labels
+plt.rc('xtick', labelsize=font)    # Set the font size of the x tick labels
+plt.rc('ytick', labelsize=font)    # Set the font size of the y tick labels
 plt.rc('legend', fontsize=font)    # Set the font size of the legend
-#plt.rc('font', size=font)          # Set the general font size'''
+plt.rc('font', size=font)          # Set the general font size'''
 
 markersize = 8
 sns.set_style("whitegrid")
 #----------------------------------------------------------------
 
-bbox_to_anchor=(0.5, -0.1)
+translation_ENU_to_origin = np.array([4525805.18109165318310260773, 5070965.88124799355864524841,  114072.22082747340027708560])
+rotation_ENU_to_origin = np.array([[-0.78386212744029792887, -0.62091317757072628236,  0.00519529438949398702],
+                                    [0.62058202788821892337, -0.78367126767620609584, -0.02715310076057271885],
+                                    [0.02093112101431114647, -0.01806018100107483967,  0.99961778597386541367]])
+
+R_origin_to_ENU = rotation_ENU_to_origin.T
+t_origin_to_ENU = -R_origin_to_ENU @ translation_ENU_to_origin
+
+
+bbox_to_anchor=(0.5, -0.12)
+ncol = 3
+def plot_trajectory_(xyz_enu, etrs_tm35fin = 'EPSG:3067', epsg = 3067):
+    start = xyz_enu[0]
+    print('start:',start)
+    end = xyz_enu[len(xyz_enu) - 1]
+    # Create a GeoDataFrame with the EVO location point in the ETRS-TM35FIN projection
+
+    middle_index = len(xyz_enu) // 2
+    middle_point = xyz_enu[middle_index]
+
+    evo_point = gpd.GeoDataFrame(
+        #{'geometry': [Point(start[0],start[1])]},
+        {'geometry': [Point(middle_point[0],middle_point[1])]},
+        crs=etrs_tm35fin
+    )
+
+    evo_area = evo_point.buffer(500)  # 500 meters 
+
+    trajectory_points_etrstm35fin = xyz_enu[::30,:2]
+
+    # Create GeoDataFrame from the points (ETRS-TM35FIN)
+    trajectory_gdf = gpd.GeoDataFrame(
+        {'geometry': [Point(x, y) for x, y in trajectory_points_etrstm35fin]},
+        crs=etrs_tm35fin
+    )
+
+    # Reproject the trajectory back to Web Mercator (EPSG:3857) for plotting with the basemap
+    trajectory_gdf_mercator = trajectory_gdf.to_crs(epsg=epsg)  
+
+    fig, axis = plt.subplots(figsize=(20, 20))
+
+    # Plot the area boundary
+    evo_area.boundary.plot(ax=axis, color='gray', linewidth=0)
+    # Plot the trajectory points in Web Mercator (projected for plotting)
+    trajectory_gdf_mercator.plot(ax=axis, color='red', marker='o', markersize=12, label='Trajectory', zorder=10)
+
+    #ctx.add_basemap(axaxis, source=ctx.providers.Esri.WorldImagery, crs=etrs_tm35fin)
+    #ctx.add_basemap(axis, source=ctx.providers.OpenStreetMap.Mapnik, crs=etrs_tm35fin)
+
+    
+    google_sat = TileProvider(
+        name="Google Satellite",
+        url="http://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        attribution="Google",
+    )
+    ctx.add_basemap(axis, source=google_sat, crs=trajectory_gdf.crs)
+
+    axis.set_xlabel('East (m)')
+    axis.set_ylabel('North (m)')
+    plt.legend()
+    plt.grid(False)
+
+    # Set the formatter for x and y axis to avoid scientific notation
+    axis.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: '{:.0f}'.format(x)))
+    axis.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0f}'.format(y)))
+
+    # Specify the data coordinates where to place the image
+    xy = (end[0]-5, end[1])
+
+    image = mpimg.imread('/home/eugeniu/x_vux_mls_als_paper/car_small.png')  # Use a small PNG file
+    image = rotate(image, angle=95, reshape=True)
+    imagebox = OffsetImage(image, zoom=.2)  # Adjust zoom to make the image smaller or larger
+
+    ab = AnnotationBbox(imagebox, xy,
+                        xycoords='data',
+                        frameon=False,
+                        zorder=10)  # No frame around image
+
+    axis.add_artist(ab)
+
+    return fig, axis
+
+def plot_trajectory(xyz_enu, other_traj = [], other_labels=[], etrs_tm35fin = 'EPSG:3067', epsg = 3067):
+    start = xyz_enu[0]
+    print('start:',start)
+    end = xyz_enu[len(xyz_enu) - 1]
+    # Create a GeoDataFrame with the EVO location point in the ETRS-TM35FIN projection
+
+    middle_index = len(xyz_enu) // 2
+    middle_point = xyz_enu[middle_index]
+
+    evo_point = gpd.GeoDataFrame(
+        #{'geometry': [Point(start[0],start[1])]},
+        {'geometry': [Point(middle_point[0],middle_point[1])]},
+        crs=etrs_tm35fin
+    )
+
+    evo_area = evo_point.buffer(500)  # 500 meters 
+
+    trajectory_points_etrstm35fin = xyz_enu[::30,:2]
+
+    # Create GeoDataFrame from the points (ETRS-TM35FIN)
+    trajectory_gdf = gpd.GeoDataFrame(
+        {'geometry': [Point(x, y) for x, y in trajectory_points_etrstm35fin]},
+        crs=etrs_tm35fin
+    )
+
+    # Reproject the trajectory back to Web Mercator (EPSG:3857) for plotting with the basemap
+    trajectory_gdf_mercator = trajectory_gdf.to_crs(epsg=epsg)  
+
+    fig, axis = plt.subplots(figsize=(20, 20))
+
+    # Plot the area boundary
+    evo_area.boundary.plot(ax=axis, color='gray', linewidth=0)
+    # Plot the trajectory points in Web Mercator (projected for plotting)
+    trajectory_gdf_mercator.plot(ax=axis, color='red', marker='o', markersize=12, label='GT', zorder=10)
+
+    colors = ["#1f77b4",  
+            '#ff7f0e',   
+            "#EFD700",  
+            "#04f810"]  
+    
+    markers = ['o','^','D','d']
+    for i in range(len(other_traj)):
+        traj = other_traj[i]
+        l = other_labels[i]
+
+        points_etrstm35fin = traj[::10,:2]
+        trajectory_gdf = gpd.GeoDataFrame(
+            {'geometry': [Point(x, y) for x, y in points_etrstm35fin]},
+            crs=etrs_tm35fin
+        )
+        trajectory_gdf_mercator = trajectory_gdf.to_crs(epsg=epsg)
+        trajectory_gdf_mercator.plot(ax=axis, color=colors[i], marker=markers[i], markersize=8, alpha=.7, label=l, zorder=11)
+
+
+    #ctx.add_basemap(axaxis, source=ctx.providers.Esri.WorldImagery, crs=etrs_tm35fin)
+    #ctx.add_basemap(axis, source=ctx.providers.OpenStreetMap.Mapnik, crs=etrs_tm35fin)
+
+    google_sat = TileProvider(
+        name="Google Satellite",
+        url="http://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        attribution="Google",
+    )
+    ctx.add_basemap(axis, source=google_sat, crs=trajectory_gdf.crs)
+
+    axis.set_xlabel('East (m)')
+    axis.set_ylabel('North (m)')
+    plt.legend()
+    plt.grid(False)
+
+    # Set the formatter for x and y axis to avoid scientific notation
+    axis.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: '{:.0f}'.format(x)))
+    axis.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0f}'.format(y)))
+
+    # Specify the data coordinates where to place the image
+    xy = (end[0]-5, end[1])
+
+    image = mpimg.imread('/home/eugeniu/x_vux_mls_als_paper/car_small.png')  # Use a small PNG file
+    image = rotate(image, angle=95, reshape=True)
+    imagebox = OffsetImage(image, zoom=.2)  # Adjust zoom to make the image smaller or larger
+
+    ab = AnnotationBbox(imagebox, xy,
+                        xycoords='data',
+                        frameon=False,
+                        zorder=10)  # No frame around image
+
+    axis.add_artist(ab)
+
+    return fig, axis
 
 class TrajectoryReader(object):
-    def __init__(self, path_gt, path_model, model_name = ''):
+    def __init__(self, path_gt, path_model, model_name = '', align = True):
         self.path_gt = path_gt
         self.path_model = path_model
         self.model_name = model_name
@@ -81,11 +262,35 @@ class TrajectoryReader(object):
 
         self.traj_gt, self.traj_model = sync.associate_trajectories(traj_gt, traj_model, max_diff)
 
-        #self.traj_model.align(self.traj_gt, correct_scale=False, correct_only_scale=False, n=-1) 
-        #self.traj_model.align_origin(traj_ref=self.traj_gt)
+        if align:
+            self.traj_model.align(self.traj_gt, correct_scale=False, correct_only_scale=False, n=-1) 
+            #self.traj_model.align_origin(traj_ref=self.traj_gt)
         
-        print("GT:", traj_gt.positions_xyz.shape)
-        print("Model:", traj_model.positions_xyz.shape)
+        self.T_origin_to_ENU = np.eye(4)
+        self.T_origin_to_ENU[:3, :3] = R_origin_to_ENU
+        self.T_origin_to_ENU[:3, 3] = t_origin_to_ENU
+
+        self.traj_gt = self.transform_trajectory_to_ENU(self.traj_gt, self.T_origin_to_ENU)
+        self.traj_model = self.transform_trajectory_to_ENU(self.traj_model, self.T_origin_to_ENU)
+
+        print("GT:", self.traj_gt.positions_xyz.shape)
+        print("Model:", self.traj_model.positions_xyz.shape)
+
+    def transform_trajectory_to_ENU(self, traj: PoseTrajectory3D, T_origin_to_ENU: np.ndarray) -> PoseTrajectory3D:
+        new_poses_se3 = []
+        for pose in traj.poses_se3:
+            T_local = pose
+            T_enu = T_origin_to_ENU @ T_local
+            new_poses_se3.append(T_enu)
+
+        test_no_fail = 815 # 9999999# 4650
+        # if self.model_name in ['LI', 'LI-VUX', 'before LI', 'before LI-VUX', 'test', 'test_now']:
+        #     test_no_fail = 4650
+        #     test_no_fail = 2500
+
+        return PoseTrajectory3D(
+            poses_se3=new_poses_se3[:test_no_fail],
+            timestamps=traj.timestamps[:test_no_fail])
 
     def plot_data(self):
         # fig = plt.figure(figsize=(10, 6))  
@@ -121,13 +326,13 @@ class TrajectoryReader(object):
 
         # Aesthetics
         ax.set_title("Trajectory with Absolute Errors (XY plane) for {}".format(self.model_name))
-        ax.set_xlabel("X [m]")
-        ax.set_ylabel("Y [m]")
+        ax.set_xlabel("East [m]")
+        ax.set_ylabel("North [m]")
         ax.grid(True)
         ax.set_aspect('equal', adjustable='box')
         #ax.legend()
         ax.legend(title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+          ncol = ncol, fancybox=True, shadow=True)
 
         plt.draw()
 
@@ -212,23 +417,35 @@ class TrajectoryReader(object):
         print(f"Found {len(overlap_segments)} overlapping segments")
 
         # Step 3: Plot trajectory with highlighted overlaps
+        f_map,axis_map = plot_trajectory(est_xyz, etrs_tm35fin = 'EPSG:3067', epsg = 3067)
+
+        plt.draw()
+
+        cmap = plt.cm.get_cmap('tab10')
+
+        cols_ = np.array(['tab:orange', 'tab:blue'])
         if plot:
             plt.figure(figsize=(12, 8))
             plt.plot(xy[:, 0], xy[:, 1], label='Trajectory: {}'.format(label), color='gray', alpha=0.5)
             colors = plt.cm.get_cmap('tab10', len(overlap_segments))
-
+            i = 0
             for idx, segment in enumerate(overlap_segments):
                 pts = xy[segment]
-                plt.plot(pts[:, 0], pts[:, 1], '.', color=colors(idx), label=f'Segment {idx+1}')
+                plt.plot(pts[:, 0], pts[:, 1], '.', color=colors(idx), label=f'Overlapped segment {idx+1}')
+                print('idx:', idx)
+                axis_map.plot(pts[::30, 0], pts[::30, 1], '*', markersize=12, alpha=0.7, color=cols_[i], label=f'Overlapped segment {idx+1}')
+                i+=1
 
-            plt.xlabel('X [m]')
-            plt.ylabel('Y [m]')
+            plt.xlabel('East [m]')
+            plt.ylabel('North [m]')
             plt.title('Trajectory with Overlapping Segments Highlighted')
             #plt.legend()
-            plt.legend(title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+            plt.legend(title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,ncol = ncol, fancybox=True, shadow=True)
             plt.axis('equal')
-            plt.grid(True)
+            plt.grid(False)
+            plt.draw()
+
+            axis_map.legend()
             plt.draw()
 
         #-----------------------------------------------------------------------
@@ -239,7 +456,7 @@ class TrajectoryReader(object):
             # Plot full trajectory in gray
             ax3d.plot(traj[:, 0], traj[:, 1], traj[:, 2], color='gray', alpha=0.3, label='Full Trajectory')
 
-        cmap = plt.cm.get_cmap('tab10')
+        
         self.segment_passes = []  # Stores tuples: (forward_pass_idxs, backward_pass_idxs)
 
         for idx, segment in enumerate(overlap_segments):
@@ -272,9 +489,9 @@ class TrajectoryReader(object):
                                 color=color2, marker='^', alpha=0.7, s=3,
                                 label=f'Segment {idx+1} - Backward Pass')
 
-                ax3d.set_xlabel("X [m]")
-                ax3d.set_ylabel("Y [m]")
-                ax3d.set_zlabel("Z [m]")
+                ax3d.set_xlabel("East [m]")
+                ax3d.set_ylabel("North [m]")
+                ax3d.set_zlabel("Height [m]")
                 ax3d.set_title(f"3D Trajectory with Overlapping Segments ({label})")
                 ax3d.grid(True)
 
@@ -308,7 +525,7 @@ class TrajectoryReader(object):
         # Step 4: Compare Z-values using NN match between forward/backward pass
         num_plots = len(self.segment_passes)
         if num_plots == 0:
-            print("No valid segments for Z error plotting.")
+            print("No valid segments for z-axis error plotting.")
             return 0
 
         fig, axes = plt.subplots(num_plots, 1, figsize=(12, 3 * num_plots), sharex=False)
@@ -345,20 +562,20 @@ class TrajectoryReader(object):
             all_z_diffs.append(np.abs(z_diff))
             avg_z += mean
             number+= 1
-            print(f"Segment {idx+1}: Matched {len(z_diff)} pairs — Z-RMSE = {rmse:.3f} m, mean = {mean:.3f} m")
+            print(f"Segment {idx+1}: Matched {len(z_diff)} pairs — z-RMSE = {rmse:.2f} m, mean = {mean:.2f} m")
 
-            ax.plot(z1, label='Forward Pass Z', color='blue')
-            ax.plot(z2, label='Backward Pass Z', color='orange')
-            ax.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='Z Error')
-            ax.set_ylabel("Z [m]")
+            ax.plot(z1, label='Forward Pass z-axis', linestyle='--', color='tab:blue')
+            ax.plot(z2, label='Backward Pass z-axis', linestyle='-.', color='tab:orange')
+            ax.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='z-axis Error')
+            ax.set_ylabel("z-axis [m]")
             #ax.set_xlabel("Points")
-            ax.set_title(f"Segment {idx+1} — Mean ΔZ: {mean:.3f} m, RMSE: {rmse:.3f} m")
+            ax.set_title(f"Segment {idx+1} — Mean Δz-axis: {mean:.2f} m, RMSE: {rmse:.2f} m")
             ax.grid(True)
         
-        axes[0].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+        axes[1].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
+          ncol = ncol, fancybox=True, shadow=True)
 
-        fig.suptitle(f"Z Comparison Across Overlapping Segments ({label})")
+        fig.suptitle(f"z-axis Comparison Across Overlapping Segments ({label})")
         #fig.tight_layout(rect=[0, 0.03, 1, 0.97])
         plt.draw()
 
@@ -366,15 +583,19 @@ class TrajectoryReader(object):
         return avg_z/number, all_z_diffs_concatenated
 
 def overlap_error(est_xyz, label, segment_passes,  plot = False):    
-    if label in ['LI', 'LI-VUX']:
-        return 0, [0]
+    # if label in ['LI', 'LI-VUX']:
+    #     return 0, [0]
     
     #segment_passes = []  # Stores tuples: (forward_pass_idxs, backward_pass_idxs)
 
     num_plots = len(segment_passes)
     if num_plots == 0:
         print("No valid segments for Z error plotting.")
-        return 0
+        return 0, [0]
+
+    max_index = est_xyz.shape[0] 
+    
+    
 
     fig, axes = plt.subplots(num_plots, 1, figsize=(12, 3 * num_plots), sharex=False)
     if num_plots == 1:
@@ -388,10 +609,19 @@ def overlap_error(est_xyz, label, segment_passes,  plot = False):
         if len(forward_pass) < 5 or len(backward_pass) < 5:
             ax.set_title(f"Segment {idx+1}: Skipped (too small)")
             continue
+        
+        if max(forward_pass) < len(est_xyz) and max(backward_pass) < len(est_xyz):
+            fwd_pts = est_xyz[forward_pass]
+            bwd_pts = est_xyz[backward_pass]
+        else:
+            print("One or more index lists contain out-of-bounds indices.")
+            return 0, [0]
+            continue
+
 
         # Get 3D points
-        fwd_pts = est_xyz[forward_pass]
-        bwd_pts = est_xyz[backward_pass]
+        # fwd_pts = est_xyz[forward_pass]
+        # bwd_pts = est_xyz[backward_pass]
 
         # KD-Tree to find nearest backward point for each forward point
         bwd_tree = cKDTree(bwd_pts[:, :3])
@@ -410,24 +640,25 @@ def overlap_error(est_xyz, label, segment_passes,  plot = False):
         all_z_diffs.append(np.abs(z_diff))
         avg_z += mean
         number+= 1
-        print(f"Segment {idx+1}: Matched {len(z_diff)} pairs — Z-RMSE = {rmse:.3f} m, mean = {mean:.3f} m")
+        print(f"Segment {idx+1}: Matched {len(z_diff)} pairs — z-RMSE = {rmse:.2f} m, mean = {mean:.2f} m")
 
-        ax.plot(z1, label='Forward Pass Z', color='blue')
-        ax.plot(z2, label='Backward Pass Z', color='orange')
-        ax.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='Z Error')
-        ax.set_ylabel("Z [m]")
+        ax.plot(z1, label='Forward Pass z-axis',linestyle='--', color='tab:blue')
+        ax.plot(z2, label='Backward Pass z-axis', linestyle='-.', color='tab:orange')
+        ax.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='z-axis Error')
+        ax.set_ylabel("z-axis [m]")
         ax.set_xlabel("Points")
-        ax.set_title(f"Segment {idx+1} — Mean ΔZ: {mean:.3f} m, RMSE: {rmse:.3f} m")
+        ax.set_title(f"Segment {idx+1} — Mean Δz-axis: {mean:.2f} m, RMSE: {rmse:.2f} m")
         ax.grid(True)
     
-    axes[0].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+    axes[1].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
+          ncol = ncol, fancybox=True, shadow=True)
 
-    fig.suptitle(f"Z Comparison Across Overlapping Segments ({label})")
+    #fig.suptitle(f"z-axis Comparison Across Overlapping Segments ({label})")
     plt.draw()
 
     all_z_diffs_concatenated = np.concatenate(all_z_diffs)
     return avg_z/number, all_z_diffs_concatenated
+
 
 
 path_gt =  "/home/eugeniu/z_tighly_coupled/ref/MLS.txt"
@@ -449,48 +680,105 @@ methods = {
 #-robust comes from plane uncertanties 
 
 methods = {
-    'GT' : '/home/eugeniu/z_tighly_coupled/ref',
+    #'GT' : '/home/eugeniu/z_tighly_coupled/ref',
+    'test'                         : '/home/eugeniu/z_tighly_coupled/test1',
+    'test2'                         : '/home/eugeniu/z_tighly_coupled/test2',
+    'test_now'                         : '/home/eugeniu/z_tighly_coupled/test',
 
-    'LI'                    : '/home/eugeniu/z_tighly_coupled/1',
-    'LI-VUX'                : '/home/eugeniu/z_tighly_coupled/2',
+    #'before LI'                    : '/home/eugeniu/z_tighly_coupled/1',
+    #'before LI-VUX'                : '/home/eugeniu/z_tighly_coupled/2',
+    
+    'LI'                        : '/home/eugeniu/z_tighly_coupled/1.1',    #robust
+    #'LI-VUX'                    : '/home/eugeniu/z_tighly_coupled/2.1', #robust
 
     # '(ppk)GNSS'             : '/home/eugeniu/z_tighly_coupled/0',
     # 'LI-VUX-(raw)GNSS'      : '/home/eugeniu/z_tighly_coupled/5',
     # 'LI-VUX-(ppk)GNSS'      : '/home/eugeniu/z_tighly_coupled/6',
 
-    'LI-VUX-ALS(l-coupled)' : '/home/eugeniu/z_tighly_coupled/3',
-    'LI-VUX-ALS(t-coupled)' : '/home/eugeniu/z_tighly_coupled/4',
+    # 'LI-VUX-ALS(l-coupled)' : '/home/eugeniu/z_tighly_coupled/3',
+    # 'LI-VUX-ALS(t-coupled)' : '/home/eugeniu/z_tighly_coupled/4',
     
     # 'LI-VUX-sparse-ALS(l-coupled)' : '/home/eugeniu/z_tighly_coupled/7',
     # 'LI-VUX-sparse-ALS(t-coupled)' : '/home/eugeniu/z_tighly_coupled/8',
-
-    'LI-robust'                    : '/home/eugeniu/z_tighly_coupled/1.1',
-    'LI-VUX-robust'                    : '/home/eugeniu/z_tighly_coupled/2.1',
-    'LI-VUX-ALS(t-coupled)-robust' : '/home/eugeniu/z_tighly_coupled/4.1',
 }
 
-colors = ['tab:brown', 'tab:red', 'tab:blue', 'tab:green', 'tab:purple', 'tab:orange', 'cyan', 'lime','orange','black']
+methods_data = {
+    'LI'                    : ['#1f77b4','A'],    #robust
+    'LI-VUX'                 : ['#ff7f0e','B'],#robust
+
+    '(ppk)GNSS'             : ['#2ca02c','C'],
+    'LI-VUX-(raw)GNSS'      : ['#7f7f7f','D'],
+    'LI-VUX-(ppk)GNSS'      : ['#9467bd','E'],
+
+    'LI-VUX-ALS(l-coupled)' : ['#8c564b','F'],
+    'LI-VUX-ALS(t-coupled)' : ['#e377c2','G'],
+    
+    'LI-VUX-sparse-ALS(l-coupled)' : ['#bcbd22','H'],
+    'LI-VUX-sparse-ALS(t-coupled)' : ['#17becf','K'],
+
+    'GT' : ['#d62728','L'],
+
+    'before LI' : ['#EFD700','M'],
+    'before LI-VUX' : ['#04f810','N'],
+
+    'test' : ["#648099",'Z'],
+    'test2' : ["#26391B",'Z'],
+    'test_now' : ["#a86b40",'S'],
+}
+
+
+colors = ['tab:brown', 'tab:red', 'tab:blue', 'tab:green', 'tab:purple', 'tab:orange', 'cyan', 'lime','orange','gray']
+colors2 = [
+    '#1f77b4',  # Blue
+    '#ff7f0e',  # Orange
+    '#2ca02c',  # Green
+    '#7f7f7f',  # Gray
+    '#9467bd',  # Purple
+    '#8c564b',  # Brown
+    '#e377c2',  # Pink
+    '#bcbd22',  # Yellow-green
+    '#17becf'   # Cyan
+    '#d62728',  # Red
+]
 linestyles = ['-', '--', '-.', ':', '-', '--', '-.', '-', '--', ':',]
 lab = ['A','B','C','D','E','F','G','H','K','X']
 lt = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 obj_gt = TrajectoryReader(path_gt, path_gt)
+
+
+if True:
+    est_xyz = obj_gt.traj_model.positions_xyz
+
+    xyz_1 = TrajectoryReader(path_gt, '/home/eugeniu/z_tighly_coupled/1.1/MLS.txt', 'LI', False).traj_model.positions_xyz
+    xyz_2 = TrajectoryReader(path_gt, '/home/eugeniu/z_tighly_coupled/2.1/MLS.txt', 'LI-VUX', False).traj_model.positions_xyz
+
+    before_xyz_1 = TrajectoryReader(path_gt, '/home/eugeniu/z_tighly_coupled/1/MLS.txt', 'before LI', False).traj_model.positions_xyz
+    before_xyz_2 = TrajectoryReader(path_gt, '/home/eugeniu/z_tighly_coupled/2/MLS.txt', 'before LI-VUX', False).traj_model.positions_xyz
+
+    other_traj = [xyz_1, xyz_2, before_xyz_1, before_xyz_2]
+    other_labels = ['LI', 'LI-VUX', 'before LI', 'before LI-VUX']
+
+    f_map,axis_map = plot_trajectory(est_xyz, other_traj=other_traj, other_labels = other_labels)
+    plt.show()
+
+
 obj_gt.overlap_error(obj_gt.traj_model.positions_xyz, "GT", plot = True)
 all_traj = [obj_gt.traj_gt]
 # 3D Plot
 fig_3d = plt.figure(figsize=(10, 7))
 ax_3d = fig_3d.add_subplot(111, projection='3d')
 ax_3d.set_title("3D Trajectories")
-ax_3d.set_xlabel("X [m]")
-ax_3d.set_ylabel("Y [m]")
-ax_3d.set_zlabel("Z [m]")
+ax_3d.set_xlabel("East [m]")
+ax_3d.set_ylabel("North [m]")
+ax_3d.set_zlabel("Height [m]")
 
 # 2D Plot (XY Plane)
 fig_2d = plt.figure(figsize=(10, 7))
 ax_2d = fig_2d.add_subplot(111)
 ax_2d.set_title("XY Plane Trajectories")
-ax_2d.set_xlabel("X [m]")
-ax_2d.set_ylabel("Y [m]")
+ax_2d.set_xlabel("East [m]")
+ax_2d.set_ylabel("North [m]")
 
 data_ape_t = {}
 data_ape_r = {}
@@ -530,6 +818,20 @@ for idx, (label, path) in enumerate(methods.items()):
     obj.RPE_translation()
     obj.RPE_rotation()
 
+    
+    if False:    
+        row = "" #table_data[label]
+        row += f"& \\multicolumn{{1}}{{c|}}{{ {round(obj.ape_statistics_t['mean'],3)} }} \n"
+        row += f"& \\multicolumn{{1}}{{c|}}{{ {round(obj.ape_statistics_t['median'],3)} }} \n"
+        row += f"& \\multicolumn{{1}}{{c|}}{{ {round(obj.ape_statistics_t['rmse'],3)} }} \n"
+        row += f"& \\multicolumn{{1}}{{c|}}{{ {round(obj.ape_statistics_t['std'],3)} }} \n"
+        row += f"& \\multicolumn{{1}}{{c|}}{{ {round(obj.rpe_statistics_t['mean'],3)} }} \n"
+        row += f"& \\multicolumn{{1}}{{c|}}{{ {round(obj.rpe_statistics_t['median'],3)} }} \n"
+        row += f"& \\multicolumn{{1}}{{c|}}{{ {round(obj.rpe_statistics_t['rmse'],3)} }} \n"
+        row += f"& {{{round(obj.rpe_statistics_t['std'],3)}}}" 
+        print('\n\n',label,'\n',row,'\n\n')
+
+
     #obj.plot_data()
 
     all_traj.append(obj.traj_model)
@@ -560,19 +862,19 @@ for idx, (label, path) in enumerate(methods.items()):
 #ax_3d.legend()
 #ax_2d.legend()
 ax_3d.legend(title="Method",loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+          ncol = ncol, fancybox=True, shadow=True)
 ax_2d.legend(title="Method",loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+          ncol = ncol, fancybox=True, shadow=True)
 
 ax_3d.grid(True)
 ax_2d.grid(True)
 plt.draw()
 
-def plot_box(data, metric = ''):
+def plot_box(data, metric = '',  show_legend = True):
     print('plot_box for ',metric)
     labels = list(data.keys())
 
-    labels_local = lab[0:len(labels)]
+    #labels_local = lab[0:len(labels)]
     lt_local = lt[0:len(labels)]
 
     plt.figure(figsize=(10, 6))
@@ -581,11 +883,14 @@ def plot_box(data, metric = ''):
     box = plt.boxplot(values, patch_artist=True, showmeans=True, meanline=True, showfliers=False, notch=False) 
     ind = 0
     legend_handles = []
-    for patch, color, label in zip(box['boxes'], colors, labels):
+    labels_local = []
+    colors_ = [methods_data[label][0] for label in labels]
+    for patch, color, label in zip(box['boxes'], colors_, labels):
         patch.set_facecolor(color)
         patch.set_edgecolor('black')
         patch.set_linewidth(1.2)
-        legend_handles.append(mpatches.Patch(color=color, label = labels_local[ind]+" : "+label))
+        legend_handles.append(mpatches.Patch(color=color, label = methods_data[label][1]+" : "+label))
+        labels_local.append(methods_data[label][1])
         ind += 1
     for median_line in box['medians']:
         median_line.set_alpha(0)  # or median_line.set_visible(False)
@@ -600,8 +905,9 @@ def plot_box(data, metric = ''):
     plt.title(f'Box plot of {metric}')
     plt.ylabel(metric)
     plt.xticks(np.arange(1, len(labels) + 1), labels)
-    plt.legend(handles=legend_handles, title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+    if show_legend:
+        plt.legend(handles=legend_handles, title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+            ncol = ncol, fancybox=True, shadow=True)
     plt.grid(True)
     #plt.tight_layout()
     #plt.xticks(rotation=90)
@@ -616,7 +922,7 @@ def plot_box(data, metric = ''):
     values = [data[label] for label in labels]
 
     i=0
-    for patch, color, label in zip(box['boxes'], colors, labels):
+    for patch, color, label in zip(box['boxes'], colors_, labels):
         #for i, label in enumerate(data):
         values = np.sort(data[label])
         cdf = np.linspace(0, 1, len(values))
@@ -625,9 +931,10 @@ def plot_box(data, metric = ''):
         #plt.title(f'Cumulative Distribution of {metric_name}')
         plt.xlabel(metric)
         plt.ylabel("Cumulative Probability")
-        plt.legend(title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
-        plt.grid(False)
+        if show_legend:
+            plt.legend(title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+            ncol = ncol, fancybox=True, shadow=True)
+        plt.grid(True)
         #plt.tight_layout()
         plt.draw()
         i+=1
@@ -648,7 +955,7 @@ def plot_z_overlap(data, metric_name=''):
     #plt.xticks(x, labels)
     plt.xticks([])
     plt.legend(title="Method", loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol=3, fancybox=True, shadow=True)
+          ncol = ncol, fancybox=True, shadow=True)
     #plt.xticks(rotation=90)
     #plt.tight_layout()
     plt.grid(True)
@@ -656,20 +963,20 @@ def plot_z_overlap(data, metric_name=''):
     plt.draw()
 
 
-plot_box(data_ape_t, 'APE translation (m)')
+plot_box(data_ape_t, 'APE translation (m)', show_legend = False)
 #plot_box(data_ape_r, 'APE rotation (deg)')
-plot_box(data_rpe_t, 'RPE translation (m)')
+plot_box(data_rpe_t, 'RPE translation (m)', show_legend = True)
 #plot_box(data_rpe_r, 'RPE rotation (deg)')
 
-label = "GT"
-z_overlap_error, all_z_diffs = overlap_error(obj_gt.traj_model.positions_xyz, label, obj_gt.segment_passes,  plot = False)
-data_z_overlap[label] = z_overlap_error
-data_z_overlap2[label] = all_z_diffs
+# label = "GT"
+# z_overlap_error, all_z_diffs = overlap_error(obj_gt.traj_model.positions_xyz, label, obj_gt.segment_passes,  plot = False)
+# data_z_overlap[label] = z_overlap_error
+# data_z_overlap2[label] = all_z_diffs
 
-data_z_overlap2.pop('LI')
-data_z_overlap2.pop('LI-VUX')
+# data_z_overlap2.pop('LI')
+# data_z_overlap2.pop('LI-VUX')
 
-plot_box(data_z_overlap2, 'Overlap z difference (m)')
+plot_box(data_z_overlap2, 'Overlap z-axis error (m)')
 
 #plot_z_overlap(data_z_overlap, 'Mean z error overlap')
 

@@ -20,7 +20,7 @@ mapping:
     det_range:   150.0
     extrinsic_est_en: false      # true: enable the online estimation of IMU-LiDAR extrinsic
     
-    GNSS_IMU_calibration_distance: 5 # 35
+    GNSS_IMU_calibration_distance: 40 # 90 #need more since only 60m is height
     #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
     # extrinsic_T: [ 0.009,  0.13,  0.09 ] #given by Teemu 
     # extrinsic_R: [ 0, 1, 0,
@@ -50,28 +50,32 @@ mapping:
     #also the message times are in global frame,  while point times should be relative, starting from zero to .1 s or something 
 
 als:
-    closest_N_files: 3 # 4 # 5 #number of closest files
-    downsample:  true 
+    closest_N_files: 4 #number of closest files
+    downsample: true 
     #als_path: "/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped/"   # this is reference from Jesse
+    als_path: "/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped2/"   # this is reference from Jesse
     #als_path: "/media/eugeniu/T7/NLS_las/"   # this is the ALS from NlS
-    als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS
+    #als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS
+    #als_path: "/media/eugeniu/T7/Maanmittauslaitos_Tiedostopalvelu_REST-20250716T094416321466852/data_las_cropped/" 
 
-    use_gnss: true
+    use_gnss: false # true
+
+    use_ransac_alignment: false # true
     #if this is not empty we'll use the postprocessed GNSS solution 
     postprocessed_gnss_path: "" # "/media/eugeniu/T7/evo-bags/GT-MLS-25-07.txt"  
     saveALS_NN_2_MLS: false             #MLS map update with ALS points 
 
 publish:
     scan_publish_en:  true       # false: close all the point cloud output
-    dense_publish_en: false       # false: low down the points number in a global-frame point clouds scan.
+    dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
     
     #for the next make sure that the code is compiled with save option true
-    save_clouds: false           #if this is true it will save the point clouds and their pose
+    save_clouds:  false          #if this is true it will save the point clouds and their pose
     save_clouds_local: false    #if this is true the clouds will be in sensor frame otherwise in global frame
-    save_clouds_path: "/home/eugeniu/x_vux-georeferenced-final/_Hesai_ref/"        #put here the path to save the clouds 
+    save_clouds_path: "/media/eugeniu/T71/2025-07-09_Evo/1014/save/clouds/"        #put here the path to save the clouds 
 
-    save_poses: false
-    poseSavePath: "/home/eugeniu/x_vux-georeferenced-final/_Hesai_ref/"     #where to save the trajectory
+    save_poses:  false
+    poseSavePath: "/media/eugeniu/T71/2025-07-09_Evo/1014/save/"     #where to save the trajectory
 
 eval:
     tree_file: "/media/eugeniu/T7/_georeferenced_latest/Ref_ALS_Hesai_fused/results/Results/Stem_curves/Found_stem_tree_attributes.txt"

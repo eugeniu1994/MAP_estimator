@@ -210,6 +210,8 @@ void DataHandler::local_map_update()
 
     *laserCloudSurfMap += *feats_down_world;
 
+
+
     pcl::PointCloud<PointType>::Ptr tmpSurf(new pcl::PointCloud<PointType>());
     
     double local_map_radius = 75;// ;
@@ -234,6 +236,7 @@ void DataHandler::local_map_update()
     downSizeFilterSurf.filter(*laserCloudSurfMap);
 #endif
 }
+
 
 void DataHandler::local_map_update_from_ALS(const std::vector<PointVector> &Nearest_Points)
 {

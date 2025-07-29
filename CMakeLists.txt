@@ -30,24 +30,31 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}   ${OpenMP_C_FLAGS}")
 add_definitions(-DMP_EN)
 message("Current CPU archtecture: ${CMAKE_SYSTEM_PROCESSOR}")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)" )
-  include(ProcessorCount)
-  ProcessorCount(N)
-  message("Processer number:  ${N}")
-  if(N GREATER 4)
-    add_definitions(-DMP_EN)
-    add_definitions(-DMP_PROC_NUM=3)
-    message("core for MP: 3")
-  elseif(N GREATER 3)
-    add_definitions(-DMP_EN)
-    add_definitions(-DMP_PROC_NUM=2)
-    message("core for MP: 2")
-  else()
-    add_definitions(-DMP_PROC_NUM=1)
-  endif()
-else()
-  add_definitions(-DMP_PROC_NUM=1)
-endif()
+# if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)" )
+#   include(ProcessorCount)
+#   ProcessorCount(N)
+#   message("Processer number:  ${N}")
+#   if(N GREATER 4)
+#     add_definitions(-DMP_EN)
+#     add_definitions(-DMP_PROC_NUM=3)
+#     message("core for MP: 3")
+#   elseif(N GREATER 3)
+#     add_definitions(-DMP_EN)
+#     add_definitions(-DMP_PROC_NUM=2)
+#     message("core for MP: 2")
+#   else()
+#     add_definitions(-DMP_PROC_NUM=1)
+#   endif()
+# else()
+#   add_definitions(-DMP_PROC_NUM=1)
+# endif()
+#USE ALL THE VAILABLE CORES
+include(ProcessorCount)
+ProcessorCount(N)
+message("Processer number:  ${N}")
+add_definitions(-DMP_EN)
+add_definitions(-DMP_PROC_NUM=${N})
+
 
 
 find_package(PCL REQUIRED)
@@ -60,7 +67,7 @@ message(STATUS "TBB version: ${TBB_VERSION}")
 
 
 find_package(GTSAM REQUIRED)     #if GTSAM is used only
-find_package(OpenCV REQUIRED)  #only for range image 
+#find_package(OpenCV REQUIRED)  #only for range image 
 find_package(PythonLibs 3.6 REQUIRED)
 #find_path(MATPLOTLIB_CPP_INCLUDE_DIRS "matplotlibcpp.h") #for plots
 find_path(MATPLOTLIB_CPP_INCLUDE_DIRS 
@@ -99,7 +106,7 @@ include_directories(
   ${MATPLOTLIB_CPP_INCLUDE_DIRS}
   ${Sophus_INCLUDE_DIRS}
   ${GTSAM_INCLUDE_DIR}
-  ${OpenCV_INCLUDE_DIRS}
+  #${OpenCV_INCLUDE_DIRS}
   ${TBB_INCLUDE_DIRS}
   ${LIBLAS_INCLUDE_DIRS}
   include
@@ -109,7 +116,7 @@ include_directories(
 
 link_directories(
   ${GTSAM_LIBRARY_DIRS}
-  ${OpenCV_LIBRARY_DIRS}
+  #${OpenCV_LIBRARY_DIRS}
   ${LIBLAS_LIBRARY_DIRS}
 
   ${CERES_LIBRARY_DIRS}
@@ -172,11 +179,11 @@ else()
     set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src/estimators/ICP.cpp src/Graph.cpp src/estimators/ALS_icp.cpp)
 endif()
 
-message(STATUS "MAIN_SOURCE_FILES: ${MAIN_SOURCE_FILES}")
-add_executable(mls_mapping src/main.cpp ${MAIN_SOURCE_FILES} src/DataHandler_arvo.cpp) 
-target_link_libraries(mls_mapping ${TARGET_LINK_LIBS} ) 
-add_dependencies(mls_mapping ${catkin_EXPORTED_TARGETS})
-target_include_directories(mls_mapping PRIVATE ${PYTHON_INCLUDE_DIRS} ${MATPLOTLIB_CPP_INCLUDE_DIRS})
+# message(STATUS "MAIN_SOURCE_FILES: ${MAIN_SOURCE_FILES}")
+# add_executable(mls_mapping src/main.cpp ${MAIN_SOURCE_FILES} src/DataHandler_arvo.cpp) 
+# target_link_libraries(mls_mapping ${TARGET_LINK_LIBS} ) 
+# add_dependencies(mls_mapping ${catkin_EXPORTED_TARGETS})
+# target_include_directories(mls_mapping PRIVATE ${PYTHON_INCLUDE_DIRS} ${MATPLOTLIB_CPP_INCLUDE_DIRS})
 
 
 
@@ -222,4 +229,4 @@ set(SOURCE_FILES_VUX ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean_D
 #test tightly coupled
 set(SOURCE_FILES_TEST ${MAIN_SOURCE_FILES3} src3/DataHandler_vux.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
 add_executable(test_fusion src2/main.cpp ${SOURCE_FILES_TEST})
-target_link_libraries(test_fusion ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES})
+target_link_libraries(test_fusion ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}

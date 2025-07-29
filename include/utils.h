@@ -361,14 +361,13 @@ namespace ekf
          const double &threshold, const std::vector<double> &point_weights, double &plane_var, bool weighted_mean = false)
     {
         const size_t neighbours = points.size();
-        // std::cout<<"N:"<<N<<std::endl;
+        //std::cout<<"N:"<<neighbours<<std::endl;
         if (neighbours < 3)
             return false; // Need at least 3 points to define a plane
 
-        // Compute the centroid
-        V3D centroid(0, 0, 0);
-        // Compute covariance matrix
-        M3D covariance;
+        
+        V3D centroid(0, 0, 0); // Compute the centroid
+        M3D covariance; // Compute covariance matrix
         covariance.setZero();
 
         // Regularize
@@ -377,7 +376,7 @@ namespace ekf
 
         if (weighted_mean)
         {
-            // if (weighted_mean && point_weights.size() < neighbours) {
+            // if (weighted_mean && point_weights.size() != neighbours) {
             //     std::cerr << "Error: point_weights has fewer elements than points." << std::endl;
             //     std::cout<<"neighbours:"<<neighbours<<", point_weights.size():"<<point_weights.size()<<std::endl;
             //     throw std::runtime_error("Error: point_weights has fewer elements than points.");

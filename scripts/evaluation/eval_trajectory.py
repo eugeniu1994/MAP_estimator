@@ -409,7 +409,7 @@ def show_this():
     plt.xlabel('Noise level std (cm)')
     plt.ylabel('Translation APE (cm)')
     #plt.title('Translation Error vs. Noise')
-    plt.grid(True)
+    plt.grid(False)
     #plt.gca().set_aspect('equal')
     plt.legend()
 
@@ -424,7 +424,7 @@ def show_this():
     plt.xlabel('Noise level std (deg)')
     plt.ylabel('Rotation APE (deg)')
     #plt.title('Rotation Error vs. Noise')
-    plt.grid(True)
+    plt.grid(False)
     #plt.gca().set_aspect('equal')
     plt.legend()
 

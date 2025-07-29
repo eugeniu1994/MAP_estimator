@@ -83,7 +83,7 @@ public:
     std::string folder_root = "/media/eugeniu/T7/NLS_las/"; // this is the ALS from NlS
     // std::string folder_root = "/media/eugeniu/T7/EVO_las/"; // dense ALS
 
-    bool use_gnss = false, saveALS_NN_2_MLS = false;
+    bool use_gnss = false, saveALS_NN_2_MLS = false, use_ransac_alignment = false;
     std::string postprocessed_gnss_path = "";
     std::vector<PointVector> Nearest_Points;
 
@@ -219,6 +219,7 @@ public:
         //ALS
         nh.param<bool>("als/downsample", downsample, false);
         nh.param<bool>("als/use_gnss", use_gnss, false);
+        nh.param<bool>("als/use_ransac_alignment", use_ransac_alignment, false);
         nh.param<bool>("als/saveALS_NN_2_MLS", saveALS_NN_2_MLS, false);
         nh.param<int>("als/closest_N_files", closest_N_files, 4);
         nh.param<std::string>("als/als_path", folder_root, "");

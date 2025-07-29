@@ -47,6 +47,25 @@ __email__ = "lars.tingelstad@ntnu.no"
 __status__ = "Development"
 
 import numpy as np
+
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
+R_vux2mls = np.array([
+    [ 0.0064031121, -0.8606533346, -0.5091510953],
+    [-0.2586398121,  0.4904106092, -0.8322276624],
+    [ 0.9659526116,  0.1370155907, -0.2194590626]
+])
+
+# Create rotation object
+rot = R.from_matrix(R_vux2mls)
+
+# Get Euler angles in degrees (ZYX: yaw, pitch, roll)
+euler_angles_deg = rot.as_euler('zyx', degrees=True)
+print("Euler angles (ZYX, in degrees):", euler_angles_deg)
+
+
+
 import math3d as m3d
 
 

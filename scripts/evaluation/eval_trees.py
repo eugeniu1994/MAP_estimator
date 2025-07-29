@@ -4,6 +4,8 @@ from scipy.spatial import cKDTree
 from sklearn.metrics import mean_squared_error
 import matplotlib.patches as mpatches
 import seaborn as sns
+import pandas as pd
+
 
 font = 18
 
@@ -20,6 +22,66 @@ plt.rc('axes', titlesize=font)     # Set the font size of the title
 #plt.rc('ytick', labelsize=12)    # Set the font size of the y tick labels
 plt.rc('legend', fontsize=14)    # Set the font size of the legend
 plt.rc('font', size=font)          # Set the general font size'''
+
+def extract_degrees_from_label(label):
+    """Extract numeric rotation value from the label (e.g., '5-degrees' -> 5.0)."""
+    return float(label.replace("-deg", ""))
+
+def plot_error_vs_iter_with_injected_rotation():
+    file_dict = {
+        "1-deg": "/home/eugeniu/z_z_e/extrinsic_test_1.000000.txt",
+        "5-deg": "/home/eugeniu/z_z_e/extrinsic_test_5.000000.txt",
+        "10-deg": "/home/eugeniu/z_z_e/extrinsic_test_10.000000.txt",
+        "15-deg": "/home/eugeniu/z_z_e/extrinsic_test_15.000000.txt",
+        "20-deg": "/home/eugeniu/z_z_e/extrinsic_test_20.000000.txt",
+        "25-deg": "/home/eugeniu/z_z_e/extrinsic_test_25.000000.txt",
+        "30-deg": "/home/eugeniu/z_z_e/extrinsic_test_30.000000.txt",
+    }
+
+    bbox_to_anchor=(0.5, -0.12)
+    ncol = 3
+
+    bbox_to_anchor=(0.5, 1.2)
+    ncol = 4
+
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    #ax2 = ax1.twinx()  # Second y-axis for rotation noise
+
+    # Get the default color cycle
+    color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    for i, (label, filepath) in enumerate(file_dict.items()):
+        df = pd.read_csv(filepath, header=None, delim_whitespace=True)
+        df.columns = ['iter_num', 'current_cost', 'points_used', 'error_gt', 'error_gt_rot']
+
+        color = color_cycle[i % len(color_cycle)]  # Cycle through default colors
+
+        # Plot error_gt vs iter_num
+        ax1.plot(df['iter_num'], df['error_gt']-0.04, label=label, color=color)
+
+        # Plot corresponding injected rotation as a dashed horizontal line
+        #rotation_deg = extract_degrees_from_label(label)
+        # ax2.hlines(y=rotation_deg, xmin=df['iter_num'].min(), xmax=df['iter_num'].max(),
+        #            color=color, linestyle='--', alpha=0.9)
+        # ax2.hlines(y=rotation_deg, xmin=df['iter_num'].min(), xmax=170,
+        #            color=color, linestyle='--', alpha=0.9)
+
+    # Axis labels
+    ax1.set_xlabel("Iteration Number")
+    ax1.set_ylabel("Error")
+    #ax2.set_ylabel("Injected Rotation Noise (deg)")
+    ax1.grid(True)
+    # Titles and grid
+    #fig.suptitle("Error vs Iteration with Injected Rotation Noise")
+    #ax1.legend(loc='best')
+    ax1.legend(title="Noise levels", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+          ncol = ncol, fancybox=True, shadow=True)
+    ax1.grid(False)
+    plt.grid(False)
+    #plt.tight_layout()
+    plt.show()
+
+#plot_error_vs_iter_with_injected_rotation()
 
 
 MLS_all_trees_xyz_path = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/trees/Robust MLS + Dense ALS + Map Fusion + GNSS/MLS_all_trees_xyz.txt"
@@ -318,6 +380,7 @@ summarize(abs_errors_dict, "Absolute Errors")
 summarize(rel_errors_dict, "Relative Errors")
 
 bbox_to_anchor=(0.5, -0.1)
+bbox_to_anchor=(0.5, 1.25)
 
 add_first_legend = False
 # Boxplot plotting
@@ -360,8 +423,8 @@ def plot_boxplots(data, metric_name, colors, add_first_legend = True):
 colors = ['tab:blue', 'tab:orange', 'tab:red', 'tab:purple', 'tab:cyan', 'tab:brown', 'skyblue', 'lightgoldenrodyellow', 'lightblue', 'lightgreen', 'lightcoral', 'lightblue', 'lightgreen', 'lightcoral' ][:len(methods)]
 
 # Plotting
-plot_boxplots(abs_errors_dict, "Absolute Error (m)", colors, True)
-plot_boxplots(rel_errors_dict, "Relative Error (m)", colors, False)
+plot_boxplots(abs_errors_dict, "Absolute Error (m)", colors, False)
+plot_boxplots(rel_errors_dict, "Relative Error (m)", colors, True)
 
 
 plt.show()

@@ -4,17 +4,29 @@ import glob
 import laspy
 from collections import defaultdict
 
-tile_size = 50  # Size of each tile in meters
+# tile_size = 50  # Size of each tile in meters
 
-output_directory = '/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped2' 
-input_laz_directory = '/media/eugeniu/T7/Evo_drone24_from_Jesse' 
+# output_directory = '/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped2' 
+# input_laz_directory = '/media/eugeniu/T7/Evo_drone24_from_Jesse' 
 
 # Area of interest as a square
 # east_min, east_max = 397925.961 , 399682.961
 # north_min, north_max = 6785448.985, 6786228.985
 
-east_min, east_max = 398108., 400183
-north_min, north_max = 6785510, 6786381
+# east_min, east_max = 398108., 400183
+# north_min, north_max = 6785510, 6786381
+
+tile_size = 50  # Size of each tile in meters
+
+output_directory = '/media/eugeniu/T7/Maanmittauslaitos_Tiedostopalvelu_REST-20250716T094416321466852/data_las_cropped' 
+input_laz_directory = '/media/eugeniu/T7/Maanmittauslaitos_Tiedostopalvelu_REST-20250716T094416321466852/data_laz' 
+
+
+east_min, east_max = 397123., 402000.
+north_min, north_max = 6784218, 6789000
+
+# east_min, east_max = -99999999999, 99999999999.
+# north_min, north_max = -99999999999, 99999999999.
 
 def get_tile_key(x, y, tile_size, x_min, y_min):
     tile_x = int((x - x_min) // tile_size)

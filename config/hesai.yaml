@@ -47,16 +47,16 @@ als:
 
 publish:
     scan_publish_en:  true       # false: close all the point cloud output
-    dense_publish_en: false       # false: low down the points number in a global-frame point clouds scan.
+    dense_publish_en:  false       # false: low down the points number in a global-frame point clouds scan.
     
     #for the next make sure that the code is compiled with save option true
-    save_clouds: true           #if this is true it will save the point clouds and their pose
+    save_clouds: false           #if this is true it will save the point clouds and their pose
     save_clouds_local: false    #if this is true the clouds will be in sensor frame otherwise in global frame
     #save_clouds_path: "/home/eugeniu/x_vux-georeferenced-final/_Hesai_ref/"        #put here the path to save the clouds 
     save_clouds_path: "/home/eugeniu/z_tighly_coupled/test/"        #put here the path to save the clouds 
 
     save_poses: true 
-    poseSavePath: "/home/eugeniu/x_vux-georeferenced-final/_Hesai_ref/"     #where to save the trajectory
+    poseSavePath: "/home/eugeniu/z_tighly_coupled/test/"     #where to save the trajectory
 
 eval:
     tree_file: "/media/eugeniu/T7/_georeferenced_latest/Ref_ALS_Hesai_fused/results/Results/Stem_curves/Found_stem_tree_attributes.txt"

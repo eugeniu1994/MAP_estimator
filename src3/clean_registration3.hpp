@@ -39,6 +39,18 @@ namespace Eigen
     using Vector6d = Eigen::Matrix<double, state_size_, 1>;
 } // namespace Eigen
 
+M3D generate_noise_rotation(double noise_deg, std::mt19937 &rng) {
+    std::uniform_real_distribution<double> dist(-1.0, 1.0); // random direction in [-1, 1]
+
+    // Apply the same magnitude to all axes (random directions, fixed angle)
+    V3D axis(dist(rng), dist(rng), dist(rng));
+    axis.normalize();
+
+    double angle_rad = noise_deg * M_PI / 180.0;;
+    Eigen::AngleAxisd noise_rot(angle_rad, axis);
+    return noise_rot.toRotationMatrix();
+}
+
 namespace registration
 {
     struct P2Plane_global
@@ -184,6 +196,47 @@ namespace registration
         V3D curr_point;
         V3D plane_unit_norm;
         double d;
+        Sophus::SE3 fixed_pose;
+    };
+
+    struct LidarPointFactor_extrinsics
+    {
+        LidarPointFactor_extrinsics(const V3D &curr_point_, V3D closest_point_, const Sophus::SE3 &fixed_pose_) : curr_point(curr_point_), closest_point(closest_point_), fixed_pose(fixed_pose_) {}
+
+        template <typename T>
+        bool operator()(const T *q, const T *t, T *residual) const
+        {
+            // Convert extrinsic transformation (Scanner to some frame)
+            Eigen::Quaternion<T> q_extrinsic(q[3], q[0], q[1], q[2]);
+            Eigen::Matrix<T, 3, 1> t_extrinsic(t[0], t[1], t[2]);
+
+            // Convert Fixed pose to appropriate type
+            Eigen::Matrix<T, 3, 3> R_fixed = fixed_pose.rotation_matrix().template cast<T>();
+            Eigen::Matrix<T, 3, 1> t_fixed = fixed_pose.translation().template cast<T>();
+
+            // Transform raw scanner point to desired frame with extrinsics
+            Eigen::Matrix<T, 3, 1> point_in_frame = q_extrinsic * curr_point.template cast<T>() + t_extrinsic;
+
+            // Georeference point
+            Eigen::Matrix<T, 3, 1> point_world = R_fixed * point_in_frame + t_fixed;
+
+            // Compute residual as difference to the closest map point
+            residual[0] = point_world.x() - T(closest_point.x());
+            residual[1] = point_world.y() - T(closest_point.y());
+            residual[2] = point_world.z() - T(closest_point.z());
+
+            return true;
+        }
+
+        static ceres::CostFunction *Create(const V3D &curr_point_, V3D closest_point_, const Sophus::SE3 &fixed_pose_)
+        {
+            return (new ceres::AutoDiffCostFunction<
+                    LidarPointFactor_extrinsics, 3, 4, 3>(
+                new LidarPointFactor_extrinsics(curr_point_, closest_point_, fixed_pose_)));
+        }
+
+        V3D curr_point;
+        V3D closest_point;
         Sophus::SE3 fixed_pose;
     };
 };

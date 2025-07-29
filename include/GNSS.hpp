@@ -47,6 +47,8 @@ class GNSS
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+    bool use_ransac_alignment = false;
+    
     double tod, diff_curr_gnss2mls;
     double gps_time, global_gps_time, theta_GPS_to_IMU = 0., max_travelled_distance_for_initialization = 20.;
     std::vector<V3D> gps_measurements, gps_covariances, enu_measurements;
@@ -92,6 +94,8 @@ public:
     void Process(const Sophus::SE3 &gps_local, const Sophus::SE3 &gps_global, const double &lidar_end_time, const V3D &MLS_pos);
 
     void calibrateGnssExtrinsic(const V3D &MLS_pos);
+
+    void calibrateGnssExtrinsic(const std::vector<Sophus::SE3> &MLS_pos, const std::vector<Sophus::SE3> &GNSS_pos);
 
     void set_param(const V3D &tran, const double &GNSS_IMU_calibration_distance, std::string _postprocessed_gnss_path = "");
 

@@ -3,6 +3,18 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 from mpl_toolkits.mplot3d import Axes3D
 
+
+import math
+
+x = -1.34
+y = 2.98
+z = -21.56
+
+magnitude = math.sqrt(x**2 + y**2 + z**2)
+print(magnitude)  # Output: ≈ 21.78
+
+
+
 plt.style.use('default')
 
 # --- Generate smooth base trajectory ---

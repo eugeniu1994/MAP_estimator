@@ -346,7 +346,7 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 
 void DataHandler::pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
-    std::cout << "\nstandard_pcl_cbk msg->header.stamp.toSec()->" << msg->header.stamp.toSec() << std::endl;
+    //std::cout << "\nstandard_pcl_cbk msg->header.stamp.toSec()->" << msg->header.stamp.toSec() << std::endl;
 
     if (msg->header.stamp.toSec() < last_timestamp_lidar)
     {
@@ -626,6 +626,8 @@ void DataHandler::BagHandler()
                        V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov), V3D(b_acc_cov, b_acc_cov, b_acc_cov));
 
     gnss_obj->set_param(GNSS_T_wrt_IMU, GNSS_IMU_calibration_distance, postprocessed_gnss_path);
+    
+    gnss_obj->use_ransac_alignment = use_ransac_alignment;
 
 #ifdef USE_ALS
     std::shared_ptr<ALS_Handler> als_obj = std::make_shared<ALS_Handler>(folder_root, downsample, closest_N_files, filter_size_surf_min);

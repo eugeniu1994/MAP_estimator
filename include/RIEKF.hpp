@@ -251,6 +251,25 @@ public:
                                    const V3D &gps, double R_gps_cov,
                                    int maximum_iter, bool extrinsic_est);
 
+        
+    //------------------------------------------------------------
+    void h(residual_struct &ekfom_data, 
+            double R_lidar_cov,double R_gps_cov, 
+            const PointCloudXYZI::Ptr &feats_down_body, const V3D &gps_pos,
+            PointCloudXYZI::Ptr &map_mls, PointCloudXYZI::Ptr &map_als, 
+            const pcl::KdTreeFLANN<PointType>::Ptr &localKdTree_map_als, std::vector<PointVector> &Nearest_Points, 
+            bool extrinsic_est, bool use_gnss = false, bool use_als = false, bool tightly_coupled = true);
+
+    bool update_final(
+        double R_lidar_cov,double R_gps_cov, 
+        PointCloudXYZI::Ptr &feats_down_body, const V3D &gps_pos,
+        PointCloudXYZI::Ptr &map_mls, PointCloudXYZI::Ptr &map_als,
+        const pcl::KdTreeFLANN<PointType>::Ptr &localKdTree_map_als,
+        std::vector<PointVector> &Nearest_Points,
+        int maximum_iter, bool extrinsic_est,
+        bool use_gnss = false, bool use_als = false, bool tightly_coupled = true
+    );
+
 #endif
     // gnss update
     void update(const V3D &pos, const V3D &cov_pos_, int maximum_iter, bool global_error, M3D R = Eye3d);
