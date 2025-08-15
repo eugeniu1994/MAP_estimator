@@ -20,7 +20,7 @@ mapping:
     det_range:   150.0
     extrinsic_est_en: false      # true: enable the online estimation of IMU-LiDAR extrinsic
     
-    GNSS_IMU_calibration_distance: 40 # 90 #need more since only 60m is height
+    GNSS_IMU_calibration_distance: 50 # 40 # 90 #need more since only 60m is height
     #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
     # extrinsic_T: [ 0.009,  0.13,  0.09 ] #given by Teemu 
     # extrinsic_R: [ 0, 1, 0,

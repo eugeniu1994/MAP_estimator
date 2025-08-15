@@ -39,16 +39,35 @@ namespace Eigen
     using Vector6d = Eigen::Matrix<double, state_size_, 1>;
 } // namespace Eigen
 
-M3D generate_noise_rotation(double noise_deg, std::mt19937 &rng) {
+M3D generate_noise_rotation(double noise_deg, std::mt19937 &rng)
+{
     std::uniform_real_distribution<double> dist(-1.0, 1.0); // random direction in [-1, 1]
 
     // Apply the same magnitude to all axes (random directions, fixed angle)
     V3D axis(dist(rng), dist(rng), dist(rng));
     axis.normalize();
 
-    double angle_rad = noise_deg * M_PI / 180.0;;
+    double angle_rad = noise_deg * M_PI / 180.0;
+    
     Eigen::AngleAxisd noise_rot(angle_rad, axis);
     return noise_rot.toRotationMatrix();
+}
+
+M3D generate_euler_noise_rotation(double noise_deg)
+{
+    double angle_rad = noise_deg * M_PI / 180.0;
+
+    double roll = angle_rad;  // x
+    double pitch = angle_rad; // y
+    double yaw = angle_rad;   // z
+
+    // Build rotation using ZYX (yaw-pitch-roll) order
+    M3D R =
+    Eigen::AngleAxisd(yaw,   Eigen::Vector3d::UnitZ()).toRotationMatrix() *
+    Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()).toRotationMatrix() *
+    Eigen::AngleAxisd(roll,  Eigen::Vector3d::UnitX()).toRotationMatrix();
+
+    return R;
 }
 
 namespace registration
@@ -919,21 +938,21 @@ void debug_CloudWithNormals2(pcl::PointCloud<pcl::PointXYZINormal>::Ptr &cloud_w
     }
 }
 
-
-void publishCovarianceEllipsoids(const std::vector<V3D>& means, const std::vector<M3D>& covs,
-                                 ros::Publisher& marker_pub,
-                                 const std::string& frame_id = "world", double scale = 2.0, int every_k = 10, double r = 1.0, double g = .2) {
+void publishCovarianceEllipsoids(const std::vector<V3D> &means, const std::vector<M3D> &covs,
+                                 ros::Publisher &marker_pub,
+                                 const std::string &frame_id = "world", double scale = 2.0, int every_k = 10, double r = 1.0, double g = .2)
+{
     visualization_msgs::MarkerArray marker_array;
     int id = 0;
-    
-    for(int i = 1; i<means.size();i++)
+
+    for (int i = 1; i < means.size(); i++)
     {
-        if(i % every_k != 0)
-           continue;
+        if (i % every_k != 0)
+            continue;
 
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(covs[i]);
-        Eigen::Vector3d eigenvalues = solver.eigenvalues();      // λ1, λ2, λ3
-        Eigen::Matrix3d eigenvectors = solver.eigenvectors();    // Columns are the axes
+        Eigen::Vector3d eigenvalues = solver.eigenvalues();   // λ1, λ2, λ3
+        Eigen::Matrix3d eigenvectors = solver.eigenvectors(); // Columns are the axes
 
         // Convert eigenvectors to quaternion
         Eigen::Quaterniond quat(eigenvectors);
@@ -3336,7 +3355,8 @@ namespace gnss_MLS_fusion
 
     void resetOptimization()
     {
-        std::cout << "\n\nresetOptimization\n\n"<< std::endl;
+        std::cout << "\n\nresetOptimization\n\n"
+                  << std::endl;
         gtsam::ISAM2Params optParameters;
 
         // optParameters.relinearizeThreshold = 0.1; //0.1 means if the change in a variable (like pose or velocity) exceeds 0.1 in norm, then it will be relinearized.
@@ -3354,16 +3374,16 @@ namespace gnss_MLS_fusion
 
     std::pair<Sophus::SE3, Eigen::Vector6d> updateISam(
         const Sophus::SE3 &MLS_rel_odom, const V3D &MLS_pos_cov, const V3D &MLS_rot_cov,
-        const Sophus::SE3 &GNSS_absolute_pose, const V3D &GNSS_absolute_pos_cov, const V3D &GNSS_absolute_rot_cov
-    ){
-        //MLS_rot_cov [σ²_roll, σ²_pitch, σ²_yaw]
-        //MLS_pos_cov [σ²_x, σ²_y, σ²_z]
+        const Sophus::SE3 &GNSS_absolute_pose, const V3D &GNSS_absolute_pos_cov, const V3D &GNSS_absolute_rot_cov)
+    {
+        // MLS_rot_cov [σ²_roll, σ²_pitch, σ²_yaw]
+        // MLS_pos_cov [σ²_x, σ²_y, σ²_z]
 
-        //auto prior_noise_GNSS = noiseModel::Gaussian::Covariance(GNSS_absolute_sigmas.array().square().matrix().asDiagonal());
-        // auto prior_noise_GNSS = gtsam::noiseModel::Diagonal::Sigmas(
-        //         (gtsam::Vector6() << gtsam::Vector3(GNSS_absolute_rot_std), // rotation stddev (radians): roll, pitch, yaw
-        //         gtsam::Vector3(GNSS_absolute_pos_std)                      //  translation stddev (m): x, y, z
-        //         ).finished());
+        // auto prior_noise_GNSS = noiseModel::Gaussian::Covariance(GNSS_absolute_sigmas.array().square().matrix().asDiagonal());
+        //  auto prior_noise_GNSS = gtsam::noiseModel::Diagonal::Sigmas(
+        //          (gtsam::Vector6() << gtsam::Vector3(GNSS_absolute_rot_std), // rotation stddev (radians): roll, pitch, yaw
+        //          gtsam::Vector3(GNSS_absolute_pos_std)                      //  translation stddev (m): x, y, z
+        //          ).finished());
 
         // auto relative_noise_odom = gtsam::noiseModel::Diagonal::Sigmas(
         //         (gtsam::Vector6() << gtsam::Vector3(MLS_rot_std), // rotation stddev (radians): roll, pitch, yaw
@@ -3372,16 +3392,13 @@ namespace gnss_MLS_fusion
 
         // GTSAM expects: [roll, pitch, yaw, x, y, z] in *standard deviations*
         Vector6 stddevs_absolute, stddevs_relative;
-        stddevs_absolute << 
-            GNSS_absolute_rot_cov.array().sqrt(),   // rotation first
-            GNSS_absolute_pos_cov.array().sqrt();   // then translation
-        stddevs_relative << 
-            MLS_rot_cov.array().sqrt(),   // rotation first
-            MLS_pos_cov.array().sqrt();   // then translation
+        stddevs_absolute << GNSS_absolute_rot_cov.array().sqrt(), // rotation first
+            GNSS_absolute_pos_cov.array().sqrt();                 // then translation
+        stddevs_relative << MLS_rot_cov.array().sqrt(),           // rotation first
+            MLS_pos_cov.array().sqrt();                           // then translation
 
-        auto prior_noise_GNSS = noiseModel::Diagonal::Sigmas(stddevs_absolute);  // stddevs, 
+        auto prior_noise_GNSS = noiseModel::Diagonal::Sigmas(stddevs_absolute); // stddevs,
         auto relative_noise_odom = noiseModel::Diagonal::Sigmas(stddevs_relative);
-    
 
         if (doneFirstOpt)
         {
@@ -3398,7 +3415,7 @@ namespace gnss_MLS_fusion
             isam.update(); // Repeatedly relinearizes and refines
 
             auto latest_estimate = isam.calculateEstimate();
-            //std::cout << "Isam Total factors: " << isam.getFactorsUnsafe().size() << std::endl;
+            // std::cout << "Isam Total factors: " << isam.getFactorsUnsafe().size() << std::endl;
 
             reference_graph.resize(0);
             reference_values.clear(); // this is required to clean the graph, isam has its copy
@@ -3407,9 +3424,9 @@ namespace gnss_MLS_fusion
 
             auto optimized_T = GtsamToSophus(prevPose_);
             gtsam::Matrix66 poseCov = isam.marginalCovariance(X(key));
-            
-            Vector6d covs = poseCov.diagonal(); //rotation and then translation 
-            //Vector6d stddevs = poseCov.diagonal().array().sqrt();
+
+            Vector6d covs = poseCov.diagonal(); // rotation and then translation
+            // Vector6d stddevs = poseCov.diagonal().array().sqrt();
 
             key++;
 
@@ -3468,88 +3485,88 @@ namespace gnss_MLS_fusion
         }
     }
 
-/*
+    /*
 
-void addGPSFactor()
-    {
-        if (gpsQueue.empty())
-            return;
-
-        // wait for system initialized and settles down
-        if (cloudKeyPoses3D->points.empty())
-            return;
-        else
+    void addGPSFactor()
         {
-            if (pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
+            if (gpsQueue.empty())
                 return;
-        }
 
-        // pose covariance small, no need to correct
-        if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
-            return;
-
-        // last gps position
-        static PointType lastGPSPoint;
-
-        while (!gpsQueue.empty())
-        {
-            if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.2)
-            {
-                // message too old
-                gpsQueue.pop_front();
-            }
-            else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.2)
-            {
-                // message too new
-                break;
-            }
+            // wait for system initialized and settles down
+            if (cloudKeyPoses3D->points.empty())
+                return;
             else
             {
-                nav_msgs::Odometry thisGPS = gpsQueue.front();
-                gpsQueue.pop_front();
+                if (pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
+                    return;
+            }
 
-                // GPS too noisy, skip
-                float noise_x = thisGPS.pose.covariance[0];
-                float noise_y = thisGPS.pose.covariance[7];
-                float noise_z = thisGPS.pose.covariance[14];
-                if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
-                    continue;
+            // pose covariance small, no need to correct
+            if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
+                return;
 
-                float gps_x = thisGPS.pose.pose.position.x;
-                float gps_y = thisGPS.pose.pose.position.y;
-                float gps_z = thisGPS.pose.pose.position.z;
-                if (!useGpsElevation)
+            // last gps position
+            static PointType lastGPSPoint;
+
+            while (!gpsQueue.empty())
+            {
+                if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.2)
                 {
-                    gps_z = transformTobeMapped[5];
-                    noise_z = 0.01;
+                    // message too old
+                    gpsQueue.pop_front();
                 }
-
-                // GPS not properly initialized (0,0,0)
-                if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
-                    continue;
-
-                // Add GPS every a few meters
-                PointType curGPSPoint;
-                curGPSPoint.x = gps_x;
-                curGPSPoint.y = gps_y;
-                curGPSPoint.z = gps_z;
-                if (pointDistance(curGPSPoint, lastGPSPoint) < 5.0)
-                    continue;
+                else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.2)
+                {
+                    // message too new
+                    break;
+                }
                 else
-                    lastGPSPoint = curGPSPoint;
+                {
+                    nav_msgs::Odometry thisGPS = gpsQueue.front();
+                    gpsQueue.pop_front();
 
-                gtsam::Vector Vector3(3);
-                Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
-                noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
-                gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
-                gtSAMgraph.add(gps_factor);
+                    // GPS too noisy, skip
+                    float noise_x = thisGPS.pose.covariance[0];
+                    float noise_y = thisGPS.pose.covariance[7];
+                    float noise_z = thisGPS.pose.covariance[14];
+                    if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
+                        continue;
 
-                aLoopIsClosed = true;
-                break;
+                    float gps_x = thisGPS.pose.pose.position.x;
+                    float gps_y = thisGPS.pose.pose.position.y;
+                    float gps_z = thisGPS.pose.pose.position.z;
+                    if (!useGpsElevation)
+                    {
+                        gps_z = transformTobeMapped[5];
+                        noise_z = 0.01;
+                    }
+
+                    // GPS not properly initialized (0,0,0)
+                    if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
+                        continue;
+
+                    // Add GPS every a few meters
+                    PointType curGPSPoint;
+                    curGPSPoint.x = gps_x;
+                    curGPSPoint.y = gps_y;
+                    curGPSPoint.z = gps_z;
+                    if (pointDistance(curGPSPoint, lastGPSPoint) < 5.0)
+                        continue;
+                    else
+                        lastGPSPoint = curGPSPoint;
+
+                    gtsam::Vector Vector3(3);
+                    Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
+                    noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
+                    gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
+                    gtSAMgraph.add(gps_factor);
+
+                    aLoopIsClosed = true;
+                    break;
+                }
             }
         }
-    }
 
-*/
+    */
 
 };

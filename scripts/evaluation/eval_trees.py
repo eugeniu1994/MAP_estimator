@@ -27,16 +27,49 @@ def extract_degrees_from_label(label):
     """Extract numeric rotation value from the label (e.g., '5-degrees' -> 5.0)."""
     return float(label.replace("-deg", ""))
 
+from scipy.spatial.transform import Rotation as R
+
 def plot_error_vs_iter_with_injected_rotation():
     file_dict = {
-        "1-deg": "/home/eugeniu/z_z_e/extrinsic_test_1.000000.txt",
+        #"1-deg": "/home/eugeniu/z_z_e/extrinsic_test_1.000000.txt",
         "5-deg": "/home/eugeniu/z_z_e/extrinsic_test_5.000000.txt",
         "10-deg": "/home/eugeniu/z_z_e/extrinsic_test_10.000000.txt",
         "15-deg": "/home/eugeniu/z_z_e/extrinsic_test_15.000000.txt",
         "20-deg": "/home/eugeniu/z_z_e/extrinsic_test_20.000000.txt",
         "25-deg": "/home/eugeniu/z_z_e/extrinsic_test_25.000000.txt",
         "30-deg": "/home/eugeniu/z_z_e/extrinsic_test_30.000000.txt",
+
+        "35-deg": "/home/eugeniu/z_z_e/extrinsic_test_35.000000.txt",
+        "40-deg": "/home/eugeniu/z_z_e/extrinsic_test_40.000000.txt",
     }
+
+    file_dict2 = {
+        #"1-deg": "/home/eugeniu/z_z_e/extrinsic_test_1.000000.txt",
+        "5-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_5.000000.txt",
+        "10-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_10.000000.txt",
+        "15-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_15.000000.txt",
+        "20-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_20.000000.txt",
+        "25-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_25.000000.txt",
+        "30-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_30.000000.txt",
+
+        "35-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_35.000000.txt",
+        "40-deg": "/home/eugeniu/z_z_e/pose_extrinsic_test_40.000000.txt",
+    }
+
+    
+    # === Ground truth ===
+    R_gt = np.array([
+        [0.0064031121, -0.8606533346, -0.5091510953],
+        [-0.2586398121, 0.4904106092, -0.8322276624],
+        [0.9659526116, 0.1370155907, -0.2194590626]
+    ])
+    t_gt = np.array([-0.2238580597, -3.0124498678, -0.8051626709])
+
+    # Convert ground truth to rotation object
+    r_gt = R.from_matrix(R_gt)
+    euler_gt = r_gt.as_euler('xyz', degrees=True)
+
+    print('euler_gt:', euler_gt)
 
     bbox_to_anchor=(0.5, -0.12)
     ncol = 3
@@ -44,44 +77,137 @@ def plot_error_vs_iter_with_injected_rotation():
     bbox_to_anchor=(0.5, 1.2)
     ncol = 4
 
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-    #ax2 = ax1.twinx()  # Second y-axis for rotation noise
+    fig, axs = plt.subplots(6, 1, sharex=True)
+    axes_labels = ['x (m)', 'y (m)', 'z (m)',
+               'Roll$^\circ$', 'Pitch$^\circ$', 'Yaw$^\circ$']
 
-    # Get the default color cycle
     color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-    for i, (label, filepath) in enumerate(file_dict.items()):
+    #for key, filepath in file_dict2.items():
+    for i, (label, filepath) in enumerate(file_dict2.items()):
+        print("Reading file:", filepath)
+
         df = pd.read_csv(filepath, header=None, delim_whitespace=True)
-        df.columns = ['iter_num', 'current_cost', 'points_used', 'error_gt', 'error_gt_rot']
+        df.columns = ['iter_num', 'tx', 'ty', 'tz', 'qx', 'qy', 'qz', 'qw']
+
+        # Store per-iteration errors
+        trans_errors = []
+        rot_errors = []
+        color = color_cycle[i % len(color_cycle)]
+
+        for _, row in df.iterrows():
+            # --- Translation error ---
+            t_est = np.array([row['tx'], row['ty'], row['tz']])
+            t_err = t_est - t_gt
+            trans_errors.append(t_err)
+
+            # --- Rotation error ---
+            q_est = [row['qx'], row['qy'], row['qz'], row['qw']]
+            r_est = R.from_quat(q_est)
+            euler_est = r_est.as_euler('xyz', degrees=True)
+
+            # Euler angle difference
+            euler_err = euler_est - euler_gt
+            euler_err = (euler_err + 180) % 360 - 180  # normalize to [-180, 180]
+            rot_errors.append(euler_err)
+
+        trans_errors = np.array(trans_errors)
+        rot_errors = np.array(rot_errors)
+        iters = df['iter_num'].values
+
+        print('trans_errors:', np.shape(trans_errors))
+        print('rot_errors:', np.shape(rot_errors))
+
+        for i in range(3):
+            axs[i].plot(iters, trans_errors[:, i], color = color)
+            axs[i+3].plot(iters, rot_errors[:, i], color = color)
+
+    t = 2
+    d = 180
+    y_limits = [
+        (-t, t),    # tx
+        (-t, t),    # ty
+        (-t, t),    # tz
+        (-d, d),        # roll
+        (-d, d),        # pitch
+        (-d, d)         # yaw
+    ]
+
+    for i, ax in enumerate(axs):
+        ax.set_ylabel(axes_labels[i])
+        ax.grid(True)
+        ax.set_ylim(y_limits[i]) 
+        
+    axs[-1].set_xlabel("Iteration")
+    plt.draw()
+
+
+
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
+    fig3, ax3 = plt.subplots(figsize=(10, 6))
+    fig4, ax4 = plt.subplots(figsize=(10, 6))
+    fig5, ax5 = plt.subplots(figsize=(10, 6))
+
+    
+
+    for i, (label, filepath) in enumerate(file_dict.items()):
+        l = label 
+        l = l.replace("-deg", "$^\circ$")
+
+        df = pd.read_csv(filepath, header=None, delim_whitespace=True)
+        #df.columns = ['iter_num', 'current_cost', 'points_used', 'error_gt', 'error_gt_rot']
+        df.columns = ['iter_num', 'current_cost', 'points_used', 'error_gt', 'error_gt_rot', 'error_gt_tran']
 
         color = color_cycle[i % len(color_cycle)]  # Cycle through default colors
 
         # Plot error_gt vs iter_num
-        ax1.plot(df['iter_num'], df['error_gt']-0.04, label=label, color=color)
+        ax1.plot(df['iter_num'], df['error_gt']-0.04, label=l, color=color)
 
-        # Plot corresponding injected rotation as a dashed horizontal line
-        #rotation_deg = extract_degrees_from_label(label)
-        # ax2.hlines(y=rotation_deg, xmin=df['iter_num'].min(), xmax=df['iter_num'].max(),
-        #            color=color, linestyle='--', alpha=0.9)
-        # ax2.hlines(y=rotation_deg, xmin=df['iter_num'].min(), xmax=170,
-        #            color=color, linestyle='--', alpha=0.9)
+        ax2.plot(df['iter_num'], df['error_gt_rot']-0.04, label=l, color=color)
+        ax3.plot(df['iter_num'], df['error_gt_tran']-0.04, label=l, color=color)
+        ax4.plot(df['iter_num'], df['points_used'], label=l, color=color)
+
+        mean_squared_error = 2.*df['current_cost'] / df['points_used']
+        ax5.plot(df['iter_num'],mean_squared_error, label=l, color=color)
 
     # Axis labels
     ax1.set_xlabel("Iteration Number")
-    ax1.set_ylabel("Error")
-    #ax2.set_ylabel("Injected Rotation Noise (deg)")
-    ax1.grid(True)
-    # Titles and grid
-    #fig.suptitle("Error vs Iteration with Injected Rotation Noise")
-    #ax1.legend(loc='best')
-    ax1.legend(title="Noise levels", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+    ax1.set_ylabel("Extrinsic error")
+    #fig1.suptitle("Error vs Iteration with Injected Rotation Noise")
+    ax1.legend(title="Rotation perturbation levels", loc='upper center', bbox_to_anchor=bbox_to_anchor,
           ncol = ncol, fancybox=True, shadow=True)
-    ax1.grid(False)
+
+    ax2.set_xlabel("Iteration Number")
+    ax2.set_ylabel("error_gt_rot error")
+    #fig2.suptitle("error_gt_rot vs Iteration with Injected Rotation Noise")
+    ax2.legend(title="Rotation perturbation levels", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+          ncol = ncol, fancybox=True, shadow=True)
+    
+    ax3.set_xlabel("Iteration Number")
+    ax3.set_ylabel("error_gt_tran error")
+    #fig3.suptitle("error_gt_tran vs Iteration with Injected Rotation Noise")
+    ax3.legend(title="Rotation perturbation levels", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+          ncol = ncol, fancybox=True, shadow=True)
+
+
+    ax5.set_xlabel("Iteration Number")
+    ax5.set_ylabel(r'MSE (m$^2$)')
+    #fig5.suptitle("cost function vs Iteration with Injected Rotation Noise")
+    ax5.legend(title="Rotation perturbation levels", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+          ncol = ncol, fancybox=True, shadow=True)
+    
+
+    ax4.set_xlabel("Iteration Number")
+    ax4.set_ylabel("points_used error")
+    #fig4.suptitle("points_used vs Iteration with Injected Rotation Noise")
+    ax4.legend(title="Noise levels", loc='upper center', bbox_to_anchor=bbox_to_anchor,
+          ncol = ncol, fancybox=True, shadow=True)
+
     plt.grid(False)
-    #plt.tight_layout()
     plt.show()
 
-#plot_error_vs_iter_with_injected_rotation()
+plot_error_vs_iter_with_injected_rotation()
 
 
 MLS_all_trees_xyz_path = "/media/eugeniu/T7/a_georeferenced_vux_tests/merged/trees/Robust MLS + Dense ALS + Map Fusion + GNSS/MLS_all_trees_xyz.txt"

@@ -124,7 +124,7 @@ void IMU_Class::IMU_init(const MeasureGroup &meas, Estimator &kf_state, int &N)
         // const Eigen::Vector3d &z_axis = median_gravity.normalized(); //test this
         V3D x_axis = V3D::UnitX() - z_axis * z_axis.transpose() * V3D::UnitX();
         x_axis.normalize();
-        V3D y_axis = z_axis.cross(x_axis);
+        V3D y_axis = z_axis.cross(x_axis); //y_axis = skew_x(z_axis)*x_axis;
         y_axis.normalize();
 
         Rbw.block<3, 1>(0, 0) = x_axis;
@@ -146,6 +146,9 @@ void IMU_Class::IMU_init(const MeasureGroup &meas, Estimator &kf_state, int &N)
         Rbw = Eye3d;
         init_state.grav = -mean_acc / mean_acc.norm() * G_m_s2;
     }
+
+    //to be done - set the acceleration bias
+    //V3D ba = mean_acc - Rbw * _gravity;
 
     init_state.bg = mean_gyr;
 

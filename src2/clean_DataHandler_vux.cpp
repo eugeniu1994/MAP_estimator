@@ -214,7 +214,7 @@ void DataHandler::local_map_update()
 
     pcl::PointCloud<PointType>::Ptr tmpSurf(new pcl::PointCloud<PointType>());
     
-    double local_map_radius = 75;// ;
+    double local_map_radius = 150;// 100;// 75;// ;
     //local_map_radius = 400;
     
     double x_min = state_point.pos.x() - local_map_radius;

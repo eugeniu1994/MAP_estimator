@@ -224,7 +224,8 @@ class TrajectoryReader(object):
         #ax2.plot(noise_levels, rot_ape_noisy, 'r-o', label='Noisy Input')
         ax2.plot(noise_levels, rot_ape_model, 'g-s', label='Model Output')
         ax2.set_xlabel('Noise Level')
-        ax2.set_ylabel('Rotation APE (deg)')
+        #ax2.set_ylabel('Rotation APE (deg)')
+        ax2.set_ylabel(r'Rotation APE ($^\circ$)')
         ax2.set_title('Rotation Error vs. Noise')
         ax2.grid(True)
 
@@ -299,7 +300,8 @@ def plot_dual_axis_combined(noise_levels_t, noise_levels_r, trans_ape_model, rot
     # Right y-axis for rotation error
     ax2 = ax1.twinx()
     line2, = ax2.plot(noise_levels_t, rot_ape_model, 'g-s', label='Combined Rotation Error')
-    ax2.set_ylabel('Rotation Error (deg)', color='g')
+    #ax2.set_ylabel('Rotation Error (deg)', color='g')
+    ax2.set_ylabel(r'Rotation Error ($^\circ$)', color='g')
     ax2.tick_params(axis='y', labelcolor='g')
     line4, = ax2.plot(_noise_levels_r, _rot_ape_model,color='green', linestyle='--', marker='d', label='Rotation (only) Error')
     
@@ -308,7 +310,8 @@ def plot_dual_axis_combined(noise_levels_t, noise_levels_r, trans_ape_model, rot
     ax_top.set_xlim(ax1.get_xlim())
     ax_top.set_xticks(noise_levels_t)
     ax_top.set_xticklabels([str(r) for r in noise_levels_r], color='g')
-    ax_top.set_xlabel('Rotation Noise (deg)', color='g')
+    #ax_top.set_xlabel('Rotation Noise (deg)', color='g')
+    ax_top.set_ylabel(r'Rotation Noise ($^\circ$)', color='g')
     ax_top.tick_params(axis='x', labelcolor='g')
 
     ax1.grid(True)
@@ -423,6 +426,10 @@ def show_this():
     plt.xticks(c_noise_levels_r)
     plt.xlabel('Noise level std (deg)')
     plt.ylabel('Rotation APE (deg)')
+
+    plt.xlabel(r'Noise level std ($^\circ$)')
+    plt.ylabel(r'Rotation APE ($^\circ$)')
+
     #plt.title('Rotation Error vs. Noise')
     plt.grid(False)
     #plt.gca().set_aspect('equal')

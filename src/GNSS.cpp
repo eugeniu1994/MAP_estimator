@@ -73,6 +73,35 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
             diff_curr_gnss2mls = gps_time - lidar_end_time; // gps_time = diff_curr_gnss2mls + lidar_end_time
         }
 
+        if(true)
+        {
+            auto gpsTime = msg->time;
+
+            const int leapSeconds = 18; // Number of leap seconds as of October 2023
+            double utcTime = gpsTime - leapSeconds;
+            long totalSeconds = static_cast<long>(utcTime);
+            const int secondsInADay = 24 * 60 * 60;
+            int timeOfDaySeconds = totalSeconds % secondsInADay;
+
+            int hours = timeOfDaySeconds / 3600;
+            int remainingSeconds = timeOfDaySeconds % 3600;
+            int minutes = remainingSeconds / 60;
+            int seconds = remainingSeconds % 60;
+
+            // Format the time as HH:MM:SS
+            //char buffer[9];
+            //snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hours, minutes, seconds);
+            //std::string timeOfDay = std::string(buffer);
+            // std::cout << "GNSS Time of the day: " << timeOfDay << std::endl;
+
+            // Compute the time of the day in seconds (including fractional part)
+            tod = fmod(utcTime, secondsInADay);
+            std::cout << "GNSS tod:" << tod << ", diff_curr_gnss2mls:" << diff_curr_gnss2mls << std::endl;
+            // add diff_curr_gnss2mls  correction
+            tod = tod - diff_curr_gnss2mls;
+            std::cout << "Corrected tod of the mls:" << tod << std::endl;
+        }
+        
         Eigen::Vector3d lla(msg->latitude, msg->longitude, msg->altitude);
         double easting, northing, height = msg->altitude;
         int zone;
@@ -168,32 +197,34 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
         // gps_pose = gps_pose * Sophus::SE3(Eye3d, GNSS_T_wrt_IMU); //put in MLS frame
         // std::cout<<"HESAI GNSS TIME:"<<msg->time<<std::endl;
 
-        auto gpsTime = msg->time;
+        if(false){
+            auto gpsTime = msg->time;
 
-        const int leapSeconds = 18; // Number of leap seconds as of October 2023
-        double utcTime = gpsTime - leapSeconds;
-        long totalSeconds = static_cast<long>(utcTime);
-        const int secondsInADay = 24 * 60 * 60;
-        int timeOfDaySeconds = totalSeconds % secondsInADay;
+            const int leapSeconds = 18; // Number of leap seconds as of October 2023
+            double utcTime = gpsTime - leapSeconds;
+            long totalSeconds = static_cast<long>(utcTime);
+            const int secondsInADay = 24 * 60 * 60;
+            int timeOfDaySeconds = totalSeconds % secondsInADay;
 
-        int hours = timeOfDaySeconds / 3600;
-        int remainingSeconds = timeOfDaySeconds % 3600;
-        int minutes = remainingSeconds / 60;
-        int seconds = remainingSeconds % 60;
+            int hours = timeOfDaySeconds / 3600;
+            int remainingSeconds = timeOfDaySeconds % 3600;
+            int minutes = remainingSeconds / 60;
+            int seconds = remainingSeconds % 60;
 
-        // Format the time as HH:MM:SS
-        char buffer[9];
-        snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hours, minutes, seconds);
+            // Format the time as HH:MM:SS
+            char buffer[9];
+            snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hours, minutes, seconds);
 
-        std::string timeOfDay = std::string(buffer);
-        // std::cout << "GNSS Time of the day: " << timeOfDay << std::endl;
+            std::string timeOfDay = std::string(buffer);
+            // std::cout << "GNSS Time of the day: " << timeOfDay << std::endl;
 
-        // Compute the time of the day in seconds (including fractional part)
-        tod = fmod(utcTime, secondsInADay);
-        std::cout << "GNSS tod:" << tod << ", diff_curr_gnss2mls:" << diff_curr_gnss2mls << std::endl;
-        // add diff_curr_gnss2mls  correction
-        tod = tod - diff_curr_gnss2mls;
-        std::cout << "Corrected tod of the mls:" << tod << std::endl;
+            // Compute the time of the day in seconds (including fractional part)
+            tod = fmod(utcTime, secondsInADay);
+            std::cout << "GNSS tod:" << tod << ", diff_curr_gnss2mls:" << diff_curr_gnss2mls << std::endl;
+            // add diff_curr_gnss2mls  correction
+            tod = tod - diff_curr_gnss2mls;
+            std::cout << "Corrected tod of the mls:" << tod << std::endl;
+        }
     }
 
     if (use_postprocessed_gnss)
