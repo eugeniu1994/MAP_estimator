@@ -55,7 +55,7 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
     while ((!gps_buffer.empty()) && gps_time <= lidar_end_time)
     {
         auto msg = gps_buffer.front();
-        gps_time = msg->header.stamp.toSec();
+        gps_time = msg->header.stamp.toSec(); //THIS IS FROM ROS - align the gps and lidar based on ROS TIMES
         gps_buffer.pop_front();
 
         global_gps_time = msg->time + gps_epoch;
@@ -75,18 +75,18 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
 
         if(true)
         {
-            auto gpsTime = msg->time;
+            auto gpsTime = msg->time; //this is the actual GPS time  1980-01-06
 
             const int leapSeconds = 18; // Number of leap seconds as of October 2023
             double utcTime = gpsTime - leapSeconds;
             long totalSeconds = static_cast<long>(utcTime);
             const int secondsInADay = 24 * 60 * 60;
-            int timeOfDaySeconds = totalSeconds % secondsInADay;
+            //int timeOfDaySeconds = totalSeconds % secondsInADay;
 
-            int hours = timeOfDaySeconds / 3600;
-            int remainingSeconds = timeOfDaySeconds % 3600;
-            int minutes = remainingSeconds / 60;
-            int seconds = remainingSeconds % 60;
+            //int hours = timeOfDaySeconds / 3600;
+            //int remainingSeconds = timeOfDaySeconds % 3600;
+            //int minutes = remainingSeconds / 60;
+            //int seconds = remainingSeconds % 60;
 
             // Format the time as HH:MM:SS
             //char buffer[9];

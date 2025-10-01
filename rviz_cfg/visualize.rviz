@@ -36,7 +36,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: Debug_cloud
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -69,6 +69,8 @@ Visualization Manager:
       Frame Timeout: 500
       Frames:
         All Enabled: false
+        PPK_GNSS:
+          Value: true
         VUX:
           Value: true
         world:
@@ -81,6 +83,8 @@ Visualization Manager:
       Show Names: true
       Tree:
         world:
+          PPK_GNSS:
+            {}
           VUX:
             {}
       Update Interval: 0
@@ -143,18 +147,18 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
-        - Alpha: 0.4000000059604645
+        - Alpha: 0.30000001192092896
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 40.49650573730469
-            Min Value: -21.346920013427734
+            Max Value: 31.38286018371582
+            Min Value: -4.074529647827148
             Value: true
           Axis: Z
           Channel Name: z
           Class: rviz/PointCloud2
           Color: 255; 255; 255
           Color Transformer: AxisColor
-          Decay Time: 11
+          Decay Time: 111
           Enabled: false
           Invert Rainbow: true
           Max Color: 255; 255; 255
@@ -492,11 +496,6 @@ Visualization Manager:
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        MLS:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
       Name: RobotModel
       Robot Description: robot_description
       TF Prefix: ""
@@ -728,7 +727,7 @@ Visualization Manager:
       Marker Topic: /acceleration_marker
       Name: Gravity
       Namespaces:
-        {}
+        acceleration_arrow: true
       Queue Size: 100
       Value: true
   Enabled: true
@@ -759,7 +758,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 74.65447998046875
+      Distance: 117.09134674072266
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -767,17 +766,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -10.114900588989258
-        Y: 33.7513427734375
-        Z: 7.5704465416492894e-06
+        X: 16.54128074645996
+        Y: 2.9712703227996826
+        Z: 9.979776223190129e-07
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1797969341278076
+      Pitch: 0.9197971820831299
       Target Frame: global
-      Yaw: 1.4762845039367676
+      Yaw: 0.5762842893600464
     Saved: ~
 Window Geometry:
   Displays:

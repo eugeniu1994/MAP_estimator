@@ -269,13 +269,13 @@ def plot_trajectory(xyz_enu, other_traj = [], other_labels=[], etrs_tm35fin = 'E
 #used so far
 search_radius = 3.0
 min_time_diff = 100
-distance_upper_bound = 1.0
+distance_upper_bound = 1.0 #distance_upper_bound xy max distance between the points 
 
 
 #new better config - redoo the tests
-# search_radius = 1. # 3.0
-# min_time_diff = 280
-# distance_upper_bound = 0.1 # 1.0
+search_radius = 1. # 3.0
+min_time_diff = 250
+distance_upper_bound = .2 # xy max distance between the points 
 
 class TrajectoryReader(object):
     def __init__(self, path_gt, path_model, model_name = '', align = True):
@@ -558,6 +558,7 @@ class TrajectoryReader(object):
             return 0
 
         fig, axes = plt.subplots(num_plots, 1, figsize=(12, 3 * num_plots), sharex=False)
+        
         if num_plots == 1:
             axes = [axes]  # ensure it's iterable
 
@@ -565,6 +566,7 @@ class TrajectoryReader(object):
         number = 0
         all_z_diffs = []
         first_time = True
+        colors_ = ['tab:orange','tab:blue', 'red','blue','green',]
         for idx, ((forward_pass, backward_pass), ax) in enumerate(zip(self.segment_passes, axes)):
 
             if len(forward_pass) < 5 or len(backward_pass) < 5:
@@ -576,8 +578,12 @@ class TrajectoryReader(object):
             bwd_pts = traj[backward_pass]
 
             # KD-Tree to find nearest backward point for each forward point
-            bwd_tree = cKDTree(bwd_pts[:, :3])
-            distances, indices = bwd_tree.query(fwd_pts[:, :3], distance_upper_bound=1.0)
+            # bwd_tree = cKDTree(bwd_pts[:, :3])
+            # distances, indices = bwd_tree.query(fwd_pts[:, :3], distance_upper_bound=distance_upper_bound)
+            # KD-Tree on XY only
+            bwd_tree = cKDTree(bwd_pts[:, :2])  # only (x, y)
+            distances, indices = bwd_tree.query(fwd_pts[:, :2], distance_upper_bound=distance_upper_bound)
+
 
             valid = distances != np.inf
             fwd_valid = fwd_pts[valid]
@@ -586,7 +592,7 @@ class TrajectoryReader(object):
             z1 = fwd_valid[:, 2]
             z2 = bwd_valid[:, 2]
             z_diff = z2 - z1
-
+            abs_z_diff = np.abs(z_diff)
             rmse = np.sqrt(np.mean(z_diff ** 2))
             mean = np.mean(np.abs(z_diff))
             all_z_diffs.append(np.abs(z_diff))
@@ -594,8 +600,9 @@ class TrajectoryReader(object):
             number+= 1
             print(f"Segment {idx+1}: Matched {len(z_diff)} pairs — z-RMSE = {rmse:.2f} m, mean = {mean:.2f} m")
 
-            ax.plot(z1, label='Forward Pass $z$-axis', linestyle='--', color='tab:blue')
-            ax.plot(z2, label='Backward Pass $z$-axis', linestyle='-.', color='tab:orange')
+            # ax.plot(z1, label='Forward Pass $z$-axis',  color='tab:blue')
+            ax.scatter(range(len(z1)), z1, label='Forward Pass $z$-axis', color='tab:blue', s=1)
+            ax.scatter(range(len(z2)), z2, label='Backward Pass $z$-axis', color='tab:orange', s=1)
             ax.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='$z$-axis error')
             ax.set_ylabel("$z$-axis (m)")
             #ax.set_xlabel("Points")
@@ -603,9 +610,10 @@ class TrajectoryReader(object):
             ax.grid(True)
 
             f, a = plt.subplots()
-            a.plot(z1, label='Forward Pass $z$-axis', linestyle='--', color='tab:blue')
-            a.plot(z2, label='Backward Pass $z$-axis', linestyle='-.', color='tab:orange')
-            a.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='$z$-axis error')
+            # a.plot(z1, label='Forward Pass $z$-axis', linestyle='--', color='tab:blue')
+            # a.plot(z2, label='Backward Pass $z$-axis', linestyle='-.', color='tab:orange')
+            # a.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='$z$-axis error')
+            a.plot(abs_z_diff, label=' abs $z$-axis error', linestyle='--', color='tab:blue')
             a.set_ylabel("$z$-axis (m)")
             a.set_xlabel("Points")
             #a.set_title(f"Segment {idx+1} — Mean Δz-axis: {mean:.2f} m, RMSE: {rmse:.2f} m")
@@ -614,6 +622,23 @@ class TrajectoryReader(object):
                 first_time = False
                 a.legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
                 ncol = ncol, fancybox=True, shadow=True)
+
+            
+            f2, a2 = plt.subplots()
+            a2.plot(z_diff, label='$z$-axis error', color=colors_[idx])
+            a2.set_ylabel("$z$-axis (m)")
+            a2.set_xlabel("Points")
+            a2.set_title(f"Segment {idx+1} — Mean Δz-axis: {mean:.2f} m, RMSE: {rmse:.2f} m")
+            a2.grid(True)
+            # if first_time:
+            # first_time = False
+            a2.legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
+                ncol = ncol, fancybox=True, shadow=True)
+
+            
+            
+            
+
         
         axes[1].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
           ncol = ncol, fancybox=True, shadow=True)
@@ -638,11 +663,13 @@ def overlap_error(est_xyz, label, segment_passes,  plot = False):
 
     max_index = est_xyz.shape[0] 
     
-    
-
     fig, axes = plt.subplots(num_plots, 1, figsize=(12, 3 * num_plots), sharex=False)
     if num_plots == 1:
         axes = [axes]  # ensure it's iterable
+
+    fig2, axes2 = plt.subplots(num_plots, 1, figsize=(12, 3 * num_plots), sharex=False)
+    if num_plots == 1:
+        axes2 = [axes2]  # ensure it's iterable
 
     avg_z = 0
     number = 0
@@ -667,9 +694,12 @@ def overlap_error(est_xyz, label, segment_passes,  plot = False):
         # bwd_pts = est_xyz[backward_pass]
 
         # KD-Tree to find nearest backward point for each forward point
-        bwd_tree = cKDTree(bwd_pts[:, :3])
-        distances, indices = bwd_tree.query(fwd_pts[:, :3], distance_upper_bound=distance_upper_bound) #1.0
-
+        # bwd_tree = cKDTree(bwd_pts[:, :3])
+        # distances, indices = bwd_tree.query(fwd_pts[:, :3], distance_upper_bound=distance_upper_bound) #1.0
+        # KD-Tree on XY only
+        bwd_tree = cKDTree(bwd_pts[:, :2])  # only (x, y)
+        distances, indices = bwd_tree.query(fwd_pts[:, :2], distance_upper_bound=distance_upper_bound)
+        
         valid = (distances != np.inf) 
         fwd_valid = fwd_pts[valid]
         bwd_valid = bwd_pts[indices[valid]]
@@ -678,6 +708,7 @@ def overlap_error(est_xyz, label, segment_passes,  plot = False):
         z2 = bwd_valid[:, 2]
         z_diff = z2 - z1
 
+        std = np.std(np.abs(z_diff))
         rmse = np.sqrt(np.mean(z_diff ** 2))
         mean = np.mean(np.abs(z_diff))
         all_z_diffs.append(np.abs(z_diff))
@@ -685,18 +716,31 @@ def overlap_error(est_xyz, label, segment_passes,  plot = False):
         number+= 1
         print(f"Segment {idx+1}: Matched {len(z_diff)} pairs — z-RMSE = {rmse:.2f} m, mean = {mean:.2f} m")
 
-        ax.plot(z1, label='Forward Pass $z$-axis',linestyle='--', color='tab:blue')
-        ax.plot(z2, label='Backward Pass $z$-axis', linestyle='-.', color='tab:orange')
+        # ax.plot(z1, label='Forward Pass $z$-axis',linestyle='--', color='tab:blue')
+        # ax.plot(z2, label='Backward Pass $z$-axis', linestyle='-.', color='tab:orange')
+        ax.scatter(range(len(z1)), z1, label='Forward Pass $z$-axis', color='tab:blue', s=1)
+        ax.scatter(range(len(z2)), z2, label='Backward Pass $z$-axis', color='tab:orange', s=1)
+        
         ax.fill_between(range(len(z_diff)), z1, z2, color='gray', alpha=0.3, label='$z$-axis error')
         ax.set_ylabel("$z$-axis [m]")
         ax.set_xlabel("Points")
-        ax.set_title(f"Segment {idx+1} — Mean Δz-axis: {mean:.2f} m, RMSE: {rmse:.2f} m")
+        ax.set_title(f"Segment {idx+1} — Mean Δz-axis: {mean:.2f} m, RMSE: {rmse:.2f} m, std: {std:.2f} m")
         ax.grid(True)
-    
-    axes[1].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
-          ncol = ncol, fancybox=True, shadow=True)
 
-    #fig.suptitle(f"z-axis Comparison Across Overlapping Segments ({label})")
+        axes2[idx].plot(np.abs(z_diff),label='$z$-axis error')
+        axes2[idx].set_ylabel("$z$-axis [m]")
+        axes2[idx].set_xlabel("Points")
+        axes2[idx].set_title(f"Segment {idx+1} — Mean Δz-axis: {mean:.2f} m, RMSE: {rmse:.2f} m, std: {std:.2f} m")
+        axes2[idx].grid(True)
+    
+    # axes[1].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
+    #       ncol = ncol, fancybox=True, shadow=True)
+    
+    # axes2[1].legend(loc='upper center', bbox_to_anchor=bbox_to_anchor,
+    #       ncol = ncol, fancybox=True, shadow=True)
+
+    fig.suptitle(f"z-axis Overlapping Segments ({label})")
+    fig2.suptitle(f"z-axis Overlapping Segments ({label})")
     plt.draw()
 
     all_z_diffs_concatenated = np.concatenate(all_z_diffs)
@@ -723,26 +767,25 @@ methods = {
 #-robust comes from plane uncertanties 
 
 methods = {
-    # 'GT' : '/home/eugeniu/z_tighly_coupled/ref',
+    'GT' : '/home/eugeniu/z_tighly_coupled/ref',
     #'test'                         : '/home/eugeniu/z_tighly_coupled/test',
     #'test_now'                         : '/home/eugeniu/z_tighly_coupled/test',
 
     
     
-    'LI'                        : '/home/eugeniu/z_tighly_coupled/1.1',    #robust
-    'LI-VUX'                    : '/home/eugeniu/z_tighly_coupled/2.1', #robust
+    # 'LI'                        : '/home/eugeniu/z_tighly_coupled/1.1',    #robust
+    # 'LI-VUX'                    : '/home/eugeniu/z_tighly_coupled/2.1', #robust
 
     #the methods with fixed covariance as before 
-    '*-LI'                    : '/home/eugeniu/z_tighly_coupled/1',
-    '*-LI-VUX'                : '/home/eugeniu/z_tighly_coupled/2',
-
+    # '*-LI'                    : '/home/eugeniu/z_tighly_coupled/1',
+    # '*-LI-VUX'                : '/home/eugeniu/z_tighly_coupled/2',
 
     # '(ppk)GNSS'             : '/home/eugeniu/z_tighly_coupled/0',
     # 'LI-VUX-(raw)GNSS'      : '/home/eugeniu/z_tighly_coupled/5',
     # 'LI-VUX-(ppk)GNSS'      : '/home/eugeniu/z_tighly_coupled/6',
 
-    # 'LI-VUX-ALS(l-coupled)' : '/home/eugeniu/z_tighly_coupled/3',
-    # 'LI-VUX-ALS(t-coupled)' : '/home/eugeniu/z_tighly_coupled/4',
+    'LI-VUX-ALS(l-coupled)' : '/home/eugeniu/z_tighly_coupled/3',
+    'LI-VUX-ALS(t-coupled)' : '/home/eugeniu/z_tighly_coupled/4',
     
     # 'LI-VUX-sparse-ALS(l-coupled)' : '/home/eugeniu/z_tighly_coupled/7',
     # 'LI-VUX-sparse-ALS(t-coupled)' : '/home/eugeniu/z_tighly_coupled/8',
@@ -819,6 +862,7 @@ ax_3d.set_xlabel("East [m]")
 ax_3d.set_ylabel("North [m]")
 ax_3d.set_zlabel("Height [m]")
 
+
 # 2D Plot (XY Plane)
 # fig_2d = plt.figure(figsize=(10, 7))
 # ax_2d = fig_2d.add_subplot(111)
@@ -852,6 +896,7 @@ z_center = np.mean(z_limits)
 ax_3d.set_xlim(x_center - max_range/2, x_center + max_range/2)
 ax_3d.set_ylim(y_center - max_range/2, y_center + max_range/2)
 ax_3d.set_zlim(z_center - max_range/2, z_center + max_range/2)
+
 
 for idx, (label, path) in enumerate(methods.items()):
     #for label, path in methods.items():
@@ -915,6 +960,9 @@ ax_3d.legend(loc='upper center', bbox_to_anchor=bbox_to_anchor, #title="Method",
 ax_3d.grid(True)
 # ax_2d.grid(True)
 plt.draw()
+
+plt.show()
+exit()
 
 def plot_box(data, metric = '',  show_legend = True):
     print('plot_box for ',metric)

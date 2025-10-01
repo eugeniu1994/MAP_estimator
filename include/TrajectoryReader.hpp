@@ -84,21 +84,35 @@ struct MeasurementQueryResult {
     const Measurement* next = nullptr;
 };
 
-int64_t gpsTowToRosTime(const int gps_week, const double tow_sec)
+double gpsTowToRosTime(const int gps_week, const double tow_sec)
 {
     // Convert GPS week + TOW -> UNIX time
-    int64_t unix_sec = GPS_UNIX_OFFSET + gps_week * 7 * 24 * 3600 + static_cast<int64_t>(tow_sec);
+    int64_t unix_time = GPS_UNIX_OFFSET + gps_week * 7 * 24 * 3600 + static_cast<int64_t>(tow_sec);
 
     // Adjust for leap seconds
-    unix_sec -= LEAP_SECONDS;
-
-    //return unix_sec;
+    unix_time -= LEAP_SECONDS;
+    //return unix_time;
 
     // Fractional seconds
     double frac = tow_sec - static_cast<int64_t>(tow_sec);
 
-    return ros::Time(unix_sec, static_cast<uint32_t>(frac * 1e9)).toSec();
+    return ros::Time(unix_time, static_cast<uint32_t>(frac * 1e9)).toSec();
+
+
+    // // Full UNIX seconds (with fraction)
+    // double unix_time = GPS_UNIX_OFFSET + gps_week * 604800.0 + tow_sec;
+    // // Adjust for leap seconds
+    // unix_time -= LEAP_SECONDS;
+    // // Split into sec + nsec
+    // int64_t sec  = static_cast<int64_t>(unix_time);
+    // uint32_t nsec = static_cast<uint32_t>((unix_time - sec) * 1e9);
+
+    // return ros::Time(sec, nsec).toSec();
 }
+
+
+
+
 
 inline std::vector<std::string> splitStr(const std::string& str, const std::string& delims = " ") {
   std::vector<std::string> strings;
@@ -169,9 +183,6 @@ public:
             if (row.size() == 0)
                 continue;
             
-
-                
-
             // first  fullWeekSecs: 1721865600
             // second fullWeekSecs: 1721520000
             // GPS Week: 2324 TOW at midnight: 345600.000000000000 sec
@@ -309,8 +320,7 @@ public:
                     // double weekTimeSec = std::stod (row [paramMap ["UTCTime"]]);
                     double weekTimeSec = m.GPSTime - 18.; 
                     m.utc_usec = static_cast<std::uint64_t> (fullWeekSecs * 1e6 + weekTimeSec * 1e6);
-                    // measLowerIt->utc_usec
-                    // measLowerIt->utc_usec - scan->header.stamp
+                    // m.utc_usec - scan->header.stamp
 
                     m.utc_usec2 = gpsTowToRosTime(gps_week, m.GPSTime);
 
@@ -393,6 +403,58 @@ public:
                 initted = true;
                 std::cout << "Sync at GNSS time:" << measurements_[i].tod << ", and given tod:" << tod << std::endl;
 
+                // measurements are sorted by TOD, diff increasing -> break
+                break;
+            }
+        }
+        curr_index = idx;
+
+        return initted;
+    }
+
+    bool init_unix(const double rost_time)
+    {
+        std::cout<<"init_unix..."<<std::endl;
+        if (measurements_.empty())
+        {
+            curr_index = 0;
+            return false;
+        }
+
+        if ((rost_time < measurements_[0].utc_usec2) || (rost_time > measurements_[measurements_.size() - 1].utc_usec2))
+        {
+            std::cout << "Given rost_time("<< rost_time << ") is in out of the UNIX GNSS time range" << std::endl;
+            std::cout << "Start:" << measurements_[0].utc_usec2 << "(s), end:" << measurements_[measurements_.size() - 1].utc_usec2 << "(s)" << std::endl;
+            return false;
+        }
+
+        // simple linear scan to find initial closest index
+        size_t idx = 0;
+        double minDiff = std::abs(measurements_[0].utc_usec2 - rost_time);
+        std::cout<<"init minDiff:"<<minDiff<<std::endl;
+        // for (size_t i = 1; i < 15; ++i)
+        // {
+        //     std::cout<<"\n utc_usec:"<<measurements_[i].utc_usec<<std::endl;
+        //     std::cout<<"utc_usec2:"<<measurements_[i].utc_usec2<<std::endl;
+        // }
+        for (size_t i = 1; i < measurements_.size(); ++i)
+        {
+            double diff = std::abs(measurements_[i].utc_usec2 - rost_time);
+            //std::cout << "dt:" << diff << std::endl;
+            if (diff < minDiff)
+            {
+                minDiff = diff;
+                idx = i;
+            }
+            else
+            {
+                if(minDiff < 0.5)
+                    initted = true;
+                else
+                    std::cout<<"to big time difference, minDiff:"<<minDiff<<std::endl;
+
+                std::cout << "Sync at UNIX GNSS time:" << measurements_[i].utc_usec2 << ", and given ros_time:" << rost_time << std::endl;
+                std::cout << "dt:" << diff<<", minDiff:"<<minDiff << std::endl;
                 // measurements are sorted by TOD, diff increasing -> break
                 break;
             }
@@ -531,6 +593,56 @@ public:
         return result;
     }
 
+    MeasurementQueryResult queryMeasurementUnix(const double ros_time) {
+        MeasurementQueryResult result;
+        if (measurements_.empty())
+            return result;
+
+        size_t idx = curr_index;
+
+        // walk forward
+        while (idx + 1 < measurements_.size() && measurements_[idx + 1].utc_usec2 < ros_time) {
+            ++idx;
+        }
+
+        // walk backward if necessary
+        while (idx > 0 && measurements_[idx].utc_usec2 > ros_time) {
+            --idx;
+        }
+
+        curr_index = idx;
+
+        // determine closest
+        const Measurement* prevM = (idx > 0) ? &measurements_[idx - 1] : nullptr;
+        const Measurement* nextM = (idx + 1 < measurements_.size()) ? &measurements_[idx + 1] : nullptr;
+        const Measurement* currentM = &measurements_[idx];
+
+        if (!prevM) {
+            result.closest = currentM;
+            result.prev = nullptr;
+            result.next = nextM;
+        } else if (!nextM) {
+            result.closest = currentM;
+            result.prev = prevM;
+            result.next = nullptr;
+        } else {
+            // closest between current and next
+            double diffCurr = std::abs(currentM->utc_usec2 - ros_time);
+            double diffNext = std::abs(nextM->utc_usec2 - ros_time);
+            if (diffCurr <= diffNext) {
+                result.closest = currentM;
+            } else {
+                result.closest = nextM;
+                idx = idx + 1;
+                curr_index = idx;
+            }
+            result.prev = prevM;
+            result.next = nextM;
+        }
+
+        return result;
+    }
+
     Sophus::SE3 closestPose(const double &tod)
     {
         if ((tod < measurements_[0].tod) || (tod > measurements_[measurements_.size() - 1].tod))
@@ -545,6 +657,22 @@ public:
         toSE3(*result.prev, p1);
         toSE3(*result.next, p2);
         return interpolateSE3(p1,result.prev->tod, p2,result.next->tod,tod);
+    }
+
+    Sophus::SE3 closestPoseUnix(const double &ros_time)
+    {
+        if ((ros_time < measurements_[0].utc_usec2) || (ros_time > measurements_[measurements_.size() - 1].utc_usec2))
+        {
+            std::cout << "Given tod is in out of the GNSS time range" << std::endl;
+            std::cout << "Start:" << measurements_[0].utc_usec2 << "(s), end:" << measurements_[measurements_.size() - 1].utc_usec2 << "(s)" << std::endl;
+            return Sophus::SE3();
+        }
+
+        MeasurementQueryResult result = queryMeasurementUnix(ros_time);
+        Sophus::SE3 p1,p2;
+        toSE3(*result.prev, p1);
+        toSE3(*result.next, p2);
+        return interpolateSE3(p1,result.prev->utc_usec2, p2,result.next->utc_usec2,ros_time);
     }
 
     const std::vector<Measurement> &measurements() const { return measurements_; }

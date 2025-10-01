@@ -8,15 +8,15 @@ import os
 import pandas as pd
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
-
+np.set_printoptions(suppress=True)
 global_path = "/media/eugeniu/T7/calibration/calib/" #//change this to your system
 
 #Basler RGB intrinsics
-K = np.array(   [[1396.42642353,    0. ,         986.87440169],
-                [   0.  ,       1398.23028572  ,607.60275135],
-                [   0.       ,     0. ,           1.        ]])
+# K = np.array(   [[1396.42642353,    0. ,         986.87440169],
+#                 [   0.  ,       1398.23028572  ,607.60275135],
+#                 [   0.       ,     0. ,           1.        ]])
 
-D = np.array( [[-0.12242753 , 0.05002637 , 0.00010842 , 0.00189244 , 0.03743694]])
+# D = np.array( [[-0.12242753 , 0.05002637 , 0.00010842 , 0.00189244 , 0.03743694]])
 
 #read intrinsic of each thermal
 intr_thermal_left = global_path+"intrinsic_left_thermal_ST.npz"
@@ -60,14 +60,14 @@ left_thermal_intrinsic = np.load(intr_thermal_left, allow_pickle=True)
 #             F = F
 #     )
 
-loaded = np.load(extrinsic_left, allow_pickle=True)
+# loaded = np.load(extrinsic_left, allow_pickle=True)
 
-K_thermal = loaded["K_thermal"]  #intrinsic matrix of thermal cam
-D_thermal = loaded["D_thermal"]  #distortion of thermal cam
-K_baseler = loaded["K_baseler"]  
-D_baseler = loaded["D_baseler"]
-R = loaded["R"]                  #extrinsic rotation from thermal cam to basler camera
-T = loaded["T"]                  #extrinsic translation from thermal cam to basler camera
+# K_thermal = loaded["K_thermal"]  #intrinsic matrix of thermal cam
+# D_thermal = loaded["D_thermal"]  #distortion of thermal cam
+# K_baseler = loaded["K_baseler"]  
+# D_baseler = loaded["D_baseler"]
+# R = loaded["R"]                  #extrinsic rotation from thermal cam to basler camera
+# T = loaded["T"]                  #extrinsic translation from thermal cam to basler camera
  
 #print("D_thermal ", D_thermal)
 
@@ -178,51 +178,46 @@ def invert_transform(R, t):
 
 #project from basler to thermal
 def test_basler_to_thermal():
-    loaded = np.load(extrinsic_left, allow_pickle=True)
+    # loaded = np.load(extrinsic_left, allow_pickle=True)  #0.16
+
+    '''
+    for center camera - extrinsics
+    with intrinsics as they are - 0.14 px reprojection error
+    with fx = fy and k3 = 0     - 0.151 px
+    same but with weighted      - 0.150 px
+    '''
+
+    '''
+    for left camera - extrinsics
+    with intrinsics as they are -  0.16 reprojection error
+    with fx = fy and k3 = 0     -  0.173 px
+    same but with weighted      -  0.15 px
+    '''
+    extrinsic_center = "/media/eugeniu/T7/calibration/extrinsic_saved_data_raw/left/extrinsic_left_thermal_to_baseler.npz"
+
+    format = ""
+    extrinsic_center = "/media/eugeniu/T7/calibration/a_new_results/extrinsic_left_thermal_to_baseler_{}.npz".format(format)
+    format = "weighted"
+    extrinsic_center = "/media/eugeniu/T7/calibration/a_new_results/extrinsic_left_thermal_to_baseler_{}.npz".format(format)
+    format = "weighted"
+    extrinsic_center = "/media/eugeniu/T7/calibration/a_new_results/extrinsic_left_thermal_to_baseler_{}2.npz".format(format)
+
+
+    loaded = np.load(extrinsic_center, allow_pickle=True)  #0.16
+
+
+    K = loaded["K_baseler"]
+    D = loaded["D_baseler"]
     K_thermal = loaded["K_thermal"]
     D_thermal = loaded["D_thermal"]   
     R = loaded["R"]
     T = loaded["T"]
-
+    print("R:\n",R)
+    print("T:\n",T)
     print("K_thermal:\n",K_thermal)
     print("before D_thermal:", D_thermal)
 
-    #D_thermal[0][-1] = 0
-    #D_thermal[0][-1] = 100
-    #print("D_thermal:", D_thermal)
-
-    '''
-    
-    Camera Matrix:
- [[1619.11025931    0.          418.67944928]
- [   0.         1614.4826305   225.48755728]
- [   0.            0.            1.        ]]
-Distortion Coefficients:
- [ -0.22394855   2.92451414  -0.00098882   0.01133771 -26.11804034]
-    
- 
- Camera Matrix:
- [[1612.26241364    0.          409.91189903]
- [   0.         1607.40899763  227.9029271 ]
- [   0.            0.            1.        ]]
-Distortion Coefficients:
- [-0.13352532  0.02932648 -0.00101115  0.01103758  0.        ]
-
- 
-    '''
-#     K_thermal = np.array( [[1612.26241364 ,   0.   ,       409.91189903],
-#  [   0.   ,      1607.40899763,  227.9029271 ],
-#  [   0.    ,        0.         ,   1.        ]])
-#     D_thermal = np.array([[-0.13352532 , 0.02932648, -0.00101115,  0.01103758 , 0.        ]])
-
-#     R = np.array([[ 0.93192292, -0.01554239, -0.36232321],
-#     [ 0.01297193 , 0.99987048 ,-0.00952615],
-#     [ 0.36242434 , 0.00417761 , 0.93200383]])
-    
-#     T = np.array([[ 0.01397308],
-#     [ 0.0644901 ],
-#     [-0.1311511 ]])
-    
+    # thermal_img, basler_img = global_path+"some_data_center/thermal_image_0001.npy", global_path+"some_data_center/baseler_image_0001.npy"
 
     thermal_img, basler_img = global_path+"some_data_left/thermal_image_0001.npy", global_path+"some_data_left/baseler_image_0001.npy"
     thermal_img, basler_img = np.load(thermal_img), np.load(basler_img)
@@ -237,6 +232,8 @@ Distortion Coefficients:
                 
     ret_t, corners_t = cv2.findChessboardCorners(invert_img_b, (10, 7),
                                                         flags=cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
+    
+    invert_img_b = cv2.cvtColor(invert_img_b.copy(),cv2.COLOR_GRAY2RGB)
     # if ret_t:
     #     cv2.drawChessboardCorners(invert_img_b, (10, 7), corners_t, ret_t)
 
