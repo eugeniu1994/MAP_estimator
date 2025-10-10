@@ -310,6 +310,7 @@ void DataHandler::Subscribe()
 
 
     Sophus::SE3 tmp_pose = Sophus::SE3();
+
     for (const rosbag::MessageInstance &m : view)
     {
         ros::spinOnce();
@@ -443,6 +444,7 @@ void DataHandler::Subscribe()
                     // todo - we can do it the other way around and add the gravity in IMU body frame
                     publishAccelerationArrow(marker_pub, -raw_acc, msg_time);
 
+                    if(true)
                     {
                         *feats_undistort = *Measures.lidar;              // lidar frame
                         TransformPoints(Lidar_wrt_IMU, feats_undistort); // lidar to IMU frame - front IMU
@@ -527,6 +529,16 @@ void DataHandler::Subscribe()
 
                     downSizeFilterSurf.setInputCloud(feats_undistort);
                     downSizeFilterSurf.filter(*feats_down_body);
+
+                    auto p1 = feats_undistort->points[0];
+                    auto p2 = feats_down_body->points[0];
+
+                    auto r1 = p1.x * p1.x + p1.y * p1.y + p1.z * p1.z;
+                    auto r2 = p2.x * p2.x + p2.y * p2.y + p2.z * p2.z;
+
+                    std::cout<<"\nfeats_undistort [x,y,z,i,sqrt(sqrt(r))]:"<<p1.x<<", "<<p1.y<<", "<<p1.z<<", "<<p1.intensity<<", "<<sqrt(sqrt(r1))<<std::endl;
+                    std::cout<<"feats_down_body [x,y,z,i,sqrt(sqrt(r))]:"<<p2.x<<", "<<p2.y<<", "<<p2.z<<", "<<p2.intensity<<", "<<sqrt(sqrt(r2))<<std::endl;
+
                     feats_down_size = feats_down_body->points.size();
                     if (feats_down_size < 5)
                     {
@@ -717,7 +729,7 @@ void DataHandler::Subscribe()
                 std::cout << "Mapping time(ms):  " << (t11 - t00) * 1000 << ", feats_down_size: " << feats_down_size << ", lidar_end_time:" << lidar_end_time << "\n"
                           << std::endl;
 
-                //std::this_thread::sleep_for(std::chrono::milliseconds(50)); // to simulate lidar measurements
+                std::this_thread::sleep_for(std::chrono::milliseconds(50)); // to simulate lidar measurements
             }
         }
     }

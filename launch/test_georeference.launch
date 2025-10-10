@@ -17,15 +17,17 @@
     <param name="filter_size_map" type="double" value="0.5" />
 
     <param name="cube_side_length" type="double" value="120" /> <!--1000-->
-    <node pkg="tf2_ros" type="static_transform_publisher" name="static_transform_vux_to_world" args="0 0 0 0 0 0 world VUX" />
     
     <!-- 
     <node pkg="s_mls" type="test_fusion" name="test_fusion" output="screen" /> 
-     -->
+    
+    <node pkg="s_mls" type="georeference" name="georeference" output="screen" />
+    -->
 
 
-    <node pkg="s_mls" type="georeference" name="georeference" output="screen" /> 
+   <node pkg="s_mls" type="georeference" name="georeference" output="screen" /> 
      
+
     
     <group if="$(arg rviz)">
         <group if="$(arg rviz_car)">
@@ -35,6 +37,8 @@
         </group>
         <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find s_mls)/rviz_cfg/visualize.rviz" /> 
     </group>
+
+    
 
     
     <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server" ns="MLS" >

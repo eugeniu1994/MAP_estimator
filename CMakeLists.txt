@@ -17,6 +17,9 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   roscpp
   rosbag
+
+  # novatel_oem7_msgs #required for timing  
+
   rospy
   sensor_msgs
   std_msgs
@@ -57,7 +60,7 @@ add_definitions(-DMP_PROC_NUM=${N})
 
 
 
-find_package(PCL REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common io visualization)
 find_package(Eigen3 REQUIRED)
 find_package(Sophus REQUIRED )
 
@@ -124,7 +127,7 @@ link_directories(
 
 catkin_package(
   CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs 
-  DEPENDS EIGEN3 GTSAM PCL Ceres
+  DEPENDS EIGEN3 GTSAM PCL Ceres #novatel_oem7_msgs
   INCLUDE_DIRS  
 )
 
@@ -237,16 +240,37 @@ target_link_libraries(test_fusion ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${O
 
 
 #test georeference only
-# set(SOURCE_FILES_TEST ${MAIN_SOURCE_FILES3} src_georeference_gnss_only/georeference.cpp src2/clean_DataHandler_vux.cpp)
-# add_executable(georeference src2/main.cpp ${SOURCE_FILES_TEST})
-# target_link_libraries(georeference ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}
-
-set(SOURCE_FILES_TEST ${MAIN_SOURCE_FILES3} src_extrinsics/LiDAR2GNSS_IMU.cpp src2/clean_DataHandler_vux.cpp)
+set(SOURCE_FILES_TEST ${MAIN_SOURCE_FILES3} src_georeference_gnss_only/georeference.cpp src2/clean_DataHandler_vux.cpp)
 add_executable(georeference src2/main.cpp ${SOURCE_FILES_TEST})
 target_link_libraries(georeference ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}
+
+# set(SOURCE_FILES_TEST ${MAIN_SOURCE_FILES3} src_extrinsics/LiDAR2GNSS_IMU.cpp src2/clean_DataHandler_vux.cpp)
+# add_executable(georeference src2/main.cpp ${SOURCE_FILES_TEST})
+# target_link_libraries(georeference ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}
 
 #------------------------
 #test extrinsics lidar gnss
 # set(SOURCE_FILES_extrinsics ${MAIN_SOURCE_FILES3} src_extrinsics/gnss2mls_extrinsics.cpp src2/clean_DataHandler_vux.cpp src2/VuxReader.cpp)
 # add_executable(lidar_gnss_extrinsic src2/main.cpp ${SOURCE_FILES_TEST})
 # target_link_libraries(lidar_gnss_extrinsic ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}
+
+
+set(BUILD_ICP FALSE)
+
+if(BUILD_ICP)
+    message("Build ICP registration.")
+    #add the icp estimator
+    if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/include/p2p/)
+        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/include/p2p ${CMAKE_CURRENT_BINARY_DIR}/p2p)
+    endif()
+
+    set(TARGET_LINK_LIBS_ICP ${TARGET_LINK_LIBS} p2p::core gtsam) #maybe GTSAM is not needed yet here
+    SET(MAIN_SOURCE_FILES_ICP src/IMU.cpp src/GNSS.cpp src/utils.cpp src/estimators/Estimator.cpp src/DataHandler.cpp)
+    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/estimators/ICP.cpp src/Graph.cpp src/estimators/ALS_icp.cpp)
+
+
+    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/src_icp/DataHandler_icp.cpp)
+    add_executable(icp_test src2/main.cpp ${MAIN_SOURCE_FILES_ICP})
+    target_link_libraries(icp_test ${TARGET_LINK_LIBS_ICP} ${CERES_LIBRARIES} )
+
+endif()

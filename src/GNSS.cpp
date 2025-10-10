@@ -76,10 +76,10 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
         if(true)
         {
             auto gpsTime = msg->time; //this is the actual GPS time  1980-01-06
-
+            std::cout<<"GPS time from 1980-01-06: "<<gpsTime<<std::endl;
             const int leapSeconds = 18; // Number of leap seconds as of October 2023
             double utcTime = gpsTime - leapSeconds;
-            long totalSeconds = static_cast<long>(utcTime);
+            //long totalSeconds = static_cast<long>(utcTime);
             const int secondsInADay = 24 * 60 * 60;
             //int timeOfDaySeconds = totalSeconds % secondsInADay;
 

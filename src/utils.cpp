@@ -410,7 +410,7 @@ std::vector<std::string> expandBagPattern(const std::string &pattern_path)
     std::vector<std::string> results;
 
     fs::path p(pattern_path);
-    fs::path dir = p.parent_path();          // directory part
+    fs::path dir = p.parent_path();               // directory part
     std::string filename = p.filename().string(); // e.g. "1_hesai-CPT_2024-*.bag"
 
     if (dir.empty())

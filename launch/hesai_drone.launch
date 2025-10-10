@@ -12,17 +12,18 @@
     <param name="max_iteration" type="int" value="3" /> <!--3-->
     <param name="Bag" type="string" value="$(arg bag_file)" />
     
-    <param name="filter_size_surf" type="double" value=".5" />
-    <param name="filter_size_map" type="double" value=".5" />
+    <param name="filter_size_surf" type="double" value=".1" />
+    <param name="filter_size_map" type="double" value=".1" />
     <param name="cube_side_length" type="double" value="120" /> <!--1000-->
 
     <!-- 
     <node pkg="s_mls" type="mls_mapping" name="mls_mapping" output="screen" /> 
     -->
     <!-- 
-    <node pkg="s_mls" type="test_fusion" name="test_fusion" output="screen" /> 
-    -->
     <node pkg="s_mls" type="georeference" name="georeference" output="screen" /> 
+    -->
+    <node pkg="s_mls" type="test_fusion" name="test_fusion" output="screen" /> 
+    
 
 
     <group if="$(arg rviz)">

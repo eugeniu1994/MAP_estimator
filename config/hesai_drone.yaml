@@ -1,6 +1,9 @@
 common:
-    lid_topic :  "/hesai/pandar"
-    imu_topic :  "/imu/data_raw"
+    # lid_topic :  "/hesai/pandar"
+    # imu_topic :  "/imu/data_raw"
+    lid_topic :  "/lidar_points" # "/hesai/pandar"
+    imu_topic :  "/imu/data_raw" # "/imu/data_raw"
+
     gnss_topic:  "/gps/gps"
     time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
     time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
@@ -18,19 +21,31 @@ mapping:
     b_gyr_cov: 0.0001
     fov_degree:    180
     det_range:   150.0
-    extrinsic_est_en: false      # true: enable the online estimation of IMU-LiDAR extrinsic
+    extrinsic_est_en: true # false      # true: enable the online estimation of IMU-LiDAR extrinsic
     
-    GNSS_IMU_calibration_distance: 50 # 40 # 90 #need more since only 60m is height
+    GNSS_IMU_calibration_distance: 999 # 50 # 40 # 90 #need more since only 60m is height
     #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
-    # extrinsic_T: [ 0.009,  0.13,  0.09 ] #given by Teemu 
-    # extrinsic_R: [ 0, 1, 0,
-    #               -1, 0, 0,
-    #                0, 0, 1]
+    # extrinsic_T: [0,0,0,] # [ 0.009,  0.13,  0.09 ] #given by Teemu 
+    # extrinsic_R: [ 1,  0,  0,
+    #                0, -1,  0,
+    #                0,  0,  -1]
 
-    extrinsic_T: [0.009, 0.12, -0.006] #given by Teemu 
-    extrinsic_R: [ 0, 1, 0,    
-                   0, 0, 1,
-                   1, 0, 0]
+    extrinsic_T: [-0.15, 0, -0.031] # [ 0.009,  0.13,  0.09 ] #given by Teemu 
+    # R_I_L(0)&​Ry​(+30 degrees)
+    #               [ 1,  0,   0,        [0.8660, 0,  0.5
+    #                 0, -1,   0,     *   0,      1,  0,
+    #                 0,  0,  -1]        -0.5,    0,  0.8660
+
+    extrinsic_R: [ 0.8660,  0,  0.5,  #30
+                   0,      -1,   0,
+                   0.5,     0,  -0.8660]
+
+
+
+    # extrinsic_T: [0.009, 0.12, -0.006] #given by Teemu 
+    # extrinsic_R: [ 0, 1, 0,    
+    #                0, 0, 1,
+    #                1, 0, 0]
                    
                    #logic here
                    #x of the lidar should be z of the imu

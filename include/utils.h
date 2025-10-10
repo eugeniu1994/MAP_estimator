@@ -38,10 +38,10 @@ constexpr int MAX_NUM_ITERATIONS_ = 500; // icp
 constexpr double ESTIMATION_THRESHOLD_ = 0.001;
 
 // 1.0 for no gravity
-const double G_m_s2 = 9.81;   //positive as before z axis up
+const double G_m_s2 = 9.81; // positive as before z axis up
 
-//the new system has the z-axis down therefore negative
-//const double G_m_s2 = -9.81;
+// the new system has the z-axis down therefore negative
+// const double G_m_s2 = -9.81;
 
 #define NUM_MATCH_POINTS (5)
 
@@ -255,22 +255,22 @@ namespace ekf
             //     return false;
             // }
 
-            //std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
-            
+            // std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
+
             double weight_sum = 0.0;
-            
+
             // Compute weighted centroid
             for (int j = 0; j < neighbours; j++)
             {
                 const double &w = point_weights[j];
 
-                centroid(0) += w*points[j].x;
-                centroid(1) += w*points[j].y;
-                centroid(2) += w*points[j].z;
+                centroid(0) += w * points[j].x;
+                centroid(1) += w * points[j].y;
+                centroid(2) += w * points[j].z;
 
                 weight_sum += w;
             }
-            //std::cout<<"weight_sum:"<<weight_sum<<std::endl;
+            // std::cout<<"weight_sum:"<<weight_sum<<std::endl;
             centroid /= weight_sum;
 
             // Compute weighted covariance matrix
@@ -305,13 +305,12 @@ namespace ekf
         // Compute Eigenvalues and Eigenvectors
         Eigen::SelfAdjointEigenSolver<M3D> solver(covariance);
 
-        if (solver.info() != Eigen::Success) {
+        if (solver.info() != Eigen::Success)
+        {
             std::cerr << "Eigen solver failed!" << std::endl;
             throw std::runtime_error("Error: Eigen solver failed!");
             return false;
         }
-
-
 
         V3D norm = solver.eigenvectors().col(0); // Smallest eigenvector
         norm.normalize();
@@ -355,19 +354,17 @@ namespace ekf
         return false;
     }
 
-
     template <typename T>
     inline bool esti_plane_pca(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &points,
-         const double &threshold, const std::vector<double> &point_weights, double &plane_var, bool weighted_mean = false)
+                               const double &threshold, const std::vector<double> &point_weights, double &plane_var, bool weighted_mean = false)
     {
         const size_t neighbours = points.size();
-        //std::cout<<"N:"<<neighbours<<std::endl;
+        // std::cout<<"N:"<<neighbours<<std::endl;
         if (neighbours < 3)
             return false; // Need at least 3 points to define a plane
 
-        
         V3D centroid(0, 0, 0); // Compute the centroid
-        M3D covariance; // Compute covariance matrix
+        M3D covariance;        // Compute covariance matrix
         covariance.setZero();
 
         // Regularize
@@ -383,22 +380,22 @@ namespace ekf
             //     return false;
             // }
 
-            //std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
-            
+            // std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
+
             double weight_sum = 0.0;
-            
+
             // Compute weighted centroid
             for (int j = 0; j < neighbours; j++)
             {
                 const double &w = point_weights[j];
 
-                centroid(0) += w*points[j].x;
-                centroid(1) += w*points[j].y;
-                centroid(2) += w*points[j].z;
+                centroid(0) += w * points[j].x;
+                centroid(1) += w * points[j].y;
+                centroid(2) += w * points[j].z;
 
                 weight_sum += w;
             }
-            //std::cout<<"weight_sum:"<<weight_sum<<std::endl;
+            // std::cout<<"weight_sum:"<<weight_sum<<std::endl;
             centroid /= weight_sum;
 
             // Compute weighted covariance matrix
@@ -433,7 +430,8 @@ namespace ekf
         // Compute Eigenvalues and Eigenvectors
         Eigen::SelfAdjointEigenSolver<M3D> solver(covariance);
 
-        if (solver.info() != Eigen::Success) {
+        if (solver.info() != Eigen::Success)
+        {
             std::cerr << "Eigen solver failed!" << std::endl;
             throw std::runtime_error("Error: Eigen solver failed!");
             return false;
@@ -466,14 +464,14 @@ namespace ekf
         return false;
     }
 
-    inline bool esti_cov(const PointVector &points, 
-         const std::vector<double> &point_weights,
-         M3D &out_cov, V3D &out_center, bool weighted_mean = false)
+    inline bool esti_cov(const PointVector &points,
+                         const std::vector<double> &point_weights,
+                         M3D &out_cov, V3D &out_center, bool weighted_mean = false)
     {
         const size_t neighbours = points.size();
         // std::cout<<"N:"<<N<<std::endl;
         if (neighbours < 5)
-            return false; // Need at least 5 points 
+            return false; // Need at least 5 points
 
         // Compute the centroid
         V3D centroid(0, 0, 0);
@@ -494,22 +492,22 @@ namespace ekf
             //     return false;
             // }
 
-            //std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
-            
+            // std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
+
             double weight_sum = 0.0;
-            
+
             // Compute weighted centroid
             for (int j = 0; j < neighbours; j++)
             {
                 const double &w = point_weights[j];
 
-                centroid(0) += w*points[j].x;
-                centroid(1) += w*points[j].y;
-                centroid(2) += w*points[j].z;
+                centroid(0) += w * points[j].x;
+                centroid(1) += w * points[j].y;
+                centroid(2) += w * points[j].z;
 
                 weight_sum += w;
             }
-            //std::cout<<"weight_sum:"<<weight_sum<<std::endl;
+            // std::cout<<"weight_sum:"<<weight_sum<<std::endl;
             centroid /= weight_sum;
 
             // Compute weighted covariance matrix

@@ -24,6 +24,7 @@
 #include "matplotlibcpp.h"
 namespace plt = matplotlibcpp;
 
+
 volatile bool flg_exit = false;
 void SigHandle(int sig)
 {
@@ -596,6 +597,27 @@ bool readSE3FromFile(const std::string &filename, Sophus::SE3 &transform_out)
 // using namespace gnss_MLS_fusion;
 // #include "rangeProjection.hpp"
 
+// #include <novatel_oem7_msgs/INSPVA.h>
+
+// void handleInspvaMessage(const rosbag::MessageInstance &m)
+// {
+//     // Try to instantiate the message as INSPVA
+//     novatel_oem7_msgs::INSPVA::ConstPtr msg = m.instantiate<novatel_oem7_msgs::INSPVA>();
+//     if (!msg)
+//         return; // skip if wrong type
+
+//     // Convert ROS stamp to double seconds
+//     double ros_time_sec = msg->header.stamp.sec + msg->header.stamp.nsec * 1e-9;
+
+//     // Print results
+//     std::cout << std::fixed;
+//     std::cout << " novatel_oem7_msgs::INSPVA "<<std::endl;
+//     std::cout << "ROS Time (s): " << ros_time_sec << std::endl;
+//     std::cout << "GPS Week Number: " << msg->nov_header.gps_week_number << std::endl;
+//     std::cout << "GPS Week Milliseconds: " << msg->nov_header.gps_week_milliseconds << std::endl;
+//     std::cout << "---------------------------------------------" << std::endl;
+// }
+
 void DataHandler::Subscribe()
 {
     std::cout << "Run test" << std::endl;
@@ -617,6 +639,12 @@ void DataHandler::Subscribe()
 #else
     std::shared_ptr<Graph> imu_obj(new Graph());
 #endif
+
+    {
+        //just a test
+        //std::shared_ptr<Graph> imu_obj_2(new Graph());
+    }
+
 
     std::shared_ptr<GNSS> gnss_obj(new GNSS());
 
@@ -667,6 +695,8 @@ void DataHandler::Subscribe()
     topics.push_back(lid_topic);
     topics.push_back(imu_topic);
     topics.push_back(gnss_topic);
+    topics.push_back("/novatel/oem7/inspva");
+    
     rosbag::View view(bag, rosbag::TopicQuery(topics));
 
     signal(SIGINT, SigHandle); // Handle Ctrl+C (SIGINT)
@@ -798,58 +828,18 @@ void DataHandler::Subscribe()
     int tmp_count = 0;
 
     bool do_this_once = false, dropped = false;
+
+
+    //shift_measurements_to_zero_time = true; //required for time sync
+    
     for (const rosbag::MessageInstance &m : view)
     {
         ros::spinOnce();
         if (flg_exit || !ros::ok())
             break;
 
-        
-
         std::string topic = m.getTopic();
-        // if(!dropped){
-        //     std::cout<<"\ntest this now"<<std::endl;
-        //     std::cout<<"last_timestamp_imu  :"<<last_timestamp_imu<<std::endl;
-        //     std::cout<<"last_timestamp_lidar:"<<last_timestamp_lidar<<std::endl;
-        //     std::cout<<"dt:"<<(last_timestamp_lidar - last_timestamp_imu)<<std::endl;
-
-        //     if (topic == lid_topic)
-        //     {
-        //         sensor_msgs::PointCloud2::ConstPtr pcl_msg = m.instantiate<sensor_msgs::PointCloud2>();
-        //         if (pcl_msg)
-        //         {
-        //             pcl_cbk(pcl_msg);
-        //         }
-        //         do_this_once = true;
-        //     }
-
-        //     if (do_this_once && topic == imu_topic)
-        //     {
-        //         sensor_msgs::Imu::ConstPtr imu_msg = m.instantiate<sensor_msgs::Imu>();
-        //         if (imu_msg)
-        //         {
-        //             last_timestamp_imu = imu_msg->header.stamp.toSec();
-                    
-        //             auto dt = (last_timestamp_lidar - last_timestamp_imu);
-        //             if(dt <= .01)
-        //             {
-        //                 std::cout << "\nsynchronised\n, press enter..." << std::endl;
-        //                 std::cin.get();
-        //                 dropped = true;
-        //                 imu_buffer.clear();
-        //                 lidar_pushed = false;
-        //             }
-        //             else{
-        //                 std::cout<<"dropping..."<<std::endl;
-        //             }
-        //             continue;
-        //         }
-        //     }
-            //last_timestamp_imu  :1747564211.222993135452
-            //last_timestamp_lidar:1747564211.323302984238
-            //continue;
-        //}
-
+       
         if (topic == imu_topic)
         {
             sensor_msgs::Imu::ConstPtr imu_msg = m.instantiate<sensor_msgs::Imu>();
@@ -876,6 +866,10 @@ void DataHandler::Subscribe()
                 pcl_cbk(pcl_msg);
             }
         }
+        // else if(topic == "/novatel/oem7/inspva")
+        // {
+        //     handleInspvaMessage(m);
+        // }
 
         if (sync_packages(Measures))
         {
@@ -892,6 +886,8 @@ void DataHandler::Subscribe()
             //     std::cout << "Stop here... enough data 8000 scans" << std::endl;
             //     break;
             // }
+
+            
 
             perform_mls_registration = true;
             if (perform_mls_registration)
@@ -2326,7 +2322,7 @@ std::cout<<"save_poses:"<<save_poses<<", save_clouds_path:"<<save_clouds_path<<s
                 // std::cout<<"Debug als2mls:\n"<<als2mls.matrix()<<std::endl;
             }
         }else{
-            std::cout<<"Sync failed..."<<std::endl;
+            //std::cout<<"Sync failed..."<<std::endl;
         }
     }
     bag.close();

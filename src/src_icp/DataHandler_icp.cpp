@@ -1,3 +1,4 @@
+
 #include "DataHandler.hpp"
 
 #include "IMU.hpp"
@@ -188,50 +189,6 @@ void DataHandler::local_map_update()
 
     downSizeFilterSurf.setInputCloud(tmpSurf);
     downSizeFilterSurf.filter(*laserCloudSurfMap);
-#endif
-}
-
-void DataHandler::local_map_update_from_ALS(const std::vector<PointVector> &Nearest_Points)
-{
-#ifdef USE_EKF
-#if USE_STATIC_KDTREE == 0
-    PointVector PointToAdd;
-    PointToAdd.reserve(Nearest_Points.size());
-    for (int i = 0; i < Nearest_Points.size(); i++)
-    {
-        // Append all points from the current PointVector to all_points
-        if (point_selected_surf[i])
-        {
-            const PointVector &point_vector = Nearest_Points[i];
-            PointToAdd.push_back(point_vector[0]); // keep only the closest point
-        }
-    }
-    add_point_size = ikdtree.Add_Points(PointToAdd, true);
-    // std::cout<<"local_map_update_from_ALS add_point_size:"<<add_point_size<<std::endl;
-#else
-
-    pcl::PointCloud<PointType>::Ptr tmpSurf(new pcl::PointCloud<PointType>());
-    tmpSurf->points.resize(Nearest_Points.size());
-    for (int i = 0; i < Nearest_Points.size(); i++)
-    {
-        if (point_selected_surf[i])
-        {
-            const PointVector &point_vector = Nearest_Points[i];
-            PointType &point = tmpSurf->points[i];
-
-            point.x = point_vector[0].x;
-            point.y = point_vector[0].y;
-            point.z = point_vector[0].z;
-
-            point.intensity = -100.0f; // Set to a default value 0
-            // point.time = 0.0f;      // Set to a default value
-        }
-    }
-    // std::cout<<"Added "<<tmpSurf->size()<<" points from ALS to MLS"<<std::endl;
-
-    *laserCloudSurfMap += *tmpSurf;
-
-#endif
 #endif
 }
 
@@ -746,235 +703,18 @@ void DataHandler::BagHandler()
                 continue;
             }
 
-            imu_obj->Process(Measures, estimator_, feats_undistort);
-
+            // imu_obj->Process(Measures, estimator_, feats_undistort);
+            //todo - populate the feats_undistort here 
             double t_IMU_process = omp_get_wtime();
 
             // publish_frame_debug(pubLaserCloudDebug, feats_undistort);
 
-            if (imu_obj->imu_need_init_)
-            {
-                std::cout << "IMU was not initialised " << std::endl;
-                continue;
-            }
-
-            if (feats_undistort->empty() || (feats_undistort == NULL))
-            {
-                ROS_WARN("No feats_undistort point, skip this scan!\n");
-                std::cout << "feats_undistort:" << feats_undistort->size() << std::endl;
-                // throw std::runtime_error("NO points -> ERROR: check your data");
-                continue;
-            }
             state_point = estimator_.get_x();
             pos_lid = state_point.pos + state_point.offset_R_L_I.matrix() * state_point.offset_T_L_I;
-            flg_EKF_inited = (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? false : true;
-
-            #define USE_EKF
-
-#ifdef USE_EKF
-            downSizeFilterSurf.setInputCloud(feats_undistort);
-            downSizeFilterSurf.filter(*feats_down_body);
-
-            feats_down_size = feats_down_body->points.size();
-            if (feats_down_size < 5)
-            {
-                ROS_WARN("No feats_down_body point, skip this scan!\n");
-                std::cout << "feats_undistort:" << feats_undistort->size() << std::endl;
-                std::cout << "feats_down_body:" << feats_down_size << std::endl;
-                throw std::runtime_error("NO feats_down_body points -> ERROR");
-            }
-
-            double t_cloud_voxelization = omp_get_wtime();
-
-#if USE_STATIC_KDTREE == 0
-            if (ikdtree.Root_Node == nullptr)
-            {
-                ikdtree.set_downsample_param(filter_size_map_min);
-                feats_down_size = feats_undistort->size();
-                feats_down_world->resize(feats_down_size);
-
-                tbb::parallel_for(tbb::blocked_range<int>(0, feats_down_size),
-                                  [&](tbb::blocked_range<int> r)
-                                  {
-                                      for (int i = r.begin(); i < r.end(); i++)
-                                      // for (int i = 0; i < feats_down_size; i++)
-                                      {
-                                          // pointBodyToWorld(&(feats_down_body->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
-                                          pointBodyToWorld(&(feats_undistort->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
-                                      }
-                                  });
-                ikdtree.Build(feats_down_world->points);
-                continue;
-            }
-#else
-            if (!map_init)
-            {
-                feats_down_size = feats_undistort->size();
-                feats_down_world->resize(feats_down_size);
-
-                tbb::parallel_for(tbb::blocked_range<int>(0, feats_down_size),
-                                  [&](tbb::blocked_range<int> r)
-                                  {
-                                      for (int i = r.begin(); i < r.end(); i++)
-                                      // for (int i = 0; i < feats_down_size; i++)
-                                      {
-                                          // pointBodyToWorld(&(feats_down_body->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
-                                          pointBodyToWorld(&(feats_undistort->points[i]), &(feats_down_world->points[i])); // transform to world coordinates
-                                      }
-                                  });
-
-                *laserCloudSurfMap += *feats_down_world;
-                map_init = true;
-                continue;
-            }
-#endif
-
-            Nearest_Points.resize(feats_down_size);
-
-#if USE_STATIC_KDTREE == 0
-            if (!estimator_.update(LASER_POINT_COV, feats_down_body, ikdtree, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
-#else
-            if (!estimator_.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
-#endif
-            {
-                std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
-            }
-            // double t_LiDAR_update = omp_get_wtime();
-            // std::cout << "\nIMU_process time(ms):  " << (t_IMU_process - t00) * 1000 <<
-            //", cloud_voxelization (ms): " << (t_cloud_voxelization - t_IMU_process) * 1000 <<
-            //", LiDAR_update (ms): " << (t_LiDAR_update - t_cloud_voxelization) * 1000 << std::endl;
-
-            // Crop the local map----------------------------------------------------
-            state_point = estimator_.get_x();
-            
-            travelled_distance += (state_point.pos - prev_t).norm();
-            prev_t = state_point.pos;
-
-            pos_lid = state_point.pos + state_point.offset_R_L_I.matrix() * state_point.offset_T_L_I;
-            RemovePointsFarFromLocation();
-
-            // get and publish the GNSS pose-----------------------------------------
-            gnss_obj->Process(gps_buffer, lidar_end_time, state_point.pos);
-
-            Sophus::SE3 gnss_pose = (gnss_obj->use_postprocessed_gnss) ? gnss_obj->postprocessed_gps_pose : gnss_obj->gps_pose;
-
-            // gnss_pose.so3() = state_point.rot; // use the MLS orientation
-            publish_gnss_odometry(gnss_pose);
-
-            if (gnss_obj->GNSS_extrinsic_init && use_gnss) // if gnss aligned
-            {
-                const bool global_error = false; // set this true for global error of gps
-                
-                V3D gps_cov_ = V3D(GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR, GNSS_VAR * GNSS_VAR);
-                //std::cout<<"\ngps_cov_ init :"<<gps_cov_.transpose()<<std::endl;
-                
-                //gps_cov_ = gnss_obj->gps_cov;
-                //std::cout<<"gps_cov_ given:"<<gps_cov_.transpose()<<"\n"<<std::endl;
-
-                //V3D gps_cov_ = V3D(.0001, .0001, .02);
-
-                if (global_error)
-                {
-                    const V3D &gnss_in_enu = gnss_obj->carthesian;
-                    estimator_.update(gnss_in_enu, gps_cov_, NUM_MAX_ITERATIONS, global_error, gnss_obj->R_GNSS_to_MLS.transpose());
-                }
-                else
-                {
-                    const V3D &gnss_in_mls = gnss_pose.translation();
-                    estimator_.update(gnss_in_mls, gps_cov_, NUM_MAX_ITERATIONS, global_error);
-                }
-            }
-
-            //if(false) //just for now, remove later, test without als 
-            {
-#ifdef USE_ALS
-            if (!als_obj->refine_als)
-            {                                      // not initialized
-                if (gnss_obj->GNSS_extrinsic_init) // if gnss aligned
-                {
-#if USE_STATIC_KDTREE == 0
-                    PointVector().swap(ikdtree.PCL_Storage);
-                    ikdtree.flatten(ikdtree.Root_Node, ikdtree.PCL_Storage, NOT_RECORD);
-                    featsFromMap->clear();
-                    featsFromMap->points = ikdtree.PCL_Storage;
-#else
-                    *featsFromMap = *laserCloudSurfMap;
-#endif
-
-                    // //only for now - remove this later
-                    // std::string folder_path_save_state = "/home/eugeniu/x_vux-georeferenced-final/_Hesai";
-                    // std::string als2mls_filename = folder_path_save_state + "/als2mls.txt";
-                    // Sophus::SE3 known_als2mls;
-                    // readSE3FromFile(als2mls_filename, known_als2mls);
-                    // std::cout<<"Read the known transformation"<<std::endl;
-                    // als_obj->init(known_als2mls);
+            flg_EKF_inited = true;// (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? false : true;
 
 
-                    als_obj->init(gnss_obj->origin_enu, gnss_obj->R_GNSS_to_MLS, featsFromMap);
-                    gnss_obj->updateExtrinsic(als_obj->R_to_mls); // use the scan-based refined rotation for GNSS
-                }
-            }
-            else
-            {
-                als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
 
-                Nearest_Points.resize(feats_down_size);
-#if USE_STATIC_KDTREE == 0
-                if (!estimator_.update(LASER_POINT_COV / 4, feats_down_body, als_obj->ikdtree, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
-#else
-                if (!estimator_.update(LASER_POINT_COV / 4, feats_down_body, als_obj->als_cloud, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
-#endif
-                {
-                    std::cout << "\n------------------ ALS update failed --------------------------------" << std::endl;
-                    // TODO check here why -  there is not enough als data
-                    
-                    //throw std::runtime_error("NO points -> There is no ALS data for this");
-
-                }
-                else
-                {
-                    // add the ALS points to MLS local map
-                    if (saveALS_NN_2_MLS)
-                    {
-                        local_map_update_from_ALS(Nearest_Points);
-                    }
-                }
-            }
-
-            if (pubLaserALSMap.getNumSubscribers() != 0)
-            {
-                als_obj->getCloud(featsFromMap);
-                publish_map(pubLaserALSMap);
-            }
-#endif
-        }
-
-            // Update the local map--------------------------------------------------
-            feats_down_world->resize(feats_down_size);
-            local_map_update();
-
-            // Publish odometry and point clouds------------------------------------
-            publish_odometry(pubOdomAftMapped);
-            if (scan_pub_en)
-            {
-                if (pubLaserCloudFull.getNumSubscribers() != 0)
-                    publish_frame_world(pubLaserCloudFull);
-            }
-
-            if (pubLaserCloudMap.getNumSubscribers() != 0)
-            {
-#if USE_STATIC_KDTREE == 0
-                PointVector().swap(ikdtree.PCL_Storage);
-                ikdtree.flatten(ikdtree.Root_Node, ikdtree.PCL_Storage, NOT_RECORD);
-                featsFromMap->clear();
-                featsFromMap->points = ikdtree.PCL_Storage;
-#else
-                *featsFromMap = *laserCloudSurfMap;
-#endif
-                publish_map(pubLaserCloudMap);
-            }
-
-#else
 
             const auto &[source, frame_downsample] = estimator_.Voxelize(feats_undistort);
             // MLS registration
@@ -987,12 +727,12 @@ void DataHandler::BagHandler()
             // std::cout << "IMU_process time(ms):  " << (t_IMU_process - t00) * 1000 << ", LiDAR_update (ms): " << (t_LiDAR_update - t_IMU_process) * 1000 << std::endl;
 
             // get and publish the GNSS pose-----------------------------------------
-            gnss_obj->Process(gps_buffer, lidar_end_time, state_point.pos);
-            Sophus::SE3 gnss_pose = (gnss_obj->use_postprocessed_gnss) ? gnss_obj->postprocessed_gps_pose : gnss_obj->gps_pose;
+            //gnss_obj->Process(gps_buffer, lidar_end_time, state_point.pos);
+            //Sophus::SE3 gnss_pose = (gnss_obj->use_postprocessed_gnss) ? gnss_obj->postprocessed_gps_pose : gnss_obj->gps_pose;
 
             feats_down_size = frame_downsample.size();
             state_point = estimator_.get_x(); // state after registration
-
+/*
 #ifdef USE_ALS
             if (!als_obj->refine_als)
             {                                      // not initialized
@@ -1029,7 +769,7 @@ void DataHandler::BagHandler()
                    imu_obj->prevPose_ = global_graph_obj->prevPose_;
 
                    // imu_obj->update(state_point, Measures.lidar_beg_time, Measures.lidar_end_time, true, Sophus::SE3(updated_state.rot, updated_state.pos)); //state after graph update
-                   // estimator_.set_x(state_point);*/
+                   // estimator_.set_x(state_point); // * /
 
                 updated_state = estimator_.get_x(); // state after ALS registration
                 imu_obj->update(state_point, Measures.lidar_beg_time, Measures.lidar_end_time,
@@ -1051,15 +791,15 @@ void DataHandler::BagHandler()
                             use_gnss, gnss_pose.translation());
             estimator_.set_x(state_point);
 #endif
+
+*/
+           // do the imu_obj->update
+
             state_point = estimator_.get_x();
             estimator_.local_map_.Update(frame_downsample, Sophus::SE3(state_point.rot, state_point.pos));
-#ifdef USE_ALS
-            std::cout << "NN points from ALS:" << estimator_.ALS_tgt.size() << std::endl;
-            estimator_.local_map_.AddPoints(estimator_.ALS_tgt);
-#endif
 
             // gnss_pose.so3() = state_point.rot; // use the MLS orientation
-            publish_gnss_odometry(gnss_pose);
+            //publish_gnss_odometry(gnss_pose);
 
             // Publish odometry and point clouds------------------------------------
             publish_odometry(pubOdomAftMapped);
@@ -1082,6 +822,10 @@ void DataHandler::BagHandler()
             }
 
 #endif
+
+
+
+
 
 #ifdef SAVE_DATA
             if (als_obj->refine_als)

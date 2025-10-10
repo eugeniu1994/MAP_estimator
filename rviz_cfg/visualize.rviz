@@ -16,7 +16,6 @@ Panels:
         - /Refined-vux1/Shape1
         - /Refined-vux1/Covariance1
         - /Refined-vux21/Shape1
-        - /Gravity1
       Splitter Ratio: 0.6140127182006836
     Tree Height: 1800
   - Class: rviz/Selection
@@ -36,7 +35,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: Debug_cloud
+    SyncSource: LiDAR
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -73,10 +72,6 @@ Visualization Manager:
           Value: true
         MLS:
           Value: true
-        PPK_GNSS:
-          Value: true
-        VUX:
-          Value: true
         world:
           Value: true
       Marker Alpha: 1
@@ -90,10 +85,6 @@ Visualization Manager:
           GPSFix:
             {}
           MLS:
-            {}
-          PPK_GNSS:
-            {}
-          VUX:
             {}
       Update Interval: 0
       Value: true
@@ -127,11 +118,11 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-        - Alpha: 1
+        - Alpha: 0.5
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 32.73020935058594
-            Min Value: -3.1875672340393066
+            Max Value: 40.63531494140625
+            Min Value: -18.8588924407959
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -147,7 +138,7 @@ Visualization Manager:
           Position Transformer: XYZ
           Queue Size: 100000
           Selectable: true
-          Size (Pixels): 1
+          Size (Pixels): 2
           Size (m): 0.009999999776482582
           Style: Points
           Topic: /cloud_registered
@@ -158,8 +149,8 @@ Visualization Manager:
         - Alpha: 0.30000001192092896
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 49.36057662963867
-            Min Value: -45.21785354614258
+            Max Value: 31.156997680664062
+            Min Value: -4.29281759262085
             Value: true
           Axis: Z
           Channel Name: z
@@ -195,7 +186,7 @@ Visualization Manager:
           Color: 255; 0; 0
           Color Transformer: Intensity
           Decay Time: 0
-          Enabled: false
+          Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -210,7 +201,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: false
+          Value: true
         - Alpha: 0.20000000298023224
           Autocompute Intensity Bounds: false
           Autocompute Value Bounds:
@@ -223,7 +214,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: FlatColor
           Decay Time: 0
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Max Intensity: 83
@@ -240,7 +231,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -306,13 +297,13 @@ Visualization Manager:
           Use rainbow: true
           Value: false
         - Class: rviz/MarkerArray
-          Enabled: true
+          Enabled: false
           Marker Topic: /src_covariance_markers
           Name: src_covs
           Namespaces:
             {}
           Queue Size: 100
-          Value: true
+          Value: false
         - Class: rviz/MarkerArray
           Enabled: false
           Marker Topic: /tgt_covariance_markers
@@ -418,7 +409,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 0; 0
-      Enabled: false
+      Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
@@ -437,7 +428,7 @@ Visualization Manager:
       Shaft Length: 0.10000000149011612
       Topic: /GPSFix/trajectory
       Unreliable: false
-      Value: false
+      Value: true
     - Alpha: 0.699999988079071
       Buffer Length: 1
       Class: rviz/Path
@@ -497,7 +488,7 @@ Visualization Manager:
     - Alpha: 1
       Class: rviz/RobotModel
       Collision Enabled: false
-      Enabled: true
+      Enabled: false
       Links:
         All Links Enabled: true
         Expand Joint Details: false
@@ -508,7 +499,7 @@ Visualization Manager:
       Robot Description: robot_description
       TF Prefix: ""
       Update Interval: 0
-      Value: true
+      Value: false
       Visual Enabled: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -731,13 +722,13 @@ Visualization Manager:
       Use rainbow: true
       Value: false
     - Class: rviz/Marker
-      Enabled: true
+      Enabled: false
       Marker Topic: /acceleration_marker
       Name: Gravity
       Namespaces:
-        acceleration_arrow: true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -766,7 +757,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 79.79447174072266
+      Distance: 57.021724700927734
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -774,17 +765,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 15.01256275177002
-        Y: 28.65107536315918
-        Z: -1.2950242307852022e-05
+        X: 11.98708724975586
+        Y: 5.102611064910889
+        Z: 1.888177212094888e-05
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3097968101501465
+      Pitch: 0.6247966885566711
       Target Frame: global
-      Yaw: 0.8312840461730957
+      Yaw: 0.13628613948822021
     Saved: ~
 Window Geometry:
   Displays:

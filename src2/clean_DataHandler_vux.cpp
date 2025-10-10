@@ -354,19 +354,27 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 
     // }
 
+    
 
     if (!_imu_init)
     {
         _imu_init = true;
         _first_imu_time = msg_in->header.stamp.toSec();
     }
+    
+    if(shift_measurements_to_zero_time && _imu_init)
+    {
+        msg->header.stamp =
+            ros::Time().fromSec(msg_in->header.stamp.toSec() - _first_imu_time);
+    }
 
     if (abs(timediff_lidar_wrt_imu) > 0.1 && time_sync_en)
     {
-        std::cout << "change IMU time with timediff_lidar_wrt_imu:" << timediff_lidar_wrt_imu << std::endl;
+        //std::cout << "change IMU time with timediff_lidar_wrt_imu:" << timediff_lidar_wrt_imu << std::endl;
         msg->header.stamp =
             ros::Time().fromSec(timediff_lidar_wrt_imu + msg_in->header.stamp.toSec());
     }
+
     // msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);
     double timestamp = msg->header.stamp.toSec();
 
@@ -383,10 +391,12 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
     //std::cout<<"IMU_CBK: imu_buffer-"<<imu_buffer.size()<<std::endl;
 }
 
-void DataHandler::pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
+void DataHandler::pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg_in)
 {
-    std::cout<<"\npcl_cbk msg->header.stamp.toSec()->"<<msg->header.stamp.toSec()<<", lidar_buffer:"<<lidar_buffer.size()<<std::endl;
+    std::cout<<"\npcl_cbk msg_in->header.stamp.toSec()->"<<msg_in->header.stamp.toSec()<<", lidar_buffer:"<<lidar_buffer.size()<<std::endl;
     
+    sensor_msgs::PointCloud2::Ptr msg(new sensor_msgs::PointCloud2(*msg_in));
+
     if (msg->header.stamp.toSec() < last_timestamp_lidar)
     {
         ROS_ERROR("lidar loop back, clear buffer");
@@ -396,20 +406,27 @@ void DataHandler::pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 #endif
     }
 
-    last_timestamp_lidar = msg->header.stamp.toSec();
+    
     if (!_lidar_init)
     {
         _lidar_init = true;
         _first_lidar_time = msg->header.stamp.toSec();
     }
 
+    if(shift_measurements_to_zero_time && _lidar_init)
+    {
+        std::cout<<"LiDAR time shift from "<<msg->header.stamp.toSec()<<" to "<<(msg->header.stamp.toSec() - _first_lidar_time)<<std::endl;
+        msg->header.stamp =
+            ros::Time().fromSec(msg->header.stamp.toSec() - _first_lidar_time);
+    }
+
+    last_timestamp_lidar = msg->header.stamp.toSec();
     if (!time_sync_en && abs(last_timestamp_imu - last_timestamp_lidar) > 10.0 && !imu_buffer.empty() && !lidar_buffer.empty())
     {
         printf("IMU and LiDAR not Synced, IMU time: %lf, lidar header time: %lf \n", last_timestamp_imu, last_timestamp_lidar);
         std::cout<<"dt:"<<abs(last_timestamp_imu - last_timestamp_lidar)<<std::endl;
     }
 
-    // time_sync_en - self alignment, estimate shift in time
     if (time_sync_en && !timediff_set_flg && abs(last_timestamp_lidar - last_timestamp_imu) > 1 && !imu_buffer.empty())
     {
         timediff_set_flg = true;
@@ -442,6 +459,9 @@ void DataHandler::msg2cloud(const sensor_msgs::PointCloud2::ConstPtr &msg, Point
             int n = pl_orig.points.size();
             pcl_out->resize(n / point_step);
             first_point_time = pl_orig.points[0].timestamp;
+
+            std::cout<<"first_point_time:"<<first_point_time<<", last point time:"<<pl_orig.points[n-1].timestamp<<std::endl;
+
             index = 0;
             for (int i = 0; i < n; i += point_step)
             {
@@ -630,21 +650,43 @@ bool DataHandler::sync_packages(MeasureGroup &meas)
 
     if (last_timestamp_imu < lidar_end_time) // If lst imu timestamp is less than the lidar final time, it means that not enough imu data has been collected.
     {
-        std::cout<<"last_timestamp_imu is smaller than lidar_end_time,  return False in the sync"<<std::endl;
-        std::cout<<"last_timestamp_imu:"<<last_timestamp_imu<<", lidar_end_time:"<<lidar_end_time<<std::endl;
-        std::cout<<"time difference:"<<fabs(last_timestamp_imu - lidar_end_time)<<std::endl;
+        //std::cout<<"last_timestamp_imu is smaller than lidar_end_time,  return False in the sync"<<std::endl;
+        //std::cout<<"last_timestamp_imu:"<<last_timestamp_imu<<", lidar_end_time:"<<lidar_end_time<<std::endl;
+        //std::cout<<"time difference:"<<fabs(last_timestamp_imu - lidar_end_time)<<std::endl;
         return false;
     }
 
     double imu_time = imu_buffer.front()->header.stamp.toSec();
     meas.imu.clear();
-    while ((!imu_buffer.empty()) && (imu_time < lidar_end_time))
+
+    while ((!imu_buffer.empty()) ) //&& (imu_time < lidar_end_time)
     {
         imu_time = imu_buffer.front()->header.stamp.toSec();
         if (imu_time > lidar_end_time)
+        {
+            std::cout<<"IMU time from future, imu_time:"<<imu_time<<", lidar_end_time:"<<lidar_end_time<<std::endl;
             break;
+        }
+            
         meas.imu.push_back(imu_buffer.front());
         imu_buffer.pop_front();
+    }
+
+    if(!lidar_pushed || meas.imu.empty())
+    {
+        std::cout<<"lidar_pushed:"<<lidar_pushed<<std::endl;
+        std::cout<<"meas.imu:"<<meas.imu.size()<<std::endl;
+
+        std::cout<<"meas.lidar_beg_time:"<<meas.lidar_beg_time<<std::endl;
+        std::cout<<"meas.lidar_end_time:"<<meas.lidar_end_time<<std::endl;
+        std::cout<<"imu_buffer:"<<imu_buffer.size()<<std::endl;
+        
+        std::cout<<"imu_time:"<<imu_time<<std::endl;
+        
+        std::cout<<"\n\nIssue in sync_packages - the data in not synched\n\n"<<std::endl;
+        //throw std::runtime_error("\n\nIssue in sync_packages - the data in not synched\n\n");
+
+        return false;
     }
 
     lidar_buffer.pop_front();
@@ -653,5 +695,7 @@ bool DataHandler::sync_packages(MeasureGroup &meas)
 #ifdef SAVE_DATA
     lidar_msg_buffer.pop_front();
 #endif
+
+
     return true;
 }

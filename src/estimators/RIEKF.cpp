@@ -569,8 +569,10 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZ
     sigma = std::max(sigma, .5);
 
 #endif
+    int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
+        iteration_finished = i+1;
         status.valid = true;
         // z = y - h(x)
         lidar_observation_model(status, feats_down_body, map, Nearest_Points, extrinsic_est);
@@ -631,6 +633,8 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZ
             break;
         }
     }
+
+    std::cout<<"Update in "<<iteration_finished<<" iterations "<<std::endl;
 
 #ifdef ADAPTIVE_KERNEL
     Sophus::SE3 initial_guess(x_propagated.rot, x_propagated.pos);
@@ -836,8 +840,10 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
     // localKdTree_map_als->setInputCloud(map_als);
 
     const cov P_inv = P_.inverse();
+    int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
+        iteration_finished = i+1;
         status.valid = true;
 
         // std::cout<<"\nekfom_data.converge:"<<status.converge << ", iteration "<<i+1<<std::endl;
@@ -896,6 +902,7 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
             break;
         }
     }
+    std::cout<<"update_tighly_fused in "<<iteration_finished<<" iterations "<<std::endl;
 
     return status.valid;
 }
@@ -1393,9 +1400,10 @@ bool RIEKF::update_tighly_fused_test(double R, PointCloudXYZI::Ptr &feats_down_b
     // double inv_R_gps = 1.0 / R_gps_cov;
 
     const cov P_inv = P_.inverse();
-
+    int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
+        iteration_finished = i+1;
         status.valid = true;
         // z = y - h(x)
         observation_model_test(R, status, feats_down_body, gps, map_mls, map_als, localKdTree_map_als, Nearest_Points, extrinsic_est);
@@ -1523,6 +1531,7 @@ bool RIEKF::update_tighly_fused_test(double R, PointCloudXYZI::Ptr &feats_down_b
         }
     }
 
+    std::cout<<"update_tighly_fused_test in "<<iteration_finished<<" iterations "<<std::endl;
     return status.valid;
 }
 
@@ -1779,9 +1788,10 @@ bool RIEKF::update_final(
 
     localKdTree_map->setInputCloud(map_mls);
     const cov P_inv = P_.inverse();
-
+    int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
+        iteration_finished = i+1;
         status.valid = true;
         // z = y - h(x)
         h(status, R_lidar_cov, R_gps_cov, feats_down_body, gps_pos, map_mls, map_als, localKdTree_map_als, Nearest_Points, extrinsic_est, use_gnss, use_als, tightly_coupled);
@@ -1838,6 +1848,8 @@ bool RIEKF::update_final(
             break;
         }
     }
+
+    std::cout<<"update_final in "<<iteration_finished<<" iterations "<<std::endl;
 
     return status.valid;
 }
@@ -2438,95 +2450,3 @@ bool RIEKF::update_tighly_fused_test2(double R, PointCloudXYZI::Ptr &feats_down_
 
     return status.valid;
 }
-
-// i will need the fast matrix inversion for gicp
-
-// // Example for 6x6 matrix
-// Eigen::Matrix<double, 6, 6> A, A_inv;
-// A.setRandom();
-
-// // Fast direct inversion (OK for small, well-conditioned matrices)
-// A_inv = A.inverse();
-
-// // Or better: use LDLT (symmetric positive definite or semi-definite)
-// Eigen::LDLT<Eigen::Matrix<double,6,6>> ldlt(A);
-// A_inv = ldlt.solve(Eigen::Matrix<double, 6, 6>::Identity());
-
-// // Invert diagonal matrix D efficiently
-// Eigen::VectorXd d = D.diagonal();
-// Eigen::VectorXd d_inv = d.cwiseInverse();
-// Eigen::MatrixXd D_inv = d_inv.asDiagonal();
-
-// Eigen::MatrixXd A, A_pinv;
-// A_pinv = (A.transpose() * A).ldlt().solve(A.transpose());  // A⁺ = (AᵀA)⁻¹Aᵀ
-
-////HTH = (HTH + HTH.transpose()) / 2.0;  // Enforce symmetry
-// int m = 0;
-//  Eigen::MatrixXd stacked_H(m + 3, state_size);
-//  stacked_H << H;//, H_gnss;
-//  //stacked_H << H_gnss;
-//  Eigen::MatrixXd s_stacked_H(m + 3, state_size);
-//  s_stacked_H << H / R ;//, H_gnss / R_gps_cov;  //I CAN USE IT THE ACTUAL R matrix format for gps
-//  //s_stacked_H << H / R, H_gnss / R_gps_cov;
-//  // s_stacked_H << H_gnss / R_gps_cov;
-//  Eigen::VectorXd stacked_innovation(m + 3);
-//  stacked_innovation << status.innovation;//, gps_innovation;
-//  // stacked_innovation << gps_innovation;
-//  Eigen::MatrixXd Ht_Rinv = s_stacked_H.transpose();
-//  Eigen::MatrixXd HTH = Ht_Rinv * stacked_H + P_.inverse();
-//  Eigen::Matrix<double, state_size, Eigen::Dynamic> K; // n x m
-//  // K.resize(24, m + 3);                                 // m is runtime-known
-//  // direct inversion fastest for small matrices (n < 50)
-//  K = HTH.inverse() * Ht_Rinv;
-//  cov KH = cov::Zero(); // (n x m) * (m x n) -> (n x n)
-//  KH = K * stacked_H;
-//  vectorized_state dx_ = K * stacked_innovation + (KH - cov::Identity()) * dx_new;
-//{
-////Standard EKF Update
-// auto R_ = R * Eigen::MatrixXd::Identity(m, m);                 // (m x m) measurement covariance
-
-// //very fucking slow ----------------------------------------------------------
-// //Eigen::MatrixXd S = H * P_ * H.transpose() + R_;        // (m x m)
-// //Eigen::MatrixXd K = P_ * H.transpose() * S.inverse();   // (n x m)
-
-// //try the ldlt decomposition - still slow ------------------------------------
-// Eigen::MatrixXd PHt = P_ * H.transpose();  // Compute once, reuse
-// Eigen::MatrixXd S = H * PHt + R_;
-// Eigen::MatrixXd K = S.ldlt().solve(PHt.transpose()).transpose();
-//-------------------------------------------------------------------------------
-
-// auto Rinv = (R * Eigen::MatrixXd::Identity(m,m)).inverse();
-// auto Rinv = (1.0 / R) * Eigen::MatrixXd::Identity(m,m);
-// }
-
-// const auto &H = status.h_x;       // (m x n) Jacobian    m x 24
-//         //int m = status.innovation.size(); // m
-//         int m = 0;
-
-//         Eigen::MatrixXd stacked_H(m + 3, state_size);
-//         stacked_H << H;//, H_gnss;
-//         //stacked_H << H_gnss;
-
-//         Eigen::MatrixXd s_stacked_H(m + 3, state_size);
-//         s_stacked_H << H / R ;//, H_gnss / R_gps_cov;  //I CAN USE IT THE ACTUAL R matrix format for gps
-//         //s_stacked_H << H / R, H_gnss / R_gps_cov;
-//         // s_stacked_H << H_gnss / R_gps_cov;
-
-//         Eigen::VectorXd stacked_innovation(m + 3);
-//         stacked_innovation << status.innovation;//, gps_innovation;
-//         // stacked_innovation << gps_innovation;
-
-//         Eigen::MatrixXd Ht_Rinv = s_stacked_H.transpose();
-
-//         Eigen::MatrixXd HTH = Ht_Rinv * stacked_H + P_.inverse();
-
-//         Eigen::Matrix<double, state_size, Eigen::Dynamic> K; // n x m
-//         // K.resize(24, m + 3);                                 // m is runtime-known
-
-//         // direct inversion fastest for small matrices (n < 50)
-//         K = HTH.inverse() * Ht_Rinv;
-
-//         cov KH = cov::Zero(); // (n x m) * (m x n) -> (n x n)
-//         KH = K * stacked_H;
-
-//         vectorized_state dx_ = K * stacked_innovation + (KH - cov::Identity()) * dx_new;

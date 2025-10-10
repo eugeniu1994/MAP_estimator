@@ -167,15 +167,19 @@ void publishAccelerationArrow(ros::Publisher &marker_pub, const Eigen::Vector3d 
 #include <gtsam/base/numericalDerivative.h>
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/nonlinear/ExpressionFactor.h>
-
+#include <ceres/ceres.h>
+#include <ceres/rotation.h>
 
 using namespace gtsam;
 using gtsam::symbol_shorthand::X; // extrinsic key X(0)
+using gtsam::symbol_shorthand::R; // Rotation key shorthand
+
 using Matrix6 = Eigen::Matrix<double, 6, 6>;
 
 // Factor constraining extrinsic X so that:
 // delta_I_meas ≈ X * delta_L_meas * X^{-1}
-class ExtrinsicSE3Factor : public NoiseModelFactor1<Pose3> {
+class ExtrinsicSE3Factor : public NoiseModelFactor1<Pose3>
+{
 private:
     Pose3 delta_I_;
     Pose3 delta_L_;
@@ -185,7 +189,8 @@ public:
                        const SharedNoiseModel &model)
         : NoiseModelFactor1<Pose3>(model, key), delta_I_(delta_I), delta_L_(delta_L) {}
 
-    Vector evaluateError(const Pose3 &T_I_L, OptionalMatrixType H) const override {
+    Vector evaluateError(const Pose3 &T_I_L, OptionalMatrixType H) const override
+    {
         // predicted delta_I from lidar delta and extrinsic
         Pose3 predicted = T_I_L * delta_L_ * T_I_L.inverse();
 
@@ -193,9 +198,11 @@ public:
         Pose3 errPose = delta_I_.between(predicted);
         Vector error = Pose3::Logmap(errPose); // 6x1 (rot(3), trans(3))
 
-        if (H) {
+        if (H)
+        {
             // numerical Jacobian for simplicity/robustness
-            auto fun = [this](const Pose3 &X) -> Vector {
+            auto fun = [this](const Pose3 &X) -> Vector
+            {
                 Pose3 pred = X * delta_L_ * X.inverse();
                 Pose3 e = delta_I_.between(pred);
                 return Pose3::Logmap(e);
@@ -206,139 +213,198 @@ public:
     }
 };
 
-#include <unsupported/Eigen/KroneckerProduct>
-#include <Eigen/LU>
-#include <Eigen/QR>
-
-Eigen::Matrix3d skew(Eigen::Vector3d u)
+/// GTSAM Factor
+class HECFactor : public gtsam::NoiseModelFactor1<gtsam::Rot3>
 {
-    Eigen::Matrix3d u_hat = Eigen::MatrixXd::Zero(3, 3);
-    u_hat(0, 1) = u(2);
-    u_hat(1, 0) = -u(2);
-    u_hat(0, 2) = -u(1);
-    u_hat(2, 0) = u(1);
-    u_hat(1, 2) = u(0);
-    u_hat(2, 1) = -u(0);
+private:
+    gtsam::Point3 m_axis_I_;
+    gtsam::Point3 m_axis_L_;
 
-    return u_hat;
+public:
+    HECFactor(gtsam::Key i, gtsam::Point3 axis_I, gtsam::Point3 axis_L, const gtsam::SharedNoiseModel &model)
+        : gtsam::NoiseModelFactor1<gtsam::Rot3>(model, i), m_axis_I_(axis_I), m_axis_L_(axis_L) {}
+
+    // gtsam::Vector evaluateError(const gtsam::Rot3 &I_R_L, boost::optional<gtsam::Matrix &> H = boost::none) const
+    gtsam::Vector evaluateError(const gtsam::Rot3 &I_R_L, OptionalMatrixType H) const override
+    {
+        gtsam::Matrix H_Rp_R, H_Rp_p;
+        gtsam::Point3 error = m_axis_I_ - I_R_L.rotate(m_axis_L_, H_Rp_R, H_Rp_p);
+        if (H)
+            (*H) = (-H_Rp_R).eval();
+
+        // if (H)
+        //(*H) = (gtsam::Matrix(3, 3) << -H_Rp_R).finished();
+        return error; // return (gtsam::Vector(3) << error.x(), error.y(), error.z()).finished();
+    }
+};
+
+Sophus::SE3 GtsamToSophus(const Pose3 &pose)
+{
+    Eigen::Matrix4d T = pose.matrix(); // Get 4x4 matrix
+    return Sophus::SE3(T.topLeftCorner<3, 3>(), T.topRightCorner<3, 1>());
 }
 
-Sophus::SE3 ConventionalAXXBSVDSolver(std::vector<Sophus::SE3> &A_, std::vector<Sophus::SE3> &B_)
+Sophus::SE3 find_extrinsic(Sophus::SE3 &init_guess_, const std::vector<Sophus::SE3> &lidar_poses_, const std::vector<Sophus::SE3> &gnss_imu_poses_, const Sophus::SE3 &Lidar_wrt_IMU)
 {
-    Eigen::MatrixXd m = Eigen::MatrixXd::Zero(12 * A_.size(), 12);
-    Eigen::VectorXd b = Eigen::VectorXd::Zero(12 * A_.size());
-    for (int i = 0; i < A_.size(); i++)
+    // ---- Build graph with many relative-motion factors ----
+    std::vector<Sophus::SE3> A_, B_;
+
+    NonlinearFactorGraph graph;
+    Values initial;
+
+    double meas_sigma = .5; // rad/m synthetic measurement sigma
+    auto base_noise = noiseModel::Isotropic::Sigma(6, meas_sigma);
+
+    int N = gnss_imu_poses_.size();
+    int added = 0;
+    for (size_t i = 0; i + 1 < N; ++i)
     {
-        // extract R,t from homogophy matrix
-        M3D Ra = A_[i].so3().matrix(); // topLeftCorner(3,3);
-        V3D Ta = A_[i].translation();  // topRightCorner(3,1);
-        M3D Rb = B_[i].so3().matrix(); // topLeftCorner(3,3);
-        V3D Tb = B_[i].translation();  // topRightCorner(3,1);
+        auto delta_L = lidar_poses_[i].inverse() * lidar_poses_[i + 1];
+        auto delta_I = gnss_imu_poses_[i].inverse() * gnss_imu_poses_[i + 1];
 
-        m.block<9, 9>(12 * i, 0) = Eigen::MatrixXd::Identity(9, 9) - Eigen::kroneckerProduct(Ra, Rb);
+        double trans_motion = delta_I.translation().norm();
+        double rot_motion = Sophus::SO3::log(delta_I.so3()).norm(); // radians
 
-        Eigen::Matrix3d Ta_skew = skew(Ta);
+        if (trans_motion < 0.01 && rot_motion < (1.0 * M_PI / 180.0)) //1 cm and 1 degree
+        {
+            // skip static or nearly static pairs
+            continue;
+        }
 
-        m.block<3, 9>(12 * i + 9, 0) = Eigen::kroneckerProduct(Eigen::MatrixXd::Identity(3, 3), Tb.transpose());
-        m.block<3, 3>(12 * i + 9, 9) = Eigen::MatrixXd::Identity(3, 3) - Ra;
-        b.block<3, 1>(12 * i + 9, 0) = Ta;
+        Pose3 delta_L_true = Pose3(delta_L.matrix());
+        Pose3 delta_I_true = Pose3(delta_I.matrix());
+
+        
+        // auto huber = noiseModel::Robust::Create(noiseModel::mEstimator::Huber::Create(1.345), base_noise);
+        // graph.add(std::make_shared<ExtrinsicSE3Factor>(X(0), delta_I_true, delta_L_true, huber));         //robust
+
+        graph.add(std::make_shared<ExtrinsicSE3Factor>(X(0), delta_I_true, delta_L_true, base_noise));  //not robust
+
+        A_.push_back(delta_L);
+        B_.push_back(delta_I);
+        added++;
     }
+    std::cout<<"Added "<<added<<"/"<<N<<" good measurements for estimation"<<std::endl;
 
-    Eigen::Matrix<double, 12, 1> x = m.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
-    Eigen::Matrix3d R = Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>>(x.data()); // row major
+    Pose3 init_guess = Pose3(init_guess_.matrix());
+    // // Weak prior (very large sigmas = weak)
+    auto priorNoise = noiseModel::Diagonal::Sigmas((Vector(6) << 10., 10., 10., 10., 10., 10.).finished());
+    graph.add(PriorFactor<Pose3>(X(0), init_guess, priorNoise));
+    initial.insert(X(0), init_guess);
+    std::cout << "Initial guess for extrinsic:\n"<< init_guess << std::endl;
 
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(R, Eigen::ComputeThinU | Eigen::ComputeThinV);
-    Eigen::Matrix4d handeyetransformation = Eigen::Matrix4d::Identity(4, 4);
-    handeyetransformation.topLeftCorner(3, 3) = svd.matrixU() * svd.matrixV().transpose();
-    handeyetransformation.topRightCorner(3, 1) = x.block<3, 1>(9, 0);
+    // Optimize
+    //LevenbergMarquardtParams params;
+    //params.setVerbosity("ERROR");
+    LevenbergMarquardtOptimizer optimizer(graph, initial); //, params
+    Values result = optimizer.optimize();
 
-    Eigen::Vector3d t = handeyetransformation.block<3, 1>(0, 3);
-    Sophus::SO3 SO3(handeyetransformation.block<3, 3>(0, 0));
+    Pose3 T_I_L_est = result.at<Pose3>(X(0));
+    std::cout << "\nEstimated extrinsic (T_I_L_est):\n"<< T_I_L_est << std::endl;
 
-    return Sophus::SE3(SO3, t);
+    // Compare to ground truth
+    Pose3 T_I_L_true = Pose3(Lidar_wrt_IMU.matrix());
+    Pose3 errPose = T_I_L_true.between(T_I_L_est);
+    Vector errXi = Pose3::Logmap(errPose);
+    std::cout << "\nEstimation error (Pose3 Logmap) [rotX,rotY,rotZ, tx,ty,tz]:\n"
+              << errXi.transpose() << std::endl;
+
+    // separate
+    gtsam::Vector3 rotErr = errXi.head<3>();   // rotation part
+    gtsam::Vector3 transErr = errXi.tail<3>(); // translation part
+
+    // compute magnitudes
+    double rotMag = rotErr.norm();      // radians
+    double transMag = transErr.norm();  // meters
+
+    std::cout << "Rotation magnitude [rad]: " << rotMag
+            << " (" << rotMag * 180.0 / M_PI << " deg)" << std::endl;
+    std::cout << "Translation magnitude [m]: " << transMag << std::endl;
+    
+    std::cout<<"Error gtsam:"<<errXi.norm()<<std::endl;
+
+    return GtsamToSophus(T_I_L_est);
+}
+
+Sophus::SE3 find_extrinsic_R(Sophus::SE3 &init_guess_, const std::vector<Sophus::SE3> &lidar_poses_, const std::vector<Sophus::SE3> &gnss_imu_poses_, const Sophus::SE3 &Lidar_wrt_IMU)
+{
+
+    /// GTSAM
+    gtsam::NonlinearFactorGraph graph;
+    gtsam::Values initial_values;
+    gtsam::noiseModel::Diagonal::shared_ptr rotationNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector3(1, 1, 1)));
+           
+    int N = gnss_imu_poses_.size();
+    int added = 0;
+    for (size_t i = 0; i + 1 < N; ++i)
+    {
+        auto delta_L_ = lidar_poses_[i].inverse() * lidar_poses_[i + 1];
+        auto delta_I_ = gnss_imu_poses_[i].inverse() * gnss_imu_poses_[i + 1];
+
+        //double trans_motion = delta_I.translation().norm();
+        //double rot_motion = Sophus::SO3::log(delta_I.so3()).norm(); // radians
+        // if (trans_motion < 0.01 && rot_motion < (1.0 * M_PI / 180.0)) //1 cm and 1 degree
+        // {
+        //     // skip static or nearly static pairs
+        //     continue;
+        // }
+
+        // Get integrated rotation from IMU
+        M3D deltaR_I = delta_L_.so3().matrix();
+        // delta lidar
+        M3D deltaR_L = delta_I_.so3().matrix();
+
+
+        V3D axisAngle_lidar;
+        V3D axisAngle_imu;
+        ceres::RotationMatrixToAngleAxis(deltaR_L.data(), axisAngle_lidar.data());
+        ceres::RotationMatrixToAngleAxis(deltaR_I.data(), axisAngle_imu.data());
+
+         /// GTSAM stuff
+        graph.add(std::make_shared<HECFactor>(R(0), gtsam::Point3(axisAngle_imu.x(), axisAngle_imu.y(), axisAngle_imu.z()),
+                                                        gtsam::Point3(axisAngle_lidar.x(), axisAngle_lidar.y(), axisAngle_lidar.z()), rotationNoise));
+        added++;
+    }
+    std::cout<<"Added "<<added<<"/"<<N<<" good measurements for estimation"<<std::endl;
+
+    gtsam::Rot3 priorRot = gtsam::Rot3(init_guess_.so3().matrix());
+    initial_values.insert(R(0), priorRot);
+    gtsam::Values result = gtsam::LevenbergMarquardtOptimizer(graph, initial_values).optimize();
+    gtsam::Rot3 finalRot = result.at<gtsam::Rot3>(R(0));
+    gtsam::Marginals marginals(graph, result);
+
+    std::cout << "Rotation matrix:\n" << finalRot.matrix() << std::endl;
+    std::cout << "Euler angles (deg): " << finalRot.matrix().eulerAngles(0, 1, 2).transpose() * 180.0 / M_PI << std::endl;
+    //std::cout << "Marginal Covariance:\n" << marginals.marginalCovariance(R(0)) << std::endl;
+    
+
+    // Convert to Sophus::SE3 (with zero translation)
+    Sophus::SE3 T_I_L_est(Sophus::SO3(finalRot.matrix()), V3D::Zero());
+
+    // --- Compute SE3 error w.r.t. ground truth ---
+    Sophus::SE3 error_SE3 = T_I_L_est.inverse() * Lidar_wrt_IMU;
+    Eigen::Vector3d rot_error_rad = Sophus::SO3::log(error_SE3.so3());
+    double rot_error_deg = rot_error_rad.norm() * 180.0 / M_PI;
+
+    std::cout << "Rotation error: " << rot_error_deg << " deg\n";
+
+    return T_I_L_est;
+}
+
+void publish_frame_debug2(const ros::Publisher &pubLaserCloudFrame_, const PointCloudXYZI::Ptr &frame_, double lidar_end_time)
+{
+    if (pubLaserCloudFrame_.getNumSubscribers() == 0)
+        return;
+
+    sensor_msgs::PointCloud2 laserCloudmsg;
+    pcl::toROSMsg(*frame_, laserCloudmsg);
+    laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
+    laserCloudmsg.header.frame_id = "world";
+    pubLaserCloudFrame_.publish(laserCloudmsg);
 }
 
 void DataHandler::Subscribe()
 {
-    // // ---- ground truth extrinsic: T_I_L (maps L -> I) ----
-    // Rot3 R_true = Rot3::RzRyRx(-0.2, -0.5, 0.05); // rx, ry, rz
-    // Point3 t_true(0.5, -1.2, 0.1);
-    // Pose3 T_I_L_true(R_true, t_true);
-
-    // std::cout << "Ground truth extrinsic (T_I_L_true):\n" << T_I_L_true << std::endl;
-
-    // // ---- synthetic L trajectory (poses of lidar in world) ----
-    // const size_t N = 30;
-    // std::vector<Pose3> poses_w_L;
-    // poses_w_L.reserve(N);
-    // for (size_t i = 0; i < N; ++i) {
-    //     double x = 0.2 * double(i);
-    //     double y = 0.05 * std::sin(double(i) * 0.3);
-    //     double z = 0.0;
-    //     double roll = 0.01 * double(i % 5);
-    //     double pitch = 0.005 * std::sin(double(i) * 0.2);
-    //     double yaw = 0.02 * double(i);
-    //     Rot3 R = Rot3::RzRyRx(roll, pitch, yaw);
-    //     poses_w_L.emplace_back(R, Point3(x, y, z));
-    // }
-
-    // // ---- CORRECT: compute corresponding I poses using T_wI = T_wL * T_LI
-    // // T_LI = T_I_L_true.inverse()
-    // std::vector<Pose3> poses_w_I; poses_w_I.reserve(N);
-    // Pose3 T_L_I = T_I_L_true.inverse(); // T_LI
-    // for (size_t i = 0; i < N; ++i) {
-    //     // **correct composition**: world_I = world_L * T_LI
-    //     poses_w_I.push_back( poses_w_L[i].compose(T_L_I) );
-    //     // (equivalently: poses_w_L[i] * T_L_I)
-    // }
-
-    // // ---- Build graph with many relative-motion factors ----
-    // NonlinearFactorGraph graph;
-    // Values initial;
-
-    // double meas_sigma = 0.02; // rad/m synthetic measurement sigma
-    // auto noise = noiseModel::Isotropic::Sigma(6, meas_sigma);
-
-    // for (size_t i = 0; i + 1 < N; ++i) {
-    //     Pose3 delta_L_true = poses_w_L[i].between(poses_w_L[i + 1]);
-    //     Pose3 delta_I_true = poses_w_I[i].between(poses_w_I[i + 1]);
-
-    //     graph.add( std::make_shared<ExtrinsicSE3Factor>(X(0), delta_I_true, delta_L_true, noise) );
-    // }
-
-    // // Weak prior (very large sigmas = weak)
-    // auto priorNoise = noiseModel::Diagonal::Sigmas((Vector(6) << 10., 10., 10., 10., 10., 10.).finished());
-    // graph.add( PriorFactor<Pose3>(X(0), Pose3::Identity(), priorNoise) );
-
-    // // initial guess (identity or slightly perturbed)
-    // Pose3 init_guess = Pose3::Identity();
-    // initial.insert(X(0), init_guess);
-    // std::cout << "Initial guess for extrinsic:\n" << init_guess << std::endl;
-
-    // // Optimize
-    // LevenbergMarquardtParams params;
-    // params.setVerbosity("ERROR");
-    // LevenbergMarquardtOptimizer optimizer(graph, initial); //, params
-    // Values result = optimizer.optimize();
-
-    // Pose3 T_I_L_est = result.at<Pose3>(X(0));
-    // std::cout << "\nEstimated extrinsic (T_I_L_est):\n" << T_I_L_est << std::endl;
-
-    // // Compare to ground truth
-    // Pose3 errPose = T_I_L_true.between(T_I_L_est);
-    // Vector errXi = Pose3::Logmap(errPose);
-    // std::cout << "\nEstimation error (Pose3 Logmap) [rotX,rotY,rotZ, tx,ty,tz]:\n" << errXi.transpose() << std::endl;
-
-    // Covariance
-    //Marginals marginals(graph, result);
-    //Eigen::MatrixXd cov = marginals.marginalCovariance(X(0));
-    //std::cout << "\nMarginal covariance for X(0) (6x6):\n" << cov << std::endl;
-    // Marginals for covariance of estimated extrinsic
-    //gtsam::Marginals marginals(graph, result);
-    // Matrix cov = marginals.marginalCovariance(X(0));
-    // std::cout << "\nMarginal covariance for X(0) (6x6):\n" << cov << std::endl;
-
-
     std::cout << "Run test" << std::endl;
     std::cout << std::fixed << std::setprecision(12);
     std::cerr << std::fixed << std::setprecision(12);
@@ -637,43 +703,32 @@ void DataHandler::Subscribe()
                     // todo - we can do it the other way around and add the gravity in IMU body frame
                     publishAccelerationArrow(marker_pub, -raw_acc, msg_time);
 
+
+                    //todo 
+
+                    for a long trajectory 250 m or something 
+                    take the se3 on time for each scan 
+                    coarse:
+                        find scans 2 scan relative and combine to global (lidar const vel model undist)
+                        find the extrinsic 
+                    fine:
+                        transform the scans into se3 frame with first extrinsic value
+                        undistort the scans with se3
+                        transform the scans back to lidar frame 
+                        re-estimate scan2scan relative 
+                        recompute the extrinsic 
+                        
+
+
                     {
-                        // main stuff here
-                        /*
-
-                        std::vector<PointCloudXYZI::Ptr> original_scans_;
-                        std::vector<Sophus::SE3> lidar_poses_;
-                        std::vector<Sophus::SE3> gnss_imu_poses_;
-
-
-                        ---setup the gnss reader
-                        take a list of scans - 100m
-                        for each scan find the closest pose on time
-                        georeference the scan and display it
-                        find relative transform between every 2 scan
-
-                        find the extrinsics - based on relative pieces
-
-                        try scan to scan to get the absolute pose
-
-                        AT EACH STEP - COMPUTE THE RESIDUAL WITH GT EXTRINSIC
-                            SEPARATE FOR TRANSLATION AND ROTATION
-
-
-                        for a number of iterations
-                            use the prev values of extrinsics
-                            undistort the scan
-                            georeference it - and plot it
-                            redoo the registration and extrinsic estimation
-
-                        */
-
                         auto dist = se3.translation().norm();
                         std::cout << "dist:" << dist << std::endl;
-                        if (dist < 40)
+                        if (dist < 45)
                         {
                             *feats_undistort = *Measures.lidar; // lidar frame
                             {
+                                reader.undistort_const_vel_lidar(feats_undistort, last_relative_motion_estimate_);
+
                                 downSizeFilterSurf.setInputCloud(feats_undistort);
                                 downSizeFilterSurf.filter(*feats_down_body);
 
@@ -681,6 +736,15 @@ void DataHandler::Subscribe()
                                 {
                                     *prev_cloud_ = *feats_down_body;
                                     has_prev_cloud_ = true;
+
+                                    PointCloudXYZI::Ptr cloud_copy(new PointCloudXYZI);
+                                    *cloud_copy = *Measures.lidar;  // copy point data
+                                    original_scans_.push_back(cloud_copy);
+
+                                    
+                                    gnss_imu_poses_.push_back(se3);
+                                    lidar_poses_.push_back(global_pose_); //identity for now
+
                                     continue;
                                 }
 
@@ -716,15 +780,21 @@ void DataHandler::Subscribe()
                                 // --- Update constant velocity model ---
                                 last_relative_motion_estimate_ = relative_motion;
 
-                                publishPose(global_pose_, lidar_end_time);
-
                                 *prev_cloud_ = *feats_down_body;
+                                
+                                PointCloudXYZI::Ptr cloud_copy(new PointCloudXYZI);
+                                *cloud_copy = *Measures.lidar;  // copy point data
+                                original_scans_.push_back(cloud_copy);
 
-                                original_scans_.push_back(feats_undistort);
                                 gnss_imu_poses_.push_back(se3);
                                 lidar_poses_.push_back(global_pose_);
+
+                                publishPose(global_pose_, lidar_end_time);
+                                TransformPoints(global_pose_, feats_down_body);
+                                publish_frame_debug2(pubLaserCloudFull, feats_down_body, lidar_end_time);
                             }
 
+                            *feats_undistort = *Measures.lidar; // lidar frame
                             TransformPoints(Lidar_wrt_IMU_estim, feats_undistort); // lidar to IMU frame - front IMU
 
                             downSizeFilterSurf.setInputCloud(feats_undistort);
@@ -735,101 +805,141 @@ void DataHandler::Subscribe()
                             publish_frame_debug(pubLaserCloudDebug, feats_down_body);
                         }
                         else
-                        {
-                            // for a number of iteration do:
-                            // transform scan to imu with latest estimated
-                            // undistort with const vel model - or imu
-                            // redoo the icp - for better T_rel
-                            // re-estimate the extrinsic
-                            // plot the merged cloud with the fine-tuned extrinsics after every iteration
-                            // stop when no more change happens
-                            // find the error w.r.t. for known T - plot
+                        {   
+                            double last_time = lidar_end_time;
 
+                            find_extrinsic_R(Lidar_wrt_IMU_estim, lidar_poses_, gnss_imu_poses_, Lidar_wrt_IMU);
 
-                            // ---- Build graph with many relative-motion factors ----
-                            std::vector<Sophus::SE3> A_,B_;
+                            Lidar_wrt_IMU_estim = find_extrinsic(Lidar_wrt_IMU_estim, lidar_poses_, gnss_imu_poses_, Lidar_wrt_IMU);
+                            std::cout << "\nStart first iteration, press enter..." << std::endl;
+                            std::cin.get();
+                            
+                            Lidar_wrt_IMU_estim = find_extrinsic(Lidar_wrt_IMU_estim, lidar_poses_, gnss_imu_poses_, Lidar_wrt_IMU);
+                            std::cout << "\nStart first iteration, press enter..." << std::endl;
+                            std::cin.get();
 
-//todo here 
+                            *feats_undistort = *Measures.lidar;
+                            TransformPoints(Lidar_wrt_IMU_estim, feats_undistort); // lidar to IMU frame - front IMU
 
-//TODO first \
+                            downSizeFilterSurf.setInputCloud(feats_undistort);
+                            downSizeFilterSurf.filter(*feats_down_body);
 
-using the GT pose try to simulate the other sensor motion by using the transform 
+                            TransformPoints(se3, feats_down_body); // georeference with se3 in IMU frame
 
-for a number of iterations 
-    using the current estimate transform all the scans into imu frame 
-    find all the relative transforms 
-    estimate the extrinsic 
+                            publish_frame_debug(pubLaserCloudDebug, feats_down_body);
 
-    transform scans to imu frame and plot all toghether - enter
+                            std::cout << "\nFinished first iteration, press enter..." << std::endl;
+                            std::cin.get();
 
-    iter 2 
-    transform the scans again into imu fram with lates extrinsic 
-    undistory - const vel model
-    estimate relative transform 
-    estimate extrinsic
+                            
+                            PointCloudXYZI::Ptr debug_cloud_;
+                            int N = original_scans_.size();
 
-    .and so on untill the error is not longer changing 
+                            for(int i = 0;i < 5; i++)
+                            {
+                                debug_cloud_.reset(new PointCloudXYZI());
 
-    compute the error with the GT pose 
+                                lidar_poses_.clear(); //remove all the prev relative T for lidar
+                                global_pose_ = Sophus::SE3();  //reset lidar global pose
+                                last_relative_motion_estimate_ = Sophus::SE3(); // Constant velocity model
 
+                                
+                                has_prev_cloud_ = false;
+                                for(int j=0;j<N-1;j++)
+                                {
+                                    std::cout<<"scan "<<j<<"/"<<N<<std::endl;
+                                    *feats_undistort = *original_scans_[j]; // original lidar frame
+                                    
+                                    if(i > 2)
+                                    {   
+                                        TransformPoints(Lidar_wrt_IMU_estim, feats_undistort); //transform to IMU with best params so far
+                                        reader.undistort_const_vel(time_start, feats_undistort); // const vel model from se3 pose
+                                    }
+                                    else
+                                    {
+                                        reader.undistort_const_vel_lidar(feats_undistort, last_relative_motion_estimate_);
+                                    }
+                                        
+                                    downSizeFilterSurf.setInputCloud(feats_undistort);
+                                    downSizeFilterSurf.filter(*feats_down_body);
 
-                    NonlinearFactorGraph graph;
-                    Values initial;
+                                    if (!has_prev_cloud_)
+                                    {
+                                        *prev_cloud_ = *feats_down_body;
+                                        has_prev_cloud_ = true;
 
-                    double meas_sigma = 0.02; // rad/m synthetic measurement sigma
-                    auto noise = noiseModel::Isotropic::Sigma(6, meas_sigma);
-                    
-                    int N = gnss_imu_poses_.size();
-                    for (size_t i = 0; i + 1 < N; ++i) {
+                                        lidar_poses_.push_back(global_pose_); //identity for now
 
-                        auto delta_L = lidar_poses_[i].inverse() * lidar_poses_[i+1];
-                        auto delta_I = gnss_imu_poses_[i].inverse() * gnss_imu_poses_[i+1];
+                                        continue;
+                                    }
 
-                        Pose3 delta_L_true = Pose3(delta_L.matrix());
-                        Pose3 delta_I_true = Pose3(delta_I.matrix());
+                                    // --- ICP Setup ---
+                                    pcl::IterativeClosestPoint<PointType, PointType> icp;
+                                    icp.setMaximumIterations(50);
+                                    icp.setMaxCorrespondenceDistance(1.0);
+                                    icp.setInputSource(feats_down_body);
+                                    icp.setInputTarget(prev_cloud_);
 
-                        graph.add( std::make_shared<ExtrinsicSE3Factor>(X(0), delta_I_true, delta_L_true, noise) );
+                                    // --- Constant velocity model as initial guess ---
+                                    Eigen::Matrix4f init_guess = last_relative_motion_estimate_.matrix().cast<float>();
 
-                        A_.push_back(delta_L);
-                        B_.push_back(delta_I);
-                    }
+                                    PointCloudXYZI::Ptr aligned(new PointCloudXYZI());
+                                    icp.align(*aligned, init_guess);
 
-                    // Weak prior (very large sigmas = weak)
-                    auto priorNoise = noiseModel::Diagonal::Sigmas((Vector(6) << 10., 10., 10., 10., 10., 10.).finished());
-                    graph.add( PriorFactor<Pose3>(X(0), Pose3::Identity(), priorNoise) );
+                                    if (!icp.hasConverged())
+                                    {
+                                        ROS_WARN("ICP did not converge!");
+                                        return;
+                                    }
 
-                    // initial guess (identity or slightly perturbed)
-                    Pose3 init_guess = Pose3::Identity();
-                    initial.insert(X(0), init_guess);
-                    std::cout << "Initial guess for extrinsic:\n" << init_guess << std::endl;
+                                    // --- Get relative transform from ICP ---
+                                    Eigen::Matrix4f relative_transform_f = icp.getFinalTransformation();
+                                    Eigen::Matrix4d relative_transform = relative_transform_f.cast<double>();
 
-                    // Optimize
-                    LevenbergMarquardtParams params;
-                    params.setVerbosity("ERROR");
-                    LevenbergMarquardtOptimizer optimizer(graph, initial); //, params
-                    Values result = optimizer.optimize();
+                                    Sophus::SE3 relative_motion(relative_transform.block<3, 3>(0, 0),
+                                                                relative_transform.block<3, 1>(0, 3));
 
-                    Pose3 T_I_L_est = result.at<Pose3>(X(0));
-                    std::cout << "\nEstimated extrinsic (T_I_L_est):\n" << T_I_L_est << std::endl;
+                                    // --- Update global pose ---
+                                    global_pose_ = global_pose_ * relative_motion;
 
-                    // Compare to ground truth
-                    Pose3 T_I_L_true = Pose3(Lidar_wrt_IMU.matrix());
-                    Pose3 errPose = T_I_L_true.between(T_I_L_est);
-                    Vector errXi = Pose3::Logmap(errPose);
-                    std::cout << "\nEstimation error (Pose3 Logmap) [rotX,rotY,rotZ, tx,ty,tz]:\n" << errXi.transpose() << std::endl;
+                                    // --- Update constant velocity model ---
+                                    last_relative_motion_estimate_ = relative_motion;
 
+                                    *prev_cloud_ = *feats_down_body;
+                                    lidar_poses_.push_back(global_pose_);
 
-                    Sophus::SE3 out =  ConventionalAXXBSVDSolver(B_, A_);
-                    std::cout<<"out\n:"<<out.matrix()<<std::endl;
+                                    //THERE IS A BUG SOMEWHERE HERE 
+                                    //WHEN SYSTEM RUNS SECOND TIME - LIDAR IS NOT IN LIDAR FRAME ANYMORE, FOR SOME REASON IS OUT 
 
+                                    publishPose(global_pose_, last_time);
+                                    TransformPoints(global_pose_, feats_down_body);
+                                    publish_frame_debug2(pubLaserCloudFull, feats_down_body, last_time);
 
+                                    //TransformPoints(se3, feats_down_body); // georeference with se3 in IMU frame
+
+                                    *debug_cloud_ += *feats_down_body;
+
+                                    last_time++;
+                                }
+                                
+                                publish_frame_debug(pubLaserCloudDebug, debug_cloud_);
+
+                                Lidar_wrt_IMU_estim = find_extrinsic(Lidar_wrt_IMU_estim, lidar_poses_, gnss_imu_poses_, Lidar_wrt_IMU);
+
+                        
+                                std::cout << "\nFinished one iteration, press enter..." << std::endl;
+                                std::cin.get();
+                                //break;
+                            }
+                            
+                            
                             std::cout << "\nFinished, press enter..." << std::endl;
                             std::cin.get();
 
                             return;
                         }
 
-                        // reader.undistort_const_vel(time_start, feats_undistort); // const vel model
+                        // 
                         // reader.undistort_imu(time_start, feats_undistort); //imu measurements
                     }
                 }

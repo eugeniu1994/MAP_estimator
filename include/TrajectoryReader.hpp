@@ -883,6 +883,54 @@ public:
         return rv;
     }
 
+    bool undistort_const_vel_lidar(PointCloudXYZI::Ptr &pcl_in, const Sophus::SE3 &delta_)
+    {
+        /*
+        This does constant velocity model undistortion
+        the scan is in same frame as the trajectory
+        */
+        bool rv = false;
+        try
+        {
+            int n = pcl_in->points.size();
+            auto first_point_time = pcl_in->points[0].time;
+            auto last_point_time = pcl_in->points[n - 1].time;
+            double delta_time = last_point_time - first_point_time; // first point time is zero
+
+            if (delta_time <= 1e-9){
+                std::cout<<"error in undistort_const_vel_lidar : delta_time is "<<delta_time<<std::endl;
+                return false;
+            } 
+
+            const auto delta_pose = delta_.log() / delta_time;
+
+            tbb::parallel_for(tbb::blocked_range<int>(0, n),
+                              [&](const tbb::blocked_range<int> &r)
+                              {
+                                  for (int i = r.begin(); i < r.end(); ++i)
+                                  {
+                                      const auto motion = Sophus::SE3::exp(pcl_in->points[i].time * delta_pose);
+
+                                      V3D P_i(pcl_in->points[i].x, pcl_in->points[i].y, pcl_in->points[i].z);
+
+                                      V3D P_compensate = motion * P_i;
+
+                                      pcl_in->points[i].x = P_compensate(0);
+                                      pcl_in->points[i].y = P_compensate(1);
+                                      pcl_in->points[i].z = P_compensate(2);
+                                  }
+                              });
+            rv = true;
+        }
+        catch (const std::exception &e)
+        {
+            std::cout << "Error in undistort_const_vel:" << e.what() << std::endl;
+            throw std::runtime_error("exception error in undistort_const_vel()");
+        }
+
+        return rv;
+    }
+
     const std::vector<Measurement> &measurements() const { return measurements_; }
     const Eigen::Vector3d &leverArms() const { return leverArms_; }
     const Eigen::Vector3d &bodyToIMU() const { return bodyToIMU_; }

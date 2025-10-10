@@ -68,6 +68,8 @@ public:
     double _first_lidar_time = 0., _first_imu_time = 0.;
     bool _lidar_init = false, _imu_init = false;
 
+    bool shift_measurements_to_zero_time = false;
+
     double lidar_mean_scantime = 0.0;
     int scan_id = 0;
     bool Localmap_Initialized = false;
