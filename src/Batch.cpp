@@ -1,5 +1,7 @@
 #include "Batch.hpp"
 
+#include <visualization_msgs/Marker.h>
+
 using namespace gtsam;
 
 gtsam::Pose3 sophusToGtsam(const Sophus::SE3 &pose)
@@ -388,9 +390,8 @@ void Batch::IMU_init(const MeasureGroup &meas, Estimator &kf_state, int &N)
     }
 
     init_state.bg = mean_gyr;
-    // for icp cloud already is in IMU frame
-    // init_state.offset_T_L_I = Lidar_T_wrt_IMU;
-    // init_state.offset_R_L_I = Sophus::SO3(Lidar_R_wrt_IMU);
+    init_state.offset_T_L_I = Lidar_T_wrt_IMU;
+    init_state.offset_R_L_I = Sophus::SO3(Lidar_R_wrt_IMU);
     kf_state.set_x(init_state);
     std::cout << "Init state gravity:" << init_state.grav.transpose() << std::endl;
 
@@ -473,7 +474,7 @@ void Batch::IMU_init(const MeasureGroup &meas, Estimator &kf_state, int &N)
 void Batch::Process(MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_un_)
 {
     // transform points to IMU frame
-    TransformPoints(Lidar_R_wrt_IMU, Lidar_T_wrt_IMU, meas.lidar);
+    //TransformPoints(Lidar_R_wrt_IMU, Lidar_T_wrt_IMU, meas.lidar);
     if (meas.imu.empty())
     {
         std::cout << "Batch::Process IMU list is empty" << std::endl;
@@ -621,7 +622,10 @@ void Batch::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCloudX
     auto it_pcl = pcl_out.points.end() - 1;
     auto begin_pcl = pcl_out.points.begin();
 
-    auto end_R = imu_state.rot.matrix().transpose();
+    auto end_R_T = imu_state.rot.matrix().transpose();
+
+    const auto &R_L2I = imu_state.offset_R_L_I.matrix();
+    const auto &R_I2L = imu_state.offset_R_L_I.matrix().transpose();
 
     for (auto it_kp = IMU_Buffer.end() - 1; it_kp != IMU_Buffer.begin(); it_kp--)
     {
@@ -646,28 +650,58 @@ void Batch::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCloudX
             std::cout << "ERROR  start_: " << start_ << ", end_:" << end_ << ", pcl_out->size():" << pcl_out.points.size() << std::endl;
             throw std::invalid_argument("ERROR in undistort");
         }
+        // std::cout << "start_:" << start_ << ", end_:" << end_ << std::endl;
+        if (true)
+        {
+            for (; it_pcl->time > head->offset_time; it_pcl--)
+            {
+                dt = it_pcl->time - head->offset_time;
+                // P_compensate = R_imu_e ^ T * (R_i * P_i + T_ei)
 
-        tbb::parallel_for(tbb::blocked_range<int>(start_, end_),
-                          [&](tbb::blocked_range<int> r)
-                          {
-                              for (int i = r.begin(); i < r.end(); i++)
+                M3D R_i(R_imu * Sophus::SO3::exp(angvel_avr * dt).matrix());
+                V3D P_i(it_pcl->x, it_pcl->y, it_pcl->z);
+                V3D T_ei(pos_imu + vel_imu * dt + 0.5 * acc_imu * dt * dt - imu_state.pos);
+                //V3D P_compensate = end_R_T * (R_i * P_i + T_ei);
+                V3D P_compensate = R_I2L * (end_R_T * (R_i * (R_L2I * P_i + imu_state.offset_T_L_I) + T_ei) - imu_state.offset_T_L_I);
+
+
+                // just a test to skip the motion distortion
+                // P_compensate = P_i; // use the original point
+
+                it_pcl->x = P_compensate(0);
+                it_pcl->y = P_compensate(1);
+                it_pcl->z = P_compensate(2);
+
+                if (it_pcl == begin_pcl)
+                    break;
+            }
+        }
+        else
+        {
+            tbb::parallel_for(tbb::blocked_range<int>(start_, end_),
+                              [&](tbb::blocked_range<int> r)
                               {
-                                  double dt_ = pcl_out.points[i].time - head->offset_time;
+                                  for (int i = r.begin(); i < r.end(); i++)
+                                  {
+                                      double dt_ = pcl_out.points[i].time - head->offset_time;
 
-                                  M3D R_i(R_imu * Sophus::SO3::exp(angvel_avr * dt_).matrix());
-                                  V3D P_i(pcl_out.points[i].x, pcl_out.points[i].y, pcl_out.points[i].z);
-                                  V3D T_ei(pos_imu + vel_imu * dt_ + 0.5 * acc_imu * dt_ * dt_ - imu_state.pos);
-                                  V3D P_compensate = end_R * (R_i * P_i + T_ei);
+                                      M3D R_i(R_imu * Sophus::SO3::exp(angvel_avr * dt_).matrix());
+                                      V3D P_i(pcl_out.points[i].x, pcl_out.points[i].y, pcl_out.points[i].z);
+                                      V3D T_ei(pos_imu + vel_imu * dt_ + 0.5 * acc_imu * dt_ * dt_ - imu_state.pos);
+                                      //V3D P_compensate = end_R_T * (R_i * P_i + T_ei);
+                                      V3D P_compensate = R_I2L * (end_R_T * (R_i * (R_L2I * P_i + imu_state.offset_T_L_I) + T_ei) - imu_state.offset_T_L_I);
 
-                                  pcl_out.points[i].x = P_compensate(0);
-                                  pcl_out.points[i].y = P_compensate(1);
-                                  pcl_out.points[i].z = P_compensate(2);
-                              }
-                          });
+
+                                      pcl_out.points[i].x = P_compensate(0);
+                                      pcl_out.points[i].y = P_compensate(1);
+                                      pcl_out.points[i].z = P_compensate(2);
+                                  }
+                              });
+        }
     }
 }
 
-void Batch::update_se3(state &_state, const double &lidar_beg_time, const double &lidar_end_time)
+void Batch::update_se3(state &_state, const double &lidar_beg_time, const double &lidar_end_time, gtsam::Matrix6 &out_cov_pose)
 {
     std::cout << "update_se3" << std::endl;
     if (imuQueOpt.empty())
@@ -807,16 +841,17 @@ void Batch::update_se3(state &_state, const double &lidar_beg_time, const double
     prevBias_ = result.at<gtsam::imuBias::ConstantBias>(B(key));
 
     // save the latest estimate on _state
-    //  _state.pos = prevState_.pose().translation();
-    //  _state.rot = Sophus::SO3(prevState_.pose().rotation().matrix());
-    //  _state.vel = prevState_.v();
-    //  _state.bg = prevBias_.gyroscope();
-    //  _state.ba = prevBias_.accelerometer();
+    _state.pos = prevState_.pose().translation();
+    _state.rot = Sophus::SO3(prevState_.pose().rotation().matrix());
+    _state.vel = prevState_.v();
+    _state.bg = prevBias_.gyroscope();
+    _state.ba = prevBias_.accelerometer();
 
     // Calculate the marginal covariances for all variables
-    // gtsam::Marginals marginals(optimizer.getFactorsUnsafe(), result);
-    // system_cov = marginals.marginalCovariance(X(key));
-    // std::cout<<"system_cov:\n"<<system_cov<<std::endl;
+    gtsam::Marginals marginals(optimizer.getFactorsUnsafe(), result);
+
+    // full 6x6 covariance of the pose (position + rotation)
+    out_cov_pose = marginals.marginalCovariance(X(key)); //
 
     // Reset the optimization preintegration object.
     imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
@@ -955,32 +990,84 @@ void establishCorrespondences(const PointCloudXYZI::Ptr &pcl_un_, const Sophus::
     }
 }
 
-void Batch::update_all(state &_state, const double &lidar_beg_time, const double &lidar_end_time, PointCloudXYZI::Ptr &pcl_un_,
+pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointXYZINormal>());
+
+void debug_CloudWithNormals(const ros::Publisher &normals_pub)
+{
+    std::cout << "debug_CloudWithNormals with " << cloud_with_normals->size() << " points" << std::endl;
+
+    // --- 1. Publish Normals as Markers ---
+    visualization_msgs::Marker normals_marker;
+    normals_marker.header.frame_id = "world";
+    normals_marker.type = visualization_msgs::Marker::LINE_LIST;
+    normals_marker.action = visualization_msgs::Marker::ADD;
+    normals_marker.scale.x = 0.05; // Line width
+    normals_marker.color.a = 1.0;  // Full opacity
+    double normal_length = 3.;     // 5.;     // Length of normal lines
+
+    for (const auto &point : cloud_with_normals->points)
+    {
+        geometry_msgs::Point p1, p2;
+
+        // Start of normal (point)
+        p1.x = point.x;
+        p1.y = point.y;
+        p1.z = point.z;
+        normals_marker.points.push_back(p1);
+
+        // End of normal (point + normal * length)
+        p2.x = point.x + normal_length * point.normal_x;
+        p2.y = point.y + normal_length * point.normal_y;
+        p2.z = point.z + normal_length * point.normal_z;
+        normals_marker.points.push_back(p2);
+
+        std_msgs::ColorRGBA color;
+        // if (point.curvature < 2) // seen less than 10 times
+        // {
+        //     color.r = 1.0; // not seen enough
+        //     color.g = 0.0;
+        //     color.b = 0.0;
+        // }
+        // else
+        // {
+        color.r = 0.0;
+        color.g = 1.0; // Green for high curvature
+        color.b = 0.0;
+        //}
+        color.a = 1.0; // Full opacity
+
+        normals_marker.colors.push_back(color); // Color for start point
+        normals_marker.colors.push_back(color); // Color for end point
+    }
+
+    normals_pub.publish(normals_marker);
+}
+
+void Batch::update_all(state &_state, const double &lidar_beg_time, const double &lidar_end_time, const PointCloudXYZI::Ptr &pcl_un_,
                        const pcl::PointCloud<PointType>::Ptr &mls_map, const pcl::KdTreeFLANN<PointType>::Ptr &mls_tree, bool use_mls,
-                       const pcl::PointCloud<PointType>::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree, bool use_als)
+                       const pcl::PointCloud<PointType>::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree, bool use_als,
+                       gtsam::Matrix6 &out_cov_pose, const ros::Publisher &normals_pub, bool debug)
 {
     // todo
     /*
-    proceed as with se3 update - as before
+    ---proceed as with se3 update - as before
     ---a function to do parallel search for neighbours and find the landmars given a map and a tree
     ---add the landmark measurements - either planes with estimated covs, maybe integrate the robust kernel
+    ---debug option: use the existing code to visualize the normals of the measurements
 
     option to keep the last cloud - ICP relative, curr to prev measurement
 
-    option to integrate the position only GPS factors 
+    option to integrate the position only GPS factors
 
     option to integrate any SE3 measurement as in between measurements (ICP, GNSS-IMU, etc)
-        if GNSS-IMU - with provided cov, else set a manual one 
+        if GNSS-IMU - with provided cov, else set a manual one
 
     modify the _state input, it should be reference to the iekf_estimator,
-        call the iekf update after the graph optimize 
+        call the iekf update after the graph optimize
 
-    debug option: use the existing code to visualize the normals of the measurements 
-
-    change the correctionNoise for X(.) - take it from the system provided it 
+    change the correctionNoise for X(.) - take it from the system provided it
     */
 
-    
     std::cout << "update_se3" << std::endl;
     if (imuQueOpt.empty())
     {
@@ -1104,7 +1191,7 @@ void Batch::update_all(state &_state, const double &lidar_beg_time, const double
     graphValues.insert(V(key), propState_.v());
     graphValues.insert(B(key), prevBias_);
 
-    //if (key > 1 && key < max_key)
+    // if (key > 1 && key < max_key)
     {
         size_t N = pcl_un_->size();
         if (use_mls)
@@ -1112,6 +1199,12 @@ void Batch::update_all(state &_state, const double &lidar_beg_time, const double
             std::cout << "establish MLS measurements..." << std::endl;
             establishCorrespondences(pcl_un_, curr_position, mls_map, mls_tree);
             int added_planes = 0;
+            bool deb = (normals_pub.getNumSubscribers() != 0) && debug;
+            if (deb)
+            {
+                cloud_with_normals->clear();
+            }
+
             for (int i = 0; i < N; i++) // for each point
             {
                 if (global_valid[i])
@@ -1153,16 +1246,37 @@ void Batch::update_all(state &_state, const double &lidar_beg_time, const double
                     //     gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel), // Robust kernel for outliers 10cm
                     //     gtsam::noiseModel::Isotropic::Sigma(3, .5));
                     // this_Graph.emplace_shared<PointToPointFactor>(X(pose_key), measured_point, target_point, point_noise);
+                    if (deb)
+                    {
+                        pcl::PointXYZINormal pt;
+                        pt.curvature = 1; // <0 plotted as blue
+
+                        pt.x = mls_map->points[lm.map_point_index].x;
+                        pt.y = mls_map->points[lm.map_point_index].y;
+                        pt.z = mls_map->points[lm.map_point_index].z;
+
+                        pt.normal_x = lm.norm.x();
+                        pt.normal_y = lm.norm.y();
+                        pt.normal_z = lm.norm.z();
+
+                        pt.intensity = lm.var; // just for test
+
+                        cloud_with_normals->push_back(pt);
+                    }
                 }
             }
-        
-            std::cout<<"added_planes:"<<added_planes<<std::endl;
+
+            if (deb)
+            {
+                debug_CloudWithNormals(normals_pub);
+            }
+            std::cout << "added_planes:" << added_planes << std::endl;
         }
         if (use_als)
         {
             std::cout << "establish ALS measurements..." << std::endl;
-            //establishCorrespondences(pcl_un_, curr_position, als_map, als_tree);
-            // todo copy the code from MLS to ALS
+            // establishCorrespondences(pcl_un_, curr_position, als_map, als_tree);
+            //  todo copy the code from MLS to ALS
         }
     }
 
@@ -1179,17 +1293,18 @@ void Batch::update_all(state &_state, const double &lidar_beg_time, const double
     prevState_ = gtsam::NavState(prevPose_, prevVel_);
     prevBias_ = result.at<gtsam::imuBias::ConstantBias>(B(key));
 
-    // save the latest estimate on _state - call the update function on this 
-    //  _state.pos = prevState_.pose().translation();
-    //  _state.rot = Sophus::SO3(prevState_.pose().rotation().matrix());
-    //  _state.vel = prevState_.v();
-    //  _state.bg = prevBias_.gyroscope();
-    //  _state.ba = prevBias_.accelerometer();
+    // save the latest estimate on _state - call the update function on this
+    _state.pos = prevState_.pose().translation();
+    _state.rot = Sophus::SO3(prevState_.pose().rotation().matrix());
+    _state.vel = prevState_.v();
+    _state.bg = prevBias_.gyroscope();
+    _state.ba = prevBias_.accelerometer();
 
     // Calculate the marginal covariances for all variables
-    // gtsam::Marginals marginals(optimizer.getFactorsUnsafe(), result);
-    // system_cov = marginals.marginalCovariance(X(key));
-    // std::cout<<"system_cov:\n"<<system_cov<<std::endl;
+    gtsam::Marginals marginals(optimizer.getFactorsUnsafe(), result);
+    // full 6x6 covariance of the pose (position + rotation)
+    out_cov_pose = marginals.marginalCovariance(X(key)); //
+    // std::cout<<"system_cov:\n"<<out_cov_pose<<std::endl;
 
     // Reset the optimization preintegration object.
     imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
@@ -1246,5 +1361,3 @@ void Batch::update_all(state &_state, const double &lidar_beg_time, const double
     ++key;
     doneFirstOpt = true;
 }
-
-

@@ -150,15 +150,21 @@ void DataHandler::Subscribe()
     std::shared_ptr<GNSS> gnss_obj(new GNSS());
 
     Sophus::SE3 Lidar_wrt_IMU = Sophus::SE3(Lidar_R_wrt_IMU, Lidar_T_wrt_IMU);
+    Sophus::SE3 Lidar_wrt_IMU_inverse = Sophus::SE3(Lidar_R_wrt_IMU, Lidar_T_wrt_IMU).inverse();
     imu_obj->set_param(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU, V3D(gyr_cov, gyr_cov, gyr_cov), V3D(acc_cov, acc_cov, 10. * acc_cov),
                        V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov), V3D(b_acc_cov, b_acc_cov, 10. * b_acc_cov));
     gnss_obj->set_param(GNSS_T_wrt_IMU, GNSS_IMU_calibration_distance, postprocessed_gnss_path);
 
-
-    //todo - continue work from her 
+    // todo - continue work from her
 
     std::shared_ptr<Batch> batch_obj(new Batch());
-
+    bool test_batch = true;
+    RIEKF estimator_2;
+    if (test_batch)
+    {
+        batch_obj->set_param(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU, V3D(gyr_cov, gyr_cov, gyr_cov), V3D(acc_cov, acc_cov, 10. * acc_cov),
+                             V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov), V3D(b_acc_cov, b_acc_cov, 10. * b_acc_cov));
+    }
 
 #define USE_ALS
 
@@ -180,6 +186,8 @@ void DataHandler::Subscribe()
     ros::Publisher pubOptimizedVUX2 = nh.advertise<sensor_msgs::PointCloud2>("/vux_optimized2", 10);
     ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("acceleration_marker", 10);
 
+    ros::Publisher normals_pub = nh.advertise<visualization_msgs::Marker>("normals", 1);
+
     Sophus::SE3 curr_mls;
     bool perform_mls_registration = true;
 
@@ -195,21 +203,18 @@ void DataHandler::Subscribe()
     Sophus::SE3 gnss2lidar = lidar2gnss.inverse();      // THIS FOR THE BACK ANTENA - TO TRANSFORM TO FRONT imu frame
     //----------------------------------------------------------------------------
 
-
-
     std::cout << "\n\nStart reading the data..." << std::endl;
     //------------------------------------------------------------------------------
     TrajectoryReader reader;
-    
 
     // //for drone we had this
     // M3D T;
     // T << -1,  0,  0,
     //       0,  0, -1,
     //       0, -1,  0;
-    // gnss2lidar = Sophus::SE3(T, V3D::Zero()); //this was required for the drone 
+    // gnss2lidar = Sophus::SE3(T, V3D::Zero()); //this was required for the drone
 
-    //an extrinsic transformation is passed here to transform the ppk gnss-imu orientaiton into mls frame 
+    // an extrinsic transformation is passed here to transform the ppk gnss-imu orientaiton into mls frame
     reader.read(postprocessed_gnss_path, gnss2lidar);
 
     // --- Access measurements ---
@@ -268,7 +273,6 @@ void DataHandler::Subscribe()
     reader.toSE3(m0, first_ppk_gnss_pose_inverse);
     first_ppk_gnss_pose_inverse = first_ppk_gnss_pose_inverse.inverse();
 
-    
     int tmp_index = 0;
     ros::Rate rate(500);
 
@@ -314,7 +318,6 @@ void DataHandler::Subscribe()
     flg_exit = false;
     perform_mls_registration = true;
     bool ppk_gnss_oriented = false;
-
 
     Sophus::SE3 tmp_pose = Sophus::SE3();
 
@@ -378,7 +381,7 @@ void DataHandler::Subscribe()
                     if (!reader.init(time_of_day_sec))
                     {
                         std::cerr << "Cannot initialize the GNSS-IMU reader..." << std::endl;
-                        throw std::runtime_error("Cannot initialize the GNSS-IMU reader...: time_of_day_sec "+std::to_string(time_of_day_sec));
+                        throw std::runtime_error("Cannot initialize the GNSS-IMU reader...: time_of_day_sec " + std::to_string(time_of_day_sec));
                     }
                     else
                     {
@@ -443,21 +446,22 @@ void DataHandler::Subscribe()
                     const auto &msg_time = measurements[tmp_index].tod;
 
                     se3 = T_LG * first_ppk_gnss_pose_inverse * interpolated_pose; // in first frame
-                    publish_ppk_gnss(se3, msg_time);
 
-                    // reader.addEarthGravity(measurements[reader.curr_index], raw_gyro, raw_acc, G_m_s2); //this will add the world gravity
-                    reader.addGravity(measurements[reader.curr_index], se3, raw_gyro, raw_acc, G_m_s2); // gravity in curr body frame
-
-                    // todo - we can do it the other way around and add the gravity in IMU body frame
-                    publishAccelerationArrow(marker_pub, -raw_acc, msg_time);
-
-                    if(true)
+                    if (false)
                     {
+                        publish_ppk_gnss(se3, msg_time);
+
+                        // reader.addEarthGravity(measurements[reader.curr_index], raw_gyro, raw_acc, G_m_s2); //this will add the world gravity
+                        reader.addGravity(measurements[reader.curr_index], se3, raw_gyro, raw_acc, G_m_s2); // gravity in curr body frame
+
+                        // todo - we can do it the other way around and add the gravity in IMU body frame
+                        publishAccelerationArrow(marker_pub, -raw_acc, msg_time);
+
                         *feats_undistort = *Measures.lidar;              // lidar frame
                         TransformPoints(Lidar_wrt_IMU, feats_undistort); // lidar to IMU frame - front IMU
 
                         reader.undistort_const_vel(time_start, feats_undistort); // const vel model
-                        //reader.undistort_imu(time_start, feats_undistort); //imu measurements
+                        // reader.undistort_imu(time_start, feats_undistort); //imu measurements
 
                         downSizeFilterSurf.setInputCloud(feats_undistort);
                         downSizeFilterSurf.filter(*feats_down_body);
@@ -475,7 +479,7 @@ void DataHandler::Subscribe()
                 }
 
                 //------------------------------------------------------------
-                perform_mls_registration = false;
+                // perform_mls_registration = false;
                 if (perform_mls_registration)
                 {
                     if (flg_first_scan)
@@ -486,44 +490,41 @@ void DataHandler::Subscribe()
                         continue;
                     }
 
-                    //TRY AGAIN THIS BUT PUT THE ACTUAL GRAVITY INTO 
-                    // if(!imu_obj->init_from_GT)
-                    // {
-                    //     std::cout<<"IMU init from GT traj..."<<std::endl;
-                    //     imu_obj->IMU_init_from_GT(Measures, estimator_, se3);
-                    // }
-                    // undistort and provide initial guess
+                    // TRY AGAIN THIS BUT PUT THE ACTUAL GRAVITY INTO
+                    //  if(!imu_obj->init_from_GT)
+                    //  {
+                    //      std::cout<<"IMU init from GT traj..."<<std::endl;
+                    //      imu_obj->IMU_init_from_GT(Measures, estimator_, se3);
+                    //  }
+                    //  undistort and provide initial guess
                     imu_obj->Process(Measures, estimator_, feats_undistort);
                     if (imu_obj->imu_need_init_)
                     {
                         std::cout << "IMU was not initialised " << std::endl;
                         continue;
                     }
-                    
-                    if(!ppk_gnss_oriented)
+
+                    if (!ppk_gnss_oriented)
                     {
                         state_point = estimator_.get_x();
                         Sophus::SE3 T_L0 = Sophus::SE3(state_point.rot, state_point.pos); // first LiDAR–inertial pose
                         // Alignment transform: GNSS -> LiDAR
-                        //T_LG = T_L0 * se3.inverse();
+                        // T_LG = T_L0 * se3.inverse();
                         T_LG = T_L0 * tmp_pose.inverse();
 
-                        
-
-                        //use only the yaw angle 
-                        double yaw = T_LG.so3().matrix().eulerAngles(2,1,0)[0]; // rotation around Z // yaw, pitch, roll (Z,Y,X order)
+                        // use only the yaw angle
+                        double yaw = T_LG.so3().matrix().eulerAngles(2, 1, 0)[0]; // rotation around Z // yaw, pitch, roll (Z,Y,X order)
                         Eigen::AngleAxisd yawRot(yaw, V3D::UnitZ());
                         T_LG = Sophus::SE3(yawRot.toRotationMatrix(), V3D::Zero());
-                        
+
                         // Transform any GNSS pose into LiDAR–Inertial frame
-                        //Sophus::SE3 T_Lk = T_LG * se3;
+                        // Sophus::SE3 T_Lk = T_LG * se3;
 
                         ppk_gnss_oriented = true;
 
                         continue;
                     }
 
-                    
                     if (feats_undistort->empty() || (feats_undistort == NULL))
                     {
                         ROS_WARN("No feats_undistort point, skip this scan!\n");
@@ -537,14 +538,14 @@ void DataHandler::Subscribe()
                     downSizeFilterSurf.setInputCloud(feats_undistort);
                     downSizeFilterSurf.filter(*feats_down_body);
 
-                    auto p1 = feats_undistort->points[0];
-                    auto p2 = feats_down_body->points[0];
+                    // auto p1 = feats_undistort->points[0];
+                    // auto p2 = feats_down_body->points[0];
 
-                    auto r1 = p1.x * p1.x + p1.y * p1.y + p1.z * p1.z;
-                    auto r2 = p2.x * p2.x + p2.y * p2.y + p2.z * p2.z;
+                    // auto r1 = p1.x * p1.x + p1.y * p1.y + p1.z * p1.z;
+                    // auto r2 = p2.x * p2.x + p2.y * p2.y + p2.z * p2.z;
 
-                    std::cout<<"\nfeats_undistort [x,y,z,i,sqrt(sqrt(r))]:"<<p1.x<<", "<<p1.y<<", "<<p1.z<<", "<<p1.intensity<<", "<<sqrt(sqrt(r1))<<std::endl;
-                    std::cout<<"feats_down_body [x,y,z,i,sqrt(sqrt(r))]:"<<p2.x<<", "<<p2.y<<", "<<p2.z<<", "<<p2.intensity<<", "<<sqrt(sqrt(r2))<<std::endl;
+                    // std::cout<<"\nfeats_undistort [x,y,z,i,sqrt(sqrt(r))]:"<<p1.x<<", "<<p1.y<<", "<<p1.z<<", "<<p1.intensity<<", "<<sqrt(sqrt(r1))<<std::endl;
+                    // std::cout<<"feats_down_body [x,y,z,i,sqrt(sqrt(r))]:"<<p2.x<<", "<<p2.y<<", "<<p2.z<<", "<<p2.intensity<<", "<<sqrt(sqrt(r2))<<std::endl;
 
                     feats_down_size = feats_down_body->points.size();
                     if (feats_down_size < 5)
@@ -707,10 +708,10 @@ void DataHandler::Subscribe()
                     {
                         std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
                     }
-                    
-                    //take this from std or separation data 
-                    auto std_pos_m = V3D(.1,.1,.1); //take this from the measurement itself - 10cm
-                    auto std_rot_deg = V3D(5,5,5);                                        //- 5 degrees 
+
+                    // take this from std or separation data
+                    auto std_pos_m = V3D(.1, .1, .1); // take this from the measurement itself - 10cm
+                    auto std_rot_deg = V3D(5, 5, 5);  //- 5 degrees
                     estimator_.update_se3(se3, NUM_MAX_ITERATIONS, std_pos_m, std_rot_deg);
 
                     // Crop the local map------
@@ -729,6 +730,113 @@ void DataHandler::Subscribe()
                     {
                         *featsFromMap = *laserCloudSurfMap;
                         publish_map(pubLaserCloudMap);
+                    }
+
+                    if (test_batch)
+                    {
+                        batch_obj->Process(Measures, estimator_2, feats_undistort); // feats_undistort are transformed to IMU frame
+                        if (batch_obj->imu_need_init_)
+                        {
+                            std::cout << "IMU was not initialised " << std::endl;
+                            continue;
+                        }
+                        downSizeFilterSurf.setInputCloud(feats_undistort);
+                        downSizeFilterSurf.filter(*feats_down_body);
+
+                        // to call this we have to transform the cloud into lidar frame
+                        //  if (!estimator_2.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
+                        //  {
+                        //      std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
+                        //  }
+                        //  state_point = estimator_2.get_x();
+
+                        TransformPoints(Lidar_wrt_IMU, feats_down_body); // lidar to IMU frame - front IMU
+
+                        gtsam::Matrix6 out_cov_pose;
+                        // test se3 update
+                        // batch_obj->update_se3(state_point, Measures.lidar_beg_time, Measures.lidar_end_time, out_cov_pose);
+
+                        // std::cout << "kdtree set input ALS points: " << als_obj->als_cloud->size() << std::endl;
+                        // const auto &reference_localMap_cloud = als_obj->als_cloud;
+                        //------------------------------------------------------------------------
+                        estimator_2.localKdTree_map->setInputCloud(laserCloudSurfMap);
+                        const auto &refference_kdtree = estimator_2.localKdTree_map;
+
+                        bool debug = true;
+                        batch_obj->update_all(state_point, Measures.lidar_beg_time, Measures.lidar_end_time, feats_down_body,
+                                              laserCloudSurfMap, refference_kdtree, true,  // MLS map
+                                              laserCloudSurfMap, refference_kdtree, false, // ALS map
+                                              out_cov_pose, normals_pub, debug);
+                        // std::cout<<"out_cov_pose:\n"<<out_cov_pose<<std::endl;
+                        if (batch_obj->doneFirstOpt)
+                        {
+                            M3D cov_rot = out_cov_pose.block<3, 3>(0, 0);
+                            M3D cov_pos = out_cov_pose.block<3, 3>(3, 3);
+
+                            // standard deviations
+                            V3D std_pos = cov_pos.diagonal().cwiseSqrt();
+                            V3D std_rot = cov_rot.diagonal().cwiseSqrt();
+                            // Convert rotation std from radians to degrees
+                            std_rot = std_rot * (180.0 / M_PI);
+
+                            std::cout << "std_pos (m): " << std_pos.transpose() << std::endl;
+                            std::cout << "std_rot (deg): " << std_rot.transpose() << std::endl;
+
+                            Sophus::SE3 latest(state_point.rot.matrix(), state_point.pos);
+                            estimator_2.update_se3(latest, NUM_MAX_ITERATIONS, std_pos, std_rot);
+
+                            if (scan_id > 10)
+                                estimator_.update_se3(latest, NUM_MAX_ITERATIONS, std_pos, std_rot);
+
+                            TransformPoints(latest, feats_down_body); // georeference with latest
+
+                            publish_ppk_gnss(latest, Measures.lidar_end_time);
+                            publish_frame_debug(pubLaserCloudDebug, feats_down_body);
+
+                            // std::cout << "\n press enter..." << std::endl;
+                            // std::cin.get();
+
+                            if (false) // this will save the MLS estimated SE3 poses
+                            {
+                                auto s_ekf = estimator_.get_x();
+                                auto s_graph = state_point; // was taken from the graph
+
+                                std::ofstream foutS1("/home/eugeniu/S1.txt", std::ios::app);
+                                std::ofstream foutS2("/home/eugeniu/S2.txt", std::ios::app);
+
+                                V3D t_s1 = s_ekf.pos;
+                                V3D v1 = s_ekf.vel;
+                                V3D bg1 = s_ekf.bg;
+                                V3D ba1 = s_ekf.ba;
+                                Eigen::Quaterniond q_s1(s_ekf.rot.matrix());
+                                q_s1.normalize();
+
+                                foutS1.setf(std::ios::fixed, std::ios::floatfield);
+                                foutS1.precision(20);
+                                // # ' id t q v bg ba'
+                                foutS1 << scan_id << " " << t_s1(0) << " " << t_s1(1) << " " << t_s1(2) << " "
+                                       << q_s1.x() << " " << q_s1.y() << " " << q_s1.z() << " " << q_s1.w() << " "
+                                       << v1.x() << " " << v1.y() << " " << v1.z() << " " << bg1.x() << " " << bg1.y() << " " << bg1.z() << " "
+                                       << ba1.x() << " " << ba1.y() << " " << ba1.z() << std::endl;
+                                foutS1.close();
+
+                                t_s1 = s_graph.pos;
+                                v1 = s_graph.vel;
+                                bg1 = s_graph.bg;
+                                ba1 = s_graph.ba;
+                                Eigen::Quaterniond q_s2(s_graph.rot.matrix());
+                                q_s2.normalize();
+
+                                foutS2.setf(std::ios::fixed, std::ios::floatfield);
+                                foutS2.precision(20);
+                                // # ' id t q v bg ba'
+                                foutS2 << scan_id << " " << t_s1(0) << " " << t_s1(1) << " " << t_s1(2) << " "
+                                       << q_s2.x() << " " << q_s2.y() << " " << q_s2.z() << " " << q_s2.w() << " "
+                                       << v1.x() << " " << v1.y() << " " << v1.z() << " " << bg1.x() << " " << bg1.y() << " " << bg1.z() << " "
+                                       << ba1.x() << " " << ba1.y() << " " << ba1.z() << std::endl;
+                                foutS2.close();
+                            }
+                        }
                     }
                 }
 

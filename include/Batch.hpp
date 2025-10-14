@@ -32,14 +32,16 @@ class Batch : public IMU_Class
 public:
     void Process(MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_un_);
 
-    void update_se3(state &_state, const double &lidar_beg_time, const double &lidar_end_time); // update the system with se3 pose only
+    void update_se3(state &_state, const double &lidar_beg_time, const double &lidar_end_time, gtsam::Matrix6 &out_cov_pose); // update the system with se3 pose only
 
-    void update_all(state &_state, const double &lidar_beg_time, const double &lidar_end_time, PointCloudXYZI::Ptr &pcl_un_,
+    void update_all(state &_state, const double &lidar_beg_time, const double &lidar_end_time, const PointCloudXYZI::Ptr &pcl_un_,
                     const pcl::PointCloud<PointType>::Ptr &mls_map, const pcl::KdTreeFLANN<PointType>::Ptr &mls_tree, bool use_mls,
-                    const pcl::PointCloud<PointType>::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree, bool use_als);
+                    const pcl::PointCloud<PointType>::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree, bool use_als,
+                    gtsam::Matrix6 &out_cov_pose, const ros::Publisher &normals_pub, bool debug = false);
     
     gtsam::Pose3 prevPose_;
-
+    bool doneFirstOpt = false;
+    
     private:
         gtsam::noiseModel::Diagonal::shared_ptr priorPoseNoise;
         gtsam::noiseModel::Diagonal::shared_ptr priorVelNoise;
@@ -61,7 +63,7 @@ public:
         gtsam::NavState prevStateOdom;
         gtsam::imuBias::ConstantBias prevBiasOdom;
 
-        bool doneFirstOpt = false;
+        
         bool systemInitialized = false;
         double lastImuT_imu = -1;
         double lastImuT_opt = -1;
