@@ -18,9 +18,10 @@
 #include "Estimator.hpp"
 
 #include "RIEKF.hpp"
-#ifndef USE_EKF
+
+//#ifndef USE_EKF
 #include "Estimator_ICP.hpp"
-#endif
+// #endif
 
 #define INIT_TIME (0.1)
 
@@ -120,8 +121,10 @@ public:
     RIEKF estimator_;
 #else
     ICP estimator_;
-#endif
+#endif  
 
+    ICP estimator_icp;
+    
     state state_point, updated_state, before_als_state;
     V3D pos_lid;
 
@@ -278,6 +281,8 @@ public:
     void gps_cbk(const gps_common::GPSFix::ConstPtr &msg);
 
     bool sync_packages(MeasureGroup &meas);
+    bool sync_packages_no_IMU(MeasureGroup &meas);
+
     void pointBodyToWorld(PointType const *const pi, PointType *const po);
     void pointBodyLidarToIMU(PointType const *const pi, PointType *const po);
 

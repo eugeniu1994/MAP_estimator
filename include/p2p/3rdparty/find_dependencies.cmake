@@ -1,9 +1,12 @@
 
 if(USE_SYSTEM_TSLMAP)
-  find_package(tsl-robin-map QUIET NO_MODULE)
+  message(STATUS "USE_SYSTEM_TSLMAP is TRUE")
+  find_package(tsl-robin-map NO_MODULE) #QUIET
 endif()
+
 if(NOT USE_SYSTEM_TSLMAP OR NOT TARGET tsl::robin_map)
   set(USE_SYSTEM_TSLMAP OFF)
+  message(STATUS "USE_SYSTEM_TSLMAP is OFF download it ")
   include(${CMAKE_CURRENT_LIST_DIR}/tsl_robin/tsl_robin.cmake)
 endif()
 

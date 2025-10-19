@@ -1,3 +1,4 @@
+
 #include "ALS.hpp"
 #include <regex>
 #include <liblas/liblas.hpp>
@@ -232,7 +233,7 @@ bool ALS_Handler::init(const Sophus::SE3 &known_als2mls)
 {
     bool rv = true;
     std::cout << "\033[31mALS init from known T\033[0m" << std::endl;
-
+    std::cout<<"known_als2mls:\n"<<known_als2mls.matrix()<<std::endl;
     R_to_mls = known_als2mls.so3().matrix();
     als_to_mls = known_als2mls;
     refine_als = true;
@@ -853,11 +854,12 @@ void ALS_Handler::RemovePointsFarFromLocation(const V3D &mls_position)
 
 bool ALS_Handler::Update(const Sophus::SE3 &mls_pose)
 {
-    // std::cout<<"Call update: motion:"<<(prev_mls_pos - mls_pose.translation()).norm()<<std::endl;
-    // std::cout<<"boxSize:"<<boxSize<<std::endl;
+    std::cout<<"Call update: motion:"<<(prev_mls_pos - mls_pose.translation()).norm()<<std::endl;
+    std::cout<<"boxSize:"<<boxSize<<std::endl;
 
-    if ((prev_mls_pos - mls_pose.translation()).norm() > boxSize / 2)
+    if ((first_time) || ((prev_mls_pos - mls_pose.translation()).norm() > boxSize / 2))
     {
+        first_time = false;
         std::cout << "====================== ALS Update =======================" << std::endl;
         prev_mls_pos = mls_pose.translation();
         RemovePointsFarFromLocation(prev_mls_pos);

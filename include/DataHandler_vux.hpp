@@ -20,9 +20,9 @@
 #include "Estimator.hpp"
 
 #include "RIEKF.hpp"
-#ifndef USE_EKF
+//#ifndef USE_EKF
 #include "Estimator_ICP.hpp"
-#endif
+//#endif
 
 
 #define INIT_TIME (0.1)
@@ -94,6 +94,8 @@ public:
     V3D Lidar_T_wrt_IMU, GNSS_T_wrt_IMU;
     M3D Lidar_R_wrt_IMU;
 
+    double first_point_time_;
+    
     std::deque<double> time_buffer;
     std::deque<PointCloudXYZI::Ptr> lidar_buffer;
     std::deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
@@ -124,6 +126,8 @@ public:
 #else
     ICP estimator_;
 #endif
+
+    ICP estimator_icp;
 
     state state_point, updated_state;
     V3D pos_lid;

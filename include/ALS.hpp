@@ -57,7 +57,8 @@ public:
     pcl::KdTreeFLANN<PointType>::Ptr localKdTree_map_als;
 
 private:
-
+    bool first_time = true;
+    
     V3D gps_origin_ENU;
     int closest_N_files = 4;
     double boxSize = 50., leaf_size = 1.0;

@@ -132,6 +132,7 @@ catkin_package(
 )
 
 add_definitions(-DWITHOUT_NUMPY) #for matplotlib
+
 # add_definitions(-DSAVE_DATA) #uncomment this to enable saving the data - note it will slow down the execution time
 
 set(USE_EKF TRUE)
@@ -255,7 +256,7 @@ target_link_libraries(georeference ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${
 # target_link_libraries(lidar_gnss_extrinsic ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}
 
 
-set(BUILD_ICP FALSE)
+set(BUILD_ICP TRUE)
 
 if(BUILD_ICP)
     message("Build ICP registration.")
@@ -265,12 +266,11 @@ if(BUILD_ICP)
     endif()
 
     set(TARGET_LINK_LIBS_ICP ${TARGET_LINK_LIBS} p2p::core gtsam) #maybe GTSAM is not needed yet here
-    SET(MAIN_SOURCE_FILES_ICP src/IMU.cpp src/GNSS.cpp src/utils.cpp src/estimators/Estimator.cpp src/DataHandler.cpp)
-    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/estimators/ICP.cpp src/Graph.cpp src/estimators/ALS_icp.cpp)
-
+    SET(MAIN_SOURCE_FILES_ICP src/IMU.cpp src/GNSS.cpp src/utils.cpp src/estimators/Estimator.cpp)
+    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/estimators/ICP.cpp)
 
     set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/src_icp/DataHandler_icp.cpp)
-    add_executable(icp_test src2/main.cpp ${MAIN_SOURCE_FILES_ICP})
+    add_executable(icp_test src/src_icp/main.cpp ${MAIN_SOURCE_FILES_ICP})
     target_link_libraries(icp_test ${TARGET_LINK_LIBS_ICP} ${CERES_LIBRARIES} )
 
 endif()

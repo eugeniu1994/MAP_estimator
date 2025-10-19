@@ -362,6 +362,15 @@ class TrajectoryReader(object):
 
         plt.draw()
 
+    def traveled_distance(self, est_xyz: np.ndarray) -> float:
+        # Compute differences between consecutive positions
+        diffs = np.diff(est_xyz, axis=0)
+        
+        # Compute Euclidean distances between consecutive points
+        segment_lengths = np.linalg.norm(diffs, axis=1)
+        
+        return np.sum(segment_lengths)
+
     def APE_translation(self):
         print('\nAPE_translation')
         # Calculate absolute pose error
@@ -576,6 +585,9 @@ class TrajectoryReader(object):
             # Get 3D points
             fwd_pts = traj[forward_pass]
             bwd_pts = traj[backward_pass]
+
+            print("Traveleld distance fwd_pts:", self.traveled_distance(fwd_pts))
+            print("Traveleld distance bwd_pts:", self.traveled_distance(bwd_pts))
 
             # KD-Tree to find nearest backward point for each forward point
             # bwd_tree = cKDTree(bwd_pts[:, :3])

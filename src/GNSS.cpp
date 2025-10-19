@@ -55,7 +55,19 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
     while ((!gps_buffer.empty()) && gps_time <= lidar_end_time)
     {
         auto msg = gps_buffer.front();
-        gps_time = msg->header.stamp.toSec(); //THIS IS FROM ROS - align the gps and lidar based on ROS TIMES
+        auto msg_time = msg->header.stamp.toSec();
+
+        if(!init_shift_measurements_to_zero_time)
+        {
+            init_shift_measurements_to_zero_time = true;
+            first_time = msg->header.stamp.toSec();
+        }
+        if(shift_measurements_to_zero_time)
+        {
+            msg_time = msg_time - first_time;
+        }
+
+        gps_time = msg_time;//msg->header.stamp.toSec(); //THIS IS FROM ROS - align the gps and lidar based on ROS TIMES
         gps_buffer.pop_front();
 
         global_gps_time = msg->time + gps_epoch;
@@ -63,8 +75,14 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
         if (gps_init_origin && !gps_buffer.empty()) // position initialised and still msgs exists
         {
             diff_curr_gnss2mls = fabs(gps_time - lidar_end_time);
-            double diff_next = fabs(gps_buffer.front()->header.stamp.toSec() - lidar_end_time);
-            // std::cout<<"diff_curr_gnss2mls:"<<diff_curr_gnss2mls<<", diff_next:"<<diff_next<<std::endl;
+            auto next_msg_time = gps_buffer.front()->header.stamp.toSec();
+            if(shift_measurements_to_zero_time)
+            {
+                next_msg_time = next_msg_time - first_time;
+            }
+            double diff_next = fabs(next_msg_time - lidar_end_time);
+            std::cout<<"gps_time:"<<gps_time<<", lidar_end_time:"<<lidar_end_time<<std::endl;
+            std::cout<<"diff_curr_gnss2mls:"<<diff_curr_gnss2mls<<", diff_next:"<<diff_next<<std::endl;
             if (diff_curr_gnss2mls > diff_next)
             {
                 continue; // continue to go to the next message

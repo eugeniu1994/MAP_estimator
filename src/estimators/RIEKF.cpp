@@ -572,7 +572,7 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZ
     int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
-        iteration_finished = i+1;
+        iteration_finished = i + 1;
         status.valid = true;
         // z = y - h(x)
         lidar_observation_model(status, feats_down_body, map, Nearest_Points, extrinsic_est);
@@ -634,7 +634,7 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZ
         }
     }
 
-    std::cout<<"Update in "<<iteration_finished<<" iterations "<<std::endl;
+    std::cout << "Update in " << iteration_finished << " iterations " << std::endl;
 
 #ifdef ADAPTIVE_KERNEL
     Sophus::SE3 initial_guess(x_propagated.rot, x_propagated.pos);
@@ -679,10 +679,7 @@ void RIEKF::lidar_observation_model_tighly_fused(residual_struct &ekfom_data, Po
         std::vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
 
         auto &points_near = Nearest_Points[i];
-        std::vector<double> point_weights;
-
-        // TODO - there is a bug here, if not converged, search new NN
-        // and perform p2plane with new data, else compute new cost with prev planes
+        auto &point_weights = Nearest_Points_Weights[i]; // vector of weights for point i
 
         if (ekfom_data.converge)
         {
@@ -726,28 +723,27 @@ void RIEKF::lidar_observation_model_tighly_fused(residual_struct &ekfom_data, Po
                 }
             }
             //}
+        }
+        if (!point_selected_surf[i]) // src point does not have neighbours
+            continue;
 
-            if (!point_selected_surf[i]) // src point does not have neighbours
-                continue;
+        Eigen::Matrix<float, 4, 1> pabcd;
+        point_selected_surf[i] = false;
 
-            Eigen::Matrix<float, 4, 1> pabcd;
-            point_selected_surf[i] = false;
+        if (ekf::esti_plane_pca(pabcd, points_near, .03, point_weights, true))
+        // if (ekf::esti_plane2(pabcd, points_near, .2f)) //.1f
+        {
+            float pd2 = pabcd(0) * point_world.x + pabcd(1) * point_world.y + pabcd(2) * point_world.z + pabcd(3);
+            // float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
+            float s = 1 - 0.9 * fabs(pd2) / point_body.intensity;
 
-            if (ekf::esti_plane_pca(pabcd, points_near, .03, point_weights, true))
-            // if (ekf::esti_plane2(pabcd, points_near, .2f)) //.1f
+            if (s > 0.9)
             {
-                float pd2 = pabcd(0) * point_world.x + pabcd(1) * point_world.y + pabcd(2) * point_world.z + pabcd(3);
-                // float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
-                float s = 1 - 0.9 * fabs(pd2) / point_body.intensity;
-
-                if (s > 0.9)
-                {
-                    point_selected_surf[i] = true;
-                    normvec->points[i].x = pabcd(0);
-                    normvec->points[i].y = pabcd(1);
-                    normvec->points[i].z = pabcd(2);
-                    normvec->points[i].intensity = pd2;
-                }
+                point_selected_surf[i] = true;
+                normvec->points[i].x = pabcd(0);
+                normvec->points[i].y = pabcd(1);
+                normvec->points[i].z = pabcd(2);
+                normvec->points[i].intensity = pd2;
             }
         }
     }
@@ -817,7 +813,11 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
                                 std::vector<PointVector> &Nearest_Points, int maximum_iter,
                                 bool extrinsic_est)
 {
-    normvec->resize(int(feats_down_body->points.size()));
+    int features = int(feats_down_body->points.size());
+
+    normvec->resize(features);    // plane measurements
+    normvec_var.resize(features); // plane variances
+    Nearest_Points_Weights.resize(features);
 
     residual_struct status;
     status.valid = true;
@@ -843,7 +843,7 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
     int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
-        iteration_finished = i+1;
+        iteration_finished = i + 1;
         status.valid = true;
 
         // std::cout<<"\nekfom_data.converge:"<<status.converge << ", iteration "<<i+1<<std::endl;
@@ -902,7 +902,7 @@ bool RIEKF::update_tighly_fused(double R, PointCloudXYZI::Ptr &feats_down_body,
             break;
         }
     }
-    std::cout<<"update_tighly_fused in "<<iteration_finished<<" iterations "<<std::endl;
+    std::cout << "update_tighly_fused in " << iteration_finished << " iterations " << std::endl;
 
     return status.valid;
 }
@@ -986,19 +986,20 @@ void RIEKF::update(const V3D &gnss_position, const V3D &cov_pos_, int maximum_it
 // X: current state pose (Sophus::SE3d)
 // eps: finite-difference step (default 1e-6)
 // Returns: Eigen::Matrix<double,6,6>
-Eigen::Matrix<double,6,6> numericalMeasurementJacobian(const Sophus::SE3 &X, const Sophus::SE3 &measured, double eps = 1e-5)
+Eigen::Matrix<double, 6, 6> numericalMeasurementJacobian(const Sophus::SE3 &X, const Sophus::SE3 &measured, double eps = 1e-5)
 {
-    Eigen::Matrix<double,6,6> J;
+    Eigen::Matrix<double, 6, 6> J;
     J.setZero();
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 6; ++i)
+    {
         Vector6d d = Vector6d::Zero();
         d(i) = eps;
 
         // right perturbation: X * exp(+/- d)
-        Sophus::SE3 X_plus  = X * Sophus::SE3::exp(d);
+        Sophus::SE3 X_plus = X * Sophus::SE3::exp(d);
         Sophus::SE3 X_minus = X * Sophus::SE3::exp(-d);
 
-        Vector6d r_plus  = (measured.inverse() * X_plus).log();
+        Vector6d r_plus = (measured.inverse() * X_plus).log();
         Vector6d r_minus = (measured.inverse() * X_minus).log();
 
         // central difference
@@ -1021,17 +1022,17 @@ void RIEKF::update_se3(const Sophus::SE3 &measured_, int maximum_iter, const V3D
     V3D std_rot_rad = std_rot_deg * M_PI / 180.0;
 
     Eigen::Matrix<double, se3_dim, se3_dim> R = Eigen::Matrix<double, se3_dim, se3_dim>::Identity();
-    R.block<3, 3>(P_ID, P_ID) = std_pos_m.array().square().matrix().asDiagonal(); // Position covariance (diagonal with variances)
+    R.block<3, 3>(P_ID, P_ID) = std_pos_m.array().square().matrix().asDiagonal();   // Position covariance (diagonal with variances)
     R.block<3, 3>(R_ID, R_ID) = std_rot_rad.array().square().matrix().asDiagonal(); // Orientation covariance (diagonal with variances in radians^2)
 
-    //H_se3.block<6, 6>(0, 0) = Matrix6d::Identity();
+    // H_se3.block<6, 6>(0, 0) = Matrix6d::Identity();
     for (int i = -1; i < maximum_iter; i++)
     {
-        //Eigen::Matrix<double, 6, 1> residual = (measured_.inverse() * Sophus::SE3(x_.rot, x_.pos)).log(); // Innovation: z - h(x) 
-        //H_se3.block<6, 6>(0, 0) = -numericalMeasurementJacobian(X, measured_, 1e-5);
+        // Eigen::Matrix<double, 6, 1> residual = (measured_.inverse() * Sophus::SE3(x_.rot, x_.pos)).log(); // Innovation: z - h(x)
+        // H_se3.block<6, 6>(0, 0) = -numericalMeasurementJacobian(X, measured_, 1e-5);
 
-        Eigen::Matrix<double, 6, 1> residual = (Sophus::SE3(x_.rot, x_.pos).inverse() * measured_).log(); 
-        
+        Eigen::Matrix<double, 6, 1> residual = (Sophus::SE3(x_.rot, x_.pos).inverse() * measured_).log();
+
         // Compute Kalman Gain
         // K_k =  P_k   *   H_k.T * inv( H_k  *  P_k  * H_k.T + R_k )
         //       24X24  *   24x6  * inv(6x24  * 24x24 * 24x6  + 6x6
@@ -1043,7 +1044,7 @@ void RIEKF::update_se3(const Sophus::SE3 &measured_, int maximum_iter, const V3D
         dx_new = boxminus(x_, x_propagated); // x^k - x^     // 24X1
         // vectorized_state dx_ = K * residual; //used before for gps_ins
         cov KH = cov::Zero(); //  matrix K * H
-        KH = K * H_se3;      // 24 x 6  * 6 x 24
+        KH = K * H_se3;       // 24 x 6  * 6 x 24
         vectorized_state dx_ = K * residual + (KH - cov::Identity()) * dx_new;
         x_ = boxplus(x_, dx_);
         status.converge = true;
@@ -1403,7 +1404,7 @@ bool RIEKF::update_tighly_fused_test(double R, PointCloudXYZI::Ptr &feats_down_b
     int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
-        iteration_finished = i+1;
+        iteration_finished = i + 1;
         status.valid = true;
         // z = y - h(x)
         observation_model_test(R, status, feats_down_body, gps, map_mls, map_als, localKdTree_map_als, Nearest_Points, extrinsic_est);
@@ -1531,7 +1532,7 @@ bool RIEKF::update_tighly_fused_test(double R, PointCloudXYZI::Ptr &feats_down_b
         }
     }
 
-    std::cout<<"update_tighly_fused_test in "<<iteration_finished<<" iterations "<<std::endl;
+    std::cout << "update_tighly_fused_test in " << iteration_finished << " iterations " << std::endl;
     return status.valid;
 }
 
@@ -1791,7 +1792,7 @@ bool RIEKF::update_final(
     int iteration_finished = 0;
     for (int i = -1; i < maximum_iter; i++) // maximum_iter
     {
-        iteration_finished = i+1;
+        iteration_finished = i + 1;
         status.valid = true;
         // z = y - h(x)
         h(status, R_lidar_cov, R_gps_cov, feats_down_body, gps_pos, map_mls, map_als, localKdTree_map_als, Nearest_Points, extrinsic_est, use_gnss, use_als, tightly_coupled);
@@ -1849,7 +1850,7 @@ bool RIEKF::update_final(
         }
     }
 
-    std::cout<<"update_final in "<<iteration_finished<<" iterations "<<std::endl;
+    std::cout << "update_final in " << iteration_finished << " iterations " << std::endl;
 
     return status.valid;
 }
@@ -2054,6 +2055,7 @@ bool check_cov(const M3D &cov, double planar_thresh = 0.01, double edge_thresh =
     return false;
 }
 
+// NOT IN USE-THERE IS A BUG
 void RIEKF::observation_model_test2(residual_struct &ekfom_data, PointCloudXYZI::Ptr &feats_down_body,
                                     const PointCloudXYZI::Ptr &feats_undistort,
                                     Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic> Neighbours,
@@ -2335,6 +2337,7 @@ void RIEKF::observation_model_test2(residual_struct &ekfom_data, PointCloudXYZI:
 #endif
 }
 
+// NOT IN USE-THERE IS A BUG
 bool RIEKF::update_tighly_fused_test2(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZI::Ptr &feats_undistort,
                                       Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic> Neighbours,
                                       PointCloudXYZI::Ptr &map_mls, PointCloudXYZI::Ptr &map_als,

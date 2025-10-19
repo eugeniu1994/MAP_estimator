@@ -41,7 +41,7 @@ constexpr double ESTIMATION_THRESHOLD_ = 0.001;
 const double G_m_s2 = 9.81; // positive as before z axis up
 
 // the new system has the z-axis down therefore negative
-// const double G_m_s2 = -9.81;
+//const double G_m_s2 = -9.81; //for new lieksa data - take this as param 
 
 #define NUM_MATCH_POINTS (5)
 
@@ -591,7 +591,7 @@ struct Config // used for ICP
     double voxel_size = 1.0;
     double max_range = 100.0;
     double min_range = 1.0;
-    int max_points_per_voxel = 20;
+    int max_points_per_voxel = 25;
 
     // th parms
     double min_motion_th = 0.1;

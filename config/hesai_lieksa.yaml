@@ -3,7 +3,7 @@ common:
     imu_topic :  "/imu/data_raw"
     gnss_topic:  "/gps/gps"
     time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
-    time_offset_lidar_to_imu: 1000 # 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
+    time_offset_lidar_to_imu: 450 # 410 # 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
                                   # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
 preprocess:
     lidar_type: 0                # 0 for hesai, 1 for Velodyne, 2 for ouster,
@@ -20,12 +20,30 @@ mapping:
     det_range:   150.0
     extrinsic_est_en: true #  false      # true: enable the online estimation of IMU-LiDAR extrinsic
     
-    GNSS_IMU_calibration_distance: 25 # 15 # 35 # 99999 # 35
+    GNSS_IMU_calibration_distance: 35
     #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
-    extrinsic_T: [ 0.009,  0.13,  0.09 ] #given by Teemu 
-    extrinsic_R: [ 0, 1, 0,
-                  -1, 0, 0,
-                   0, 0, 1]
+
+    extrinsic_R2: [0, -1, 0,   #same as rotation 90 deg around z axis 
+                   1, 1,  0,
+                   0, 0,  1]
+    #R @ Rx(30)
+    extrinsic_R: [ 0.    ,    -0.8660254,  0.5   ,   
+                1.    ,     0. ,        0.   ,    
+                0.  ,       0.5   ,     0.8660254]
+
+
+    extrinsic_T: [0, 0, 0] # [-0.15, 0, -0.031] # [ 0.009,  0.13,  0.09 ] #given by Teemu 
+    
+    #logic here
+                   #x of the lidar should be z of the imu
+                   #y of the lidar should x of th imu
+                   #z of the lidar should be y of the imu 
+
+    # [ [0, 1, 0],    [X]_L
+    #   [0, 0, 1],  * [Y]_L  = [[Y]_L, [Z]_L, [X]_L]_I
+    #   [1, 0, 0]]    [Z]_L
+
+
 
     #his should be added to antena to shift to IMU
     extrinsic_T_GNSS2IMU: [-0.009, 0.208, -0.101] #this should not be used at all  
@@ -43,12 +61,10 @@ als:
 
     use_gnss: false 
     #if this is not empty we'll use the postprocessed GNSS solution 
-    postprocessed_gnss_path: "/media/eugeniu/T7/roamer/evo_20240725_reCalculated2_poqmodouEugent.txt" # "/media/eugeniu/T7/evo-bags/GT-MLS-25-07.txt"  
+    postprocessed_gnss_path: "/media/eugeniu/T7/Lowcost_trajs/East_CALIBRRATE/Ita-Suomi_ETRSTM35FIN.txt" # "/media/eugeniu/T7/evo-bags/GT-MLS-25-07.txt"  
     # postprocessed_gnss_path: "/media/eugeniu/T7/Lowcost_trajs/Lieksa/Kiimasuo/Lieksa_20250519_1.txt"
     
     saveALS_NN_2_MLS: false             #MLS map update with ALS points 
-
-
 
 publish:
     scan_publish_en:  true       # false: close all the point cloud output
@@ -62,8 +78,8 @@ publish:
     #save_clouds_path: "/home/eugeniu/z_tighly_coupled/test/"        #put here the path to save the clouds
     #poseSavePath: "/home/eugeniu/z_tighly_coupled/test/"     #where to save the trajectory
 
-    save_clouds_path: "/media/eugeniu/T7/evo-bags/georeferenced/1/"
-    poseSavePath: "/media/eugeniu/T7/evo-bags/georeferenced/1/"     #where to save the trajectory
+    save_clouds_path: "/media/eugeniu/T71/Lowcost_trajs/Lieksa/Kiimasuo/clouds/"
+    poseSavePath: "/media/eugeniu/T71/Lowcost_trajs/Lieksa/Kiimasuo/clouds/"     #where to save the trajectory
 
     save_poses: false 
 

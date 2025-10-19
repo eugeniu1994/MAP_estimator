@@ -681,23 +681,51 @@ void DataHandler::Subscribe()
     ros::Publisher marker_pub = nh.advertise<visualization_msgs::MarkerArray>("tgt_covariance_markers", 1);
     ros::Publisher marker_pub2 = nh.advertise<visualization_msgs::MarkerArray>("src_covariance_markers", 1);
 
-    std::ifstream file(bag_file);
-    if (!file)
+    // std::ifstream file(bag_file);
+    // if (!file)
+    // {
+    //     std::cerr << "Error: Bag file does not exist or is not accessible: " << bag_file << std::endl;
+    //     return;
+    // }
+    // rosbag::Bag bag;
+    // bag.open(bag_file, rosbag::bagmode::Read);
+    // std::vector<std::string> topics;
+    // topics.push_back(lid_topic);
+    // topics.push_back(imu_topic);
+    // topics.push_back(gnss_topic);
+    // topics.push_back("/novatel/oem7/inspva");
+    // rosbag::View view(bag, rosbag::TopicQuery(topics));
+
+    std::vector<std::string> topics{lid_topic, imu_topic, gnss_topic};
+
+    std::vector<std::string> bag_files = expandBagPattern(bag_file);
+    std::cout << "bag_files:" << bag_files.size() << std::endl;
+    if (bag_files.size() == 0)
     {
         std::cerr << "Error: Bag file does not exist or is not accessible: " << bag_file << std::endl;
         return;
     }
+    for (auto &f : bag_files)
+        std::cout << "Matched: " << f << std::endl;
 
-    rosbag::Bag bag;
-    bag.open(bag_file, rosbag::bagmode::Read);
+    // Open all bags
+    std::vector<std::shared_ptr<rosbag::Bag>> bags;
+    for (const auto &file : bag_files)
+    {
+        auto bag = std::make_shared<rosbag::Bag>();
+        bag->open(file, rosbag::bagmode::Read);
+        bags.push_back(bag);
+        ROS_INFO_STREAM("Opened bag: " << file);
+    }
 
-    std::vector<std::string> topics;
-    topics.push_back(lid_topic);
-    topics.push_back(imu_topic);
-    topics.push_back(gnss_topic);
-    topics.push_back("/novatel/oem7/inspva");
-    
-    rosbag::View view(bag, rosbag::TopicQuery(topics));
+    // Build a single view from all bags
+    rosbag::View view;
+    for (auto &b : bags)
+    {
+        view.addQuery(*b, rosbag::TopicQuery(topics));
+    }
+
+
 
     signal(SIGINT, SigHandle); // Handle Ctrl+C (SIGINT)
     flg_exit = false;
@@ -776,10 +804,15 @@ void DataHandler::Subscribe()
         0, 0, 1;
 
     M3D R_vux2mls; // from vux scanner to mls point cloud
-    R_vux2mls << 0.0064031121, -0.8606533346, -0.5091510953,
-        -0.2586398121, 0.4904106092, -0.8322276624,
-        0.9659526116, 0.1370155907, -0.2194590626;
-    V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
+    // R_vux2mls << 0.0064031121, -0.8606533346, -0.5091510953,
+    //     -0.2586398121, 0.4904106092, -0.8322276624,
+    //     0.9659526116, 0.1370155907, -0.2194590626;
+    // V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
+    //THE ONE ESTIMATED USING THE ALS POINT CLOUD - this are better based on the point clouds 
+    R_vux2mls << 0.0143844669, -0.8542734617, -0.5196248067,
+                -0.2613330313,  0.4984032661, -0.8266191572,
+                0.9651415098,  0.1476856018, -0.2160806080;
+    V3D t_vux2mls(-0.2772152452, -3.1178620759, -0.8987165442);
     Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(R_vux2mls, t_vux2mls); // refined - vux to mls cloud
 
     Eigen::Matrix4d T_lidar2gnss;
@@ -830,8 +863,9 @@ void DataHandler::Subscribe()
     bool do_this_once = false, dropped = false;
 
 
-    //shift_measurements_to_zero_time = true; //required for time sync
-    
+    // shift_measurements_to_zero_time = true; //required for time sync
+    // gnss_obj->shift_measurements_to_zero_time = shift_measurements_to_zero_time;
+
     for (const rosbag::MessageInstance &m : view)
     {
         ros::spinOnce();
@@ -875,11 +909,11 @@ void DataHandler::Subscribe()
         {
             scan_id++;
             std::cout << "scan_id:" << scan_id << std::endl;
-            if (scan_id > 8000) // 500 1050 used for data before
-            {
-                std::cout << "Stop here... enough data 8000 scans" << std::endl;
-                break;
-            }
+            // if (scan_id > 8000) // 500 1050 used for data before
+            // {
+            //     std::cout << "Stop here... enough data 8000 scans" << std::endl;
+            //     break;
+            // }
 
             // if (scan_id > 1000) 
             // {
@@ -1070,8 +1104,6 @@ void DataHandler::Subscribe()
                             std::cout << "\n------------------FUSION ALS-MLS update failed--------------------------------" << std::endl;
                         }    
 
-                        
-
                         if(false){ //this was used so far
                             //update tighly fusion from MLS and ALS
                             double R_gps_cov = .0001; // GNSS_VAR * GNSS_VAR;
@@ -1105,7 +1137,7 @@ void DataHandler::Subscribe()
                 }
 
                 //use_als = false;
-                //als_integrated = true; // remove this later
+                als_integrated = true; // remove this later - just a test now
 
                 double t_LiDAR_update = omp_get_wtime();
                 std::cout << "\nIMU_process time(ms):  " << (t_IMU_process - t00) * 1000 <<
@@ -1268,7 +1300,7 @@ void DataHandler::Subscribe()
                     // is is based on IMU
                     // imu_obj->Propagate2D(vux_scans, vux_scans_time, Measures.lidar_beg_time, Measures.lidar_end_time, time_of_day_sec, prev_mls, prev_mls_time);
 
-                    if (true) // integrate vux into MLS mapping
+                    if (false) // integrate vux into MLS mapping
                     {
                         pcl::PointCloud<VUX_PointType>::Ptr all_lines(new pcl::PointCloud<VUX_PointType>);
                         bool subscribers = point_cloud_pub.getNumSubscribers() != 0;
@@ -1360,14 +1392,14 @@ void DataHandler::Subscribe()
                             std::cout << "_2d_measurements:" << _2d_measurements.size() << std::endl;
                         }
 
-                        if (curr_mls.translation().norm() > 85) //65 so fAr
+                        if (curr_mls.translation().norm() > 65) //65 so fAr
                         {
                             std::cout << "\n\nStart extrinsic estimation...\n\n"
                                       << std::endl;
 
                             // set the current map to kdtree----------------------------------------
                             std::cout << "kdtree set input MLS points: " << laserCloudSurfMap->size() << std::endl;
-                            const auto &reference_localMap_cloud = laserCloudSurfMap;
+                            const auto &reference_localMap_cloud = laserCloudSurfMap; //MLS map
 
                             // std::cout << "kdtree set input ALS points: " << als_obj->als_cloud->size() << std::endl;
                             // const auto &reference_localMap_cloud = als_obj->als_cloud;
@@ -1378,11 +1410,13 @@ void DataHandler::Subscribe()
 
                             // M3D R_rough = Eye3d; // from vux scanner to mls point cloud
                             V3D t_rough(0, 0, 0);
-
                             M3D R_rough; // from vux scanner to mls point cloud
                             R_rough << 0.0064031121, -0.8606533346, -0.5091510953,
                                 -0.2586398121, 0.4904106092, -0.8322276624,
                                 0.9659526116, 0.1370155907, -0.2194590626;
+                            t_rough = V3D(-0.2238580597, -3.0124498678, -0.8051626709);
+                            
+                            Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(R_vux2mls, t_vux2mls); // refined - vux to mls cloud
 
                             std::vector<double> noise_levels_deg = {1, 5, 10, 20, 30, 40, 50, 60};
                             double noise_deg = 1; // noise_levels_deg[0];
@@ -1394,20 +1428,16 @@ void DataHandler::Subscribe()
                             //noise_deg = 25.; // added p2p from here
                             //noise_deg = 30.; // added bigger kernel from here
                             
-                            noise_deg = 35.;
-                            noise_deg = 40.;
-                            noise_deg = 45.;
+                            //noise_deg = 35.;
+                            //noise_deg = 40.;
+                            //noise_deg = 45.;
 
-                            std::cout << "noise_deg:" << noise_deg << std::endl;
-                            //M3D noise = generate_noise_rotation(noise_deg, rng);
-                            //M3D R_noisy = noise * R_rough; // Apply noise on the left
-
-                            M3D noise = generate_euler_noise_rotation(noise_deg);
-                            //M3D R_noisy = R_rough * noise; 
-                            M3D R_noisy = noise * R_rough; //this one is better
-
-
-                            R_rough = R_noisy;
+                            // std::cout << "noise_deg:" << noise_deg << std::endl;
+                            
+                            // M3D noise = generate_euler_noise_rotation(noise_deg);
+                            // /////M3D R_noisy = R_rough * noise; 
+                            // M3D R_noisy = noise * R_rough; //this one is better
+                            // R_rough = R_noisy;
 
                             Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_rough, t_rough); // this will be refined
 
@@ -1614,6 +1644,13 @@ void DataHandler::Subscribe()
                                 auto error_gt_tran = (vux2mls_extrinsics.translation() - t_extrinsic).norm();
                                 std::cout << "error_gt:" << error_gt << ",  error_gt_rot:" << error_gt_rot<<", error_gt_tran:"<<error_gt_tran << std::endl;
                                 
+                                std::cout << "\n\nInit vux2mls_extrinsics rotation to Euler Angles (degrees): \n"
+                                    << vux2mls_extrinsics.so3().matrix().eulerAngles(0, 1, 2).transpose() * 180.0 / M_PI << std::endl;
+                                std::cout << "Found vux2other_extrinsic rotation to Euler Angles (degrees): \n"
+                                    << vux2other_extrinsic.so3().matrix().eulerAngles(0, 1, 2).transpose() * 180.0 / M_PI << std::endl;
+                                
+
+
                                 if(error_gt < 1)
                                 {
                                     init_radius_ = 1.;
@@ -1628,7 +1665,7 @@ void DataHandler::Subscribe()
                                 std::cout<<"radius_Sq:"<<radius_Sq<<std::endl;
 
 
-                                if (true) // save the data
+                                if (false) // save the data
                                 {
                                     std::ofstream foutE("/home/eugeniu/z_z_e/extrinsic_test_" + std::to_string(noise_deg) + ".txt", std::ios::app);
                                     foutE.setf(std::ios::fixed, std::ios::floatfield);
@@ -2325,6 +2362,8 @@ std::cout<<"save_poses:"<<save_poses<<", save_clouds_path:"<<save_clouds_path<<s
             //std::cout<<"Sync failed..."<<std::endl;
         }
     }
-    bag.close();
+    // bag.close();
+    for (auto &b : bags)
+        b->close();
     // cv::destroyAllWindows();
 }

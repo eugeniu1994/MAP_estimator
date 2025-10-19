@@ -1,37 +1,22 @@
 <launch>
     <arg name="bag_file" default="/media/eugeniu/T7/2024-03-07-14-40-23.bag"/>
     
-    <!--  
-    <node pkg="rosbag" type="play" name="rosbag_play" args=" clock -r .6 -s 0. $(arg bag_file) " output="log"/>
-    -->
-
     <arg name="rviz" default="true" />
     <arg name="rviz_car" default="true" />
 
-    <rosparam command="load" file="$(find s_mls)/config/hesai.yaml" />
+    <rosparam command="load" file="$(find s_mls)/config/hesai_lieksa.yaml" />
 
     <param name="max_iteration" type="int" value="3" /> <!--3-->
     <param name="Bag" type="string" value="$(arg bag_file)" />
     
-    <param name="filter_size_surf" type="double" value=".5" /> <!-- .5 -->
-    <param name="filter_size_map" type="double" value=".5" />
+    <param name="filter_size_surf" type="double" value=".3" /> <!-- .5 -->
+    <param name="filter_size_map" type="double" value=".3" />
 
     <param name="cube_side_length" type="double" value="120" /> <!--1000-->
-    <node pkg="tf2_ros" type="static_transform_publisher" name="static_transform_vux_to_world" args="0 0 0 0 0 0 world VUX" />
-    
-    
-    
     
 
-    <!-- 
     <node pkg="s_mls" type="test_fusion" name="test_fusion" output="screen" /> 
-    <node pkg="s_mls" type="georeference" name="georeference" output="screen" /> 
-     -->
     
-
-        <node pkg="s_mls" type="icp_test" name="icp_test" output="screen" /> 
-
-
     <group if="$(arg rviz)">
         <group if="$(arg rviz_car)">
             <include file="$(find s_mls)/launch/robot_car.launch">
@@ -59,13 +44,6 @@
     <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server_PPK_GNSS" ns="PPK_GNSS" >
         <param name="/target_frame_name" value="world" />
         <param name="/source_frame_name" value="PPK_GNSS" />
-        <param name="/trajectory_update_rate" value="250.0" />
-        <param name="/trajectory_publish_rate" value="250.0" />
-    </node>
-
-    <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server_PPK_GNSS" ns="VUX_B" >
-        <param name="/target_frame_name" value="world" />
-        <param name="/source_frame_name" value="VUX_B" />
         <param name="/trajectory_update_rate" value="250.0" />
         <param name="/trajectory_publish_rate" value="250.0" />
     </node>

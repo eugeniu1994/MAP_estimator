@@ -30,7 +30,7 @@ public:
     std::vector<Sophus::SE3> poses() const { return poses_; };
     std::vector<Sophus::SE3> poses_;
 
-    Vector3dVectorTuple Voxelize(const PointCloudXYZI::Ptr &frame) const;
+    Vector3dVectorTuple Voxelize(PointCloudXYZI::Ptr &frame, bool deskew = false) const;
     p2p::VoxelHashMap local_map_;
 
 private:

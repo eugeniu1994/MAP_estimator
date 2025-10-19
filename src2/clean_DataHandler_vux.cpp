@@ -337,22 +337,21 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
 
     //std::cout<<"we are here imu_cbk \n"<<std::endl;
-    
-    // { //remove this later 
-    //     // Scale acceleration values
-    //     msg->linear_acceleration.x /= 2.0;
-    //     msg->linear_acceleration.y /= 2.0;
-    //     msg->linear_acceleration.z /= -2.0;
+    if(shift_measurements_to_zero_time) //lieksa data 
+    { //remove this later 
+        // Scale acceleration values
+        msg->linear_acceleration.x /= 2.0;
+        msg->linear_acceleration.y /= 2.0;
+        msg->linear_acceleration.z /= -2.0;
 
-    //     // Scale gyroscope values
-    //     msg->angular_velocity.x /= 2.0;
-    //     msg->angular_velocity.y /= 2.0;
-    //     msg->angular_velocity.z /= 2.0;
+        // Scale gyroscope values
+        msg->angular_velocity.x /= 2.0;
+        msg->angular_velocity.y /= 2.0;
+        msg->angular_velocity.z /= 2.0;
 
-    //     auto acc = V3D(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
-    //     std::cout<<"acc:"<<acc.transpose()<<" at time:"<< msg_in->header.stamp.toSec() <<std::endl;
-
-    // }
+        // auto acc = V3D(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+        // std::cout<<"acc:"<<acc.transpose()<<" at time:"<< msg_in->header.stamp.toSec() <<std::endl;
+    }
 
     
 
