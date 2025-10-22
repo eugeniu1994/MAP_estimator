@@ -737,7 +737,7 @@ void DataHandler::Subscribe()
     // folder_path = "/media/eugeniu/T7/roamer/03_RIEGL_RAW/02_RXP/VUX-1HA-22-2022-A/";
     
     
-//#define integrate_vux
+#define integrate_vux
 //#define integrate_ppk_gnss
     
     #ifdef integrate_vux
@@ -1300,7 +1300,7 @@ void DataHandler::Subscribe()
                     // is is based on IMU
                     // imu_obj->Propagate2D(vux_scans, vux_scans_time, Measures.lidar_beg_time, Measures.lidar_end_time, time_of_day_sec, prev_mls, prev_mls_time);
 
-                    if (false) // integrate vux into MLS mapping
+                    if (true) // integrate vux into MLS mapping
                     {
                         pcl::PointCloud<VUX_PointType>::Ptr all_lines(new pcl::PointCloud<VUX_PointType>);
                         bool subscribers = point_cloud_pub.getNumSubscribers() != 0;
@@ -1414,7 +1414,9 @@ void DataHandler::Subscribe()
                             R_rough << 0.0064031121, -0.8606533346, -0.5091510953,
                                 -0.2586398121, 0.4904106092, -0.8322276624,
                                 0.9659526116, 0.1370155907, -0.2194590626;
-                            t_rough = V3D(-0.2238580597, -3.0124498678, -0.8051626709);
+                            
+                        
+                            //t_rough = V3D(-0.2238580597, -3.0124498678, -0.8051626709);
                             
                             Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(R_vux2mls, t_vux2mls); // refined - vux to mls cloud
 
@@ -1422,7 +1424,7 @@ void DataHandler::Subscribe()
                             double noise_deg = 1; // noise_levels_deg[0];
 
                             //noise_deg = 5.;
-                            //noise_deg = 10.;
+                            noise_deg = 10.;
                             //noise_deg = 15.; // modified from here
                             //noise_deg = 20.;
                             //noise_deg = 25.; // added p2p from here
@@ -1432,12 +1434,12 @@ void DataHandler::Subscribe()
                             //noise_deg = 40.;
                             //noise_deg = 45.;
 
-                            // std::cout << "noise_deg:" << noise_deg << std::endl;
+                            std::cout << "noise_deg:" << noise_deg << std::endl;
                             
-                            // M3D noise = generate_euler_noise_rotation(noise_deg);
-                            // /////M3D R_noisy = R_rough * noise; 
-                            // M3D R_noisy = noise * R_rough; //this one is better
-                            // R_rough = R_noisy;
+                            M3D noise = generate_euler_noise_rotation(noise_deg);
+                            /////M3D R_noisy = R_rough * noise; 
+                            M3D R_noisy = noise * R_rough; //this one is better
+                            R_rough = R_noisy;
 
                             Sophus::SE3 vux2other_extrinsic = Sophus::SE3(R_rough, t_rough); // this will be refined
 

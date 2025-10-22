@@ -21,6 +21,13 @@ namespace p2p
                                const Sophus::SE3 &initial_guess,
                                double max_correspondence_distance,
                                double kernel, bool save_nn = false);
+
+    Sophus::SE3 RegisterPlane(const std::vector<V3D> &frame,
+                              const PointCloudXYZI::Ptr &map, 
+                              const pcl::KdTreeFLANN<PointType>::Ptr &tree,
+                              const Sophus::SE3 &initial_guess,
+                              double max_correspondence_distance,
+                              double kernel);
 } // namespace p2p
 
 #endif

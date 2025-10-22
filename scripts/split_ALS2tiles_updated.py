@@ -21,12 +21,13 @@ tile_size = 50  # Size of each tile in meters
 output_directory = '/media/eugeniu/T7/Maanmittauslaitos_Tiedostopalvelu_REST-20250716T094416321466852/data_las_cropped' 
 input_laz_directory = '/media/eugeniu/T7/Maanmittauslaitos_Tiedostopalvelu_REST-20250716T094416321466852/data_laz' 
 
-
 east_min, east_max = 397123., 402000.
 north_min, north_max = 6784218, 6789000
 
-# east_min, east_max = -99999999999, 99999999999.
-# north_min, north_max = -99999999999, 99999999999.
+output_directory = "/media/eugeniu/T7/Lowcost_trajs/MML_5pt/Lieksa_2021/data_las_cropped"
+input_laz_directory = "/media/eugeniu/T7/Lowcost_trajs/MML_5pt/Lieksa_2021"
+east_min, east_max = -99999999999, 99999999999.
+north_min, north_max = -99999999999, 99999999999.
 
 def get_tile_key(x, y, tile_size, x_min, y_min):
     tile_x = int((x - x_min) // tile_size)

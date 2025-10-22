@@ -336,6 +336,9 @@ void DataHandler::gps_cbk(const gps_common::GPSFix::ConstPtr &msg)
 void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 {
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
+
+    msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);
+
     if (!_imu_init)
     {
         _imu_init = true;
@@ -347,7 +350,6 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
         std::cout << "change IMU time with timediff_lidar_wrt_imu:" << timediff_lidar_wrt_imu << std::endl;
         msg->header.stamp = ros::Time().fromSec(timediff_lidar_wrt_imu + msg_in->header.stamp.toSec());
     }
-    // msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);
     double timestamp = msg->header.stamp.toSec();
 
     if (timestamp < last_timestamp_imu)

@@ -269,7 +269,7 @@ if(BUILD_ICP)
     SET(MAIN_SOURCE_FILES_ICP src/IMU.cpp src/GNSS.cpp src/utils.cpp src/estimators/Estimator.cpp)
     set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/estimators/ICP.cpp)
 
-    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/src_icp/DataHandler_icp.cpp)
+    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/src_icp/DataHandler_icp.cpp src/estimators/ALS_ekf.cpp)
     add_executable(icp_test src/src_icp/main.cpp ${MAIN_SOURCE_FILES_ICP})
     target_link_libraries(icp_test ${TARGET_LINK_LIBS_ICP} ${CERES_LIBRARIES} )
 

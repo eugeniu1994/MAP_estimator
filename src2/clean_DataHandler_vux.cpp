@@ -336,6 +336,8 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 {
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
 
+    msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);
+
     //std::cout<<"we are here imu_cbk \n"<<std::endl;
     if(shift_measurements_to_zero_time) //lieksa data 
     { //remove this later 
@@ -352,8 +354,6 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
         // auto acc = V3D(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
         // std::cout<<"acc:"<<acc.transpose()<<" at time:"<< msg_in->header.stamp.toSec() <<std::endl;
     }
-
-    
 
     if (!_imu_init)
     {
@@ -374,7 +374,7 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
             ros::Time().fromSec(timediff_lidar_wrt_imu + msg_in->header.stamp.toSec());
     }
 
-    // msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);
+    // 
     double timestamp = msg->header.stamp.toSec();
 
     if (timestamp < last_timestamp_imu)

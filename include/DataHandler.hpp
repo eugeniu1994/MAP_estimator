@@ -50,7 +50,7 @@ public:
 
     float DET_RANGE = 300.0f;
     const float MOV_THRESHOLD = 1.0f; // 1.5f;
-    double time_diff_lidar_to_imu = 0.0, GNSS_IMU_calibration_distance = 10.;
+    double time_diff_lidar_to_imu = 0.0, GNSS_IMU_calibration_distance = 10., lidar_tod = 0.0;
     double last_timestamp_lidar = 0, last_timestamp_imu = -1.0;
     double gyr_cov = 0.1, acc_cov = 0.1, b_gyr_cov = 0.0001, b_acc_cov = 0.0001;
     double filter_size_surf_min = 0, filter_size_map_min = 0, fov_deg = 0;
@@ -171,6 +171,8 @@ public:
         nh.param<bool>("common/time_sync_en", time_sync_en, false);
         nh.param<double>("common/time_offset_lidar_to_imu", time_diff_lidar_to_imu, 0.0);
 
+        nh.param<double>("common/lidar_tod", lidar_tod, 0.0);
+        
         nh.param<double>("filter_size_surf", filter_size_surf_min, 0.5);
         nh.param<double>("filter_size_map", filter_size_map_min, 0.5);
 

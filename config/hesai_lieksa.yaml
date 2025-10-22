@@ -3,12 +3,15 @@ common:
     imu_topic :  "/imu/data_raw"
     gnss_topic:  "/gps/gps"
     time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
-    time_offset_lidar_to_imu: 450 # 410 # 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
+    time_offset_lidar_to_imu: 0.0 # 440 # 429.55  # 410 # 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
                                   # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
+
+    lidar_tod:  440 #time of the day of the lidar relative to start of gnss 
+
 preprocess:
     lidar_type: 0                # 0 for hesai, 1 for Velodyne, 2 for ouster,
     point_step : 1               # i+= point_step  (16:1),(32:2),(64:4),(128:8)
-    min_dist: .5 # 3
+    min_dist: 3 # .5 # 3
     max_dist: 100
 
 mapping:
@@ -20,7 +23,7 @@ mapping:
     det_range:   150.0
     extrinsic_est_en: true #  false      # true: enable the online estimation of IMU-LiDAR extrinsic
     
-    GNSS_IMU_calibration_distance: 35
+    GNSS_IMU_calibration_distance: 13 # 11
     #transform the point cloud to imu frame,  P_lidar seen from IMU will be P_imu = R*P_lidar+T
 
     extrinsic_R2: [0, -1, 0,   #same as rotation 90 deg around z axis 
@@ -32,7 +35,14 @@ mapping:
                 0.  ,       0.5   ,     0.8660254]
 
 
-    extrinsic_T: [0, 0, 0] # [-0.15, 0, -0.031] # [ 0.009,  0.13,  0.09 ] #given by Teemu 
+    extrinsic_T: [-0.13, -0.061, 0] 
+
+
+    # extrinsic_T: [ 0.009,  0.13,  0.09 ] #given by Teemu 
+    # extrinsic_R: [ 0, 1, 0,
+    #               -1, 0, 0,
+    #                0, 0, 1]
+
     
     #logic here
                    #x of the lidar should be z of the imu
@@ -54,10 +64,10 @@ mapping:
 
 als: 
     closest_N_files: 4
-    downsample: true 
+    downsample: false 
     #als_path: "/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped2/"   # this is reference from Jesse
-    #als_path: "/media/eugeniu/T7/NLS_las/"   # this is the ALS from NlS
-    als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS
+    als_path: "/media/eugeniu/T7/Lowcost_trajs/MML_5pt/CALIBRATE_2023/data_las_cropped/"   # this is the ALS from NlS
+    # als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS
 
     use_gnss: false 
     #if this is not empty we'll use the postprocessed GNSS solution 

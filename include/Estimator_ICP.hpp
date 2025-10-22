@@ -25,6 +25,9 @@ public:
     ~ICP() {}
 
     bool update(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_, bool p2p_ = true, bool save_nn=false);
+    bool update_refine(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_);
+
+    bool update(const std::vector<V3D> &src, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree);
    
     void LocalMap(PointCloudXYZI::Ptr &map_points) const;
     std::vector<Sophus::SE3> poses() const { return poses_; };

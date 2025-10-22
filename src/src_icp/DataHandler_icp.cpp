@@ -264,7 +264,7 @@ void DataHandler::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
         std::cout << "change IMU time with timediff_lidar_wrt_imu:" << timediff_lidar_wrt_imu << std::endl;
         msg->header.stamp = ros::Time().fromSec(timediff_lidar_wrt_imu + msg_in->header.stamp.toSec());
     }
-    // msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);
+    // msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - lidar_tod);
     double timestamp = msg->header.stamp.toSec();
 
     if (timestamp < last_timestamp_imu)
@@ -466,7 +466,7 @@ bool readSE3FromFile(const std::string &filename, Sophus::SE3 &transform_out)
 #include "matplotlibcpp.h"
 namespace plt = matplotlibcpp;
 
-std::vector<double> gaussianSmooth(const std::vector<double>& signal, double sigma, int kernel_radius = 3)
+std::vector<double> gaussianSmooth(const std::vector<double> &signal, double sigma, int kernel_radius = 3)
 {
     int n = signal.size();
     std::vector<double> smoothed(n, 0.0);
@@ -474,20 +474,25 @@ std::vector<double> gaussianSmooth(const std::vector<double>& signal, double sig
 
     // Build Gaussian kernel
     double sum = 0.0;
-    for (int i = -kernel_radius; i <= kernel_radius; ++i) {
+    for (int i = -kernel_radius; i <= kernel_radius; ++i)
+    {
         double val = std::exp(-0.5 * (i * i) / (sigma * sigma));
         kernel[i + kernel_radius] = val;
         sum += val;
     }
-    for (double &v : kernel) v /= sum; // normalize
+    for (double &v : kernel)
+        v /= sum; // normalize
 
     // Convolution
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; ++i)
+    {
         double acc = 0.0;
         double wsum = 0.0;
-        for (int k = -kernel_radius; k <= kernel_radius; ++k) {
+        for (int k = -kernel_radius; k <= kernel_radius; ++k)
+        {
             int idx = i + k;
-            if (idx < 0 || idx >= n) continue;
+            if (idx < 0 || idx >= n)
+                continue;
             acc += signal[idx] * kernel[k + kernel_radius];
             wsum += kernel[k + kernel_radius];
         }
@@ -497,7 +502,7 @@ std::vector<double> gaussianSmooth(const std::vector<double>& signal, double sig
     return smoothed;
 }
 
-int findMaxIndex(const std::vector<double>& v)
+int findMaxIndex(const std::vector<double> &v)
 {
     return std::distance(v.begin(), std::max_element(v.begin(), v.end()));
 }
@@ -545,6 +550,10 @@ public:
                     // Linear interpolation
                     double lower_val = sig2[lower_index];
                     double upper_val = sig2[upper_index];
+
+                    // if(lower_val < 1 || upper_val < 1) //very small angle values
+                    //     continue;
+
                     double interpolated_val = lower_val + (upper_val - lower_val) *
                                                               (target_index - lower_index);
 
@@ -566,6 +575,9 @@ public:
                     // Linear interpolation
                     double lower_val = sig1[lower_index];
                     double upper_val = sig1[upper_index];
+                    // if(lower_val < 1 || upper_val < 1) //very small angle values
+                    //     continue;
+
                     double interpolated_val = lower_val + (upper_val - lower_val) *
                                                               (target_index - lower_index);
 
@@ -594,6 +606,9 @@ private:
                 int j = i + sample_offset;
                 if (j >= 0 && j < static_cast<int>(sig2.size()))
                 {
+                    // if(sig1[i] < 1 || sig2[j] < 1) //very small angle values
+                    //     continue;
+
                     correlation += sig1[i] * sig2[j];
                     count++;
                 }
@@ -607,6 +622,9 @@ private:
                 int i = j - sample_offset;
                 if (i >= 0 && i < static_cast<int>(sig1.size()))
                 {
+                    // if(sig1[i] < 1 || sig2[j] < 1) //very small angle values
+                    //     continue;
+
                     correlation += sig1[i] * sig2[j];
                     count++;
                 }
@@ -614,31 +632,6 @@ private:
         }
 
         return count > 0 ? correlation / count : 0.0;
-    }
-
-    static double computeMean(const std::vector<double> &signal)
-    {
-        if (signal.empty())
-            return 0.0;
-        double sum = 0.0;
-        for (double val : signal)
-        {
-            sum += val;
-        }
-        return sum / signal.size();
-    }
-
-    static double computeStandardDeviation(const std::vector<double> &signal, double mean)
-    {
-        if (signal.size() <= 1)
-            return 0.0;
-        double sum_sq_diff = 0.0;
-        for (double val : signal)
-        {
-            double diff = val - mean;
-            sum_sq_diff += diff * diff;
-        }
-        return std::sqrt(sum_sq_diff / (signal.size() - 1));
     }
 };
 
@@ -663,6 +656,27 @@ double estimateTimeOffset(
         return false;
     }
 
+    auto computeTimeHops = [](const std::vector<double> &times)
+    {
+        std::vector<double> dist(times.size(), 0.0);
+        for (size_t i = 1; i < times.size(); ++i)
+            dist[i] = times[i + 1] - times[i];
+        return dist;
+    };
+
+    std::vector<double> dist1_times = computeTimeHops(sensor1_time);
+    std::vector<double> dist2_times = computeTimeHops(sensor2_time);
+
+    plt::figure();
+    plt::named_plot("LiDAR", sensor1_time, dist1_times, "b*");
+    plt::named_plot("GNSS-IMU", sensor2_time, dist2_times, "r*");
+    plt::xlabel("Time [s]");
+    plt::ylabel("Sensors time [s]");
+    plt::title("Trajectory computeTimeHops ");
+    plt::legend();
+    plt::grid(true);
+    plt::draw();
+
     //  2. Compute cumulative translation distances ---
     auto computeCumulativeDistance = [](const std::vector<Sophus::SE3> &poses)
     {
@@ -674,17 +688,6 @@ double estimateTimeOffset(
 
     std::vector<double> dist1_traj = computeCumulativeDistance(sensor1_poses);
     std::vector<double> dist2_traj = computeCumulativeDistance(sensor2_poses);
-
-    // --- Plot original trajectories ---
-    plt::figure();
-    plt::named_plot("LiDAR", sensor1_time, dist1_traj, "b-");
-    plt::named_plot("GNSS-IMU", sensor2_time, dist2_traj, "r--");
-    plt::xlabel("Time [s]");
-    plt::ylabel("Cumulative distance [m]");
-    plt::title("Trajectory cumulative distance alignment");
-    plt::legend();
-    plt::grid(true);
-    plt::draw();
 
     // --- 3. Linear interpolation helper ---
     auto interpolate = [](const std::vector<double> &time, const std::vector<double> &dist, double t)
@@ -784,13 +787,30 @@ double estimateTimeOffset(
         return angular_vel;
     };
 
+    auto computeLinearVelocities = [](const std::vector<Sophus::SE3> &poses)
+    {
+        std::vector<double> _vel(poses.size(), 0.0);
+        for (size_t i = 1; i < poses.size(); ++i)
+        {
+            // double dt = trajectory[i].first - trajectory[i-1].first;
+            Sophus::SE3 relative = poses[i - 1].inverse() * poses[i];
+            _vel[i] = (relative.translation()).norm(); // / dt
+        }
+        return _vel;
+    };
+    double sigma = 1.0;
+
     std::vector<double> sensor1_angvel = computeAngularVelocities(sensor1_poses);
     std::vector<double> sensor2_angvel = computeAngularVelocities(sensor2_poses);
 
-    double sigma = 1.0;
+    std::vector<double> sensor1_vel_ = computeLinearVelocities(sensor1_poses);
+    std::vector<double> sensor2_vel_ = computeLinearVelocities(sensor2_poses);
+    auto sensor1_vel = gaussianSmooth(sensor1_vel_, sigma, 3);
+    auto sensor2_vel = gaussianSmooth(sensor2_vel_, sigma, 3);
+
     // Smooth angular velocities
-    auto smoothed1 = gaussianSmooth(sensor1_angvel, sigma);
-    auto smoothed2 = gaussianSmooth(sensor2_angvel, sigma);
+    auto smoothed1 = gaussianSmooth(sensor1_angvel, sigma, 3);
+    auto smoothed2 = gaussianSmooth(sensor2_angvel, sigma, 3);
 
     // Find peaks
     int idx1 = findMaxIndex(smoothed1);
@@ -799,22 +819,45 @@ double estimateTimeOffset(
     double t1 = sensor1_time[idx1];
     double t2 = sensor2_time[idx2];
 
-    // Offset (positive → sensor1 lags behind sensor2)
-    double time_diff = t1 - t2;
+    // Offset (positive - sensor1 lags behind sensor2)
+    double time_diff = t2 - t1;
+    best_offset = time_diff;
 
     std::cout << "Peak angular velocity index: sensor1=" << idx1
               << " (t=" << t1 << "), sensor2=" << idx2
               << " (t=" << t2 << ")\n";
     std::cout << "Estimated time offset: " << time_diff << " seconds\n";
 
+    plt::figure();
+
+    // plt::named_plot("smoothed LiDAR", sensor1_time, smoothed1, "b-");
+    // plt::named_plot("smoothed GNSS-IMU", sensor2_time, smoothed2, "r--");
+
+    plt::named_plot("LiDAR", sensor1_time, sensor1_vel, "g-");
+    plt::named_plot("GNSS-IMU", sensor2_time, sensor2_vel, "y*");
+
+    std::vector<double> sensor2_time_shifted_vel_(sensor2_time.size());
+    for (size_t i = 0; i < sensor2_time.size(); ++i)
+        sensor2_time_shifted_vel_[i] = sensor2_time[i] - best_offset; // align to LiDAR time
+
+    plt::named_plot("GNSS-IMU (shifted)", sensor2_time_shifted_vel_, sensor2_vel, "k--");
+
+    plt::xlabel("Time [s]");
+    plt::ylabel("Linear Velocities [m]");
+    plt::title("Trajectory linear velocities alignment");
+    plt::legend();
+    plt::grid(true);
+    plt::draw();
 
     plt::figure();
-    
-    plt::named_plot("smoothed LiDAR", sensor1_time, smoothed1, "b-");
-    plt::named_plot("smoothed GNSS-IMU", sensor2_time, smoothed2, "r--");
-
     plt::named_plot("LiDAR", sensor1_time, sensor1_angvel, "g-");
-    plt::named_plot("GNSS-IMU", sensor2_time, sensor2_angvel, "y--");
+    plt::named_plot("GNSS-IMU", sensor2_time, sensor2_angvel, "y*");
+
+    std::vector<double> sensor2_time_shifted_vel(sensor2_time.size());
+    for (size_t i = 0; i < sensor2_time.size(); ++i)
+        sensor2_time_shifted_vel[i] = sensor2_time[i] - best_offset; // align to LiDAR time
+
+    plt::named_plot("GNSS-IMU (shifted)", sensor2_time_shifted_vel, sensor2_angvel, "k--");
 
     plt::xlabel("Time [s]");
     plt::ylabel("Angular Velocities [deg]");
@@ -823,37 +866,83 @@ double estimateTimeOffset(
     plt::grid(true);
     plt::draw();
 
+    // std::vector<double> combined_velocities_1; combined_velocities_1.reserve(sensor1_angvel.size());
+    // std::vector<double> combined_velocities_2; combined_velocities_2.reserve(sensor1_angvel.size());
+    // for(int i=0;i<sensor1_angvel.size();i++)
+    // {
+    //     combined_velocities_1.push_back(smoothed1[i] + 10*sensor1_vel[i]);
+    //     combined_velocities_2.push_back(smoothed2[i] + 10*sensor2_vel[i]);
+    // }
+
     {
         std::vector<double> signal1 = sensor1_angvel;
         std::vector<double> signal2 = sensor2_angvel;
+        // std::vector<double> signal1 = combined_velocities_1;
+        // std::vector<double> signal2 = combined_velocities_2;
 
         double dt = 0.1; // 10Hz sampling
 
         std::cout << "Testing cross-correlation:" << std::endl;
 
         // Find best offset (like in the original code)
-        double search_range = 100.0; // seconds
-        double search_step = 0.05; // seconds
+        double search_range = 500.0; // seconds
+        double search_step = 0.05;   // seconds
 
-        double best_offset = 0.0;
-        double max_correlation = -std::numeric_limits<double>::max();
+        double best_offset_interp = 0.0, best_offset_disc = 0.0;
+        double max_correlation_interp = -std::numeric_limits<double>::max();
+        double max_correlation_discr = -std::numeric_limits<double>::max();
 
         for (double offset = -search_range; offset <= search_range; offset += search_step)
         {
-            double correlation = SignalProcessor::computeCrossCorrelationInterpolated(
+            double correlation_interpolated = SignalProcessor::computeCrossCorrelationInterpolated(
                 signal1, signal2, offset, dt);
 
-            if (correlation > max_correlation)
+            if (correlation_interpolated > max_correlation_interp)
             {
-                max_correlation = correlation;
-                best_offset = offset;
+                max_correlation_interp = correlation_interpolated;
+                best_offset_interp = offset;
+            }
+
+            double correlation_discrete = SignalProcessor::computeCrossCorrelationBasic(
+                signal1, signal2, offset, dt);
+            if (correlation_discrete > max_correlation_discr)
+            {
+                max_correlation_discr = correlation_discrete;
+                best_offset_disc = offset;
             }
         }
 
-        std::cout << "\nBest offset: " << best_offset << " seconds with correlation: "
-                  << max_correlation << std::endl;
-    }
+        std::vector<double> sensor2_time_shifted_vel_interp(sensor2_time.size());
+        std::vector<double> sensor2_time_shifted_vel_discre(sensor2_time.size());
+        for (size_t i = 0; i < sensor2_time.size(); ++i)
+        {
+            sensor2_time_shifted_vel_interp[i] = sensor2_time[i] - best_offset_interp; // align to LiDAR time
+            sensor2_time_shifted_vel_discre[i] = sensor2_time[i] - best_offset_disc;   // align to LiDAR time
+        }
 
+        std::cout << "\nBest offset interpolated : " << best_offset_interp << " seconds with correlation: "
+                  << max_correlation_interp << std::endl;
+
+        std::cout << "\nBest offset discrete : " << best_offset_disc << " seconds with correlation: "
+                  << max_correlation_discr << std::endl;
+
+        // best_offset = best_offset_disc;
+        // best_offset = best_offset_interp;
+
+        plt::figure();
+
+        plt::named_plot("smoothed LiDAR", sensor1_time, signal1, "b-");
+        plt::named_plot("smoothed GNSS-IMU", sensor2_time, signal2, "r--");
+
+        plt::named_plot("GNSS-IMU (shifted) interp", sensor2_time_shifted_vel_interp, signal2, "g--");
+        plt::named_plot("GNSS-IMU (shifted) discr", sensor2_time_shifted_vel_discre, signal2, "y*");
+        plt::xlabel("Time [s]");
+        plt::ylabel("Angular Velocities [deg]");
+        plt::title("Trajectory velocities alignment");
+        plt::legend();
+        plt::grid(true);
+        plt::draw();
+    }
 
     plt::show();
     return true;
@@ -861,12 +950,15 @@ double estimateTimeOffset(
 
 void DataHandler::BagHandler()
 {
-    std::cout << "\n===============================Subscribe===============================" << std::endl;
+    std::cout << "\n===============================BagHandler===============================" << std::endl;
 #ifdef MP_EN
     std::cout << "Open_MP is available" << std::endl;
 #else
     std::cout << "Open_MP is not available" << std::endl;
 #endif
+
+    std::cout << std::fixed << std::setprecision(12);
+    std::cerr << std::fixed << std::setprecision(12);
 
 #ifdef USE_EKF
     std::shared_ptr<IMU_Class> imu_obj(new IMU_Class());
@@ -884,7 +976,7 @@ void DataHandler::BagHandler()
     Sophus::SE3 Lidar_wrt_IMU = Sophus::SE3(Lidar_R_wrt_IMU, Lidar_T_wrt_IMU);
 
 #ifdef USE_ALS
-    // std::shared_ptr<ALS_Handler> als_obj = std::make_shared<ALS_Handler>(folder_root, downsample, closest_N_files, filter_size_surf_min);
+    std::shared_ptr<ALS_Handler> als_obj = std::make_shared<ALS_Handler>(folder_root, downsample, closest_N_files, filter_size_surf_min);
 
     ros::Publisher pubLaserALSMap = nh.advertise<sensor_msgs::PointCloud2>("/ALS_map", 1000);
 #endif
@@ -934,9 +1026,10 @@ void DataHandler::BagHandler()
     TrajectoryReader reader;
     // an extrinsic transformation is passed here to transform the ppk gnss-imu orientaiton into mls frame
     Sophus::SE3 extr = Sophus::SE3();
-    Sophus::SE3 se3 = Sophus::SE3();
+
     reader.read(postprocessed_gnss_path, extr);
 
+    Sophus::SE3 se3 = Sophus::SE3();
     // Alignment transform: GNSS -> LiDAR
     Sophus::SE3 T_LG = Sophus::SE3();
 
@@ -998,7 +1091,7 @@ void DataHandler::BagHandler()
     reader.toSE3(m0, first_ppk_gnss_pose_inverse);
     first_ppk_gnss_pose_inverse = first_ppk_gnss_pose_inverse.inverse();
 
-    std::cout << "time_diff_lidar_to_imu:" << time_diff_lidar_to_imu << std::endl;
+    std::cout << "lidar_tod:" << lidar_tod << std::endl;
 
     //}
     Sophus::SE3 lidar_pose = Sophus::SE3();
@@ -1006,10 +1099,17 @@ void DataHandler::BagHandler()
     std::vector<Sophus::SE3> lidar, gnss_imu;
     std::vector<double> lidar_time, gnss_imu_time;
 
-    double time_of_day_sec = time_diff_lidar_to_imu + m0.tod + 0.1;
+    double time_of_day_sec = lidar_tod + m0.tod + 0.1;
+    double diff_lidar_ros2gnss_tod = 0;
 
     bool ppk_gnss_synced = false;
     bool shift_time_sinc = false;
+
+    bool use_als = true;
+    double prev_lidar_timestamp = 0;
+
+    Sophus::SE3 als2mls = Sophus::SE3();
+
     for (const rosbag::MessageInstance &m : view)
     {
         std::string topic = m.getTopic();
@@ -1027,6 +1127,8 @@ void DataHandler::BagHandler()
 
         if (sync_packages_no_IMU(Measures))
         {
+            TransformPoints(Lidar_wrt_IMU, Measures.lidar); // transform the point cloud into imu frame
+
             scan_id++;
             // if (scan_id < 45100) // this is only for the 0 bag
             // continue;
@@ -1042,6 +1144,7 @@ void DataHandler::BagHandler()
             {
                 first_lidar_time = Measures.lidar_beg_time;
                 flg_first_scan = false;
+                prev_lidar_timestamp = Measures.lidar_beg_time;
                 continue;
             }
 
@@ -1055,13 +1158,95 @@ void DataHandler::BagHandler()
             flg_EKF_inited = true; // (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? false : true;
 
             bool deskew = true;
-            const auto &[source, frame_downsample] = estimator_icp.Voxelize(feats_undistort, deskew);
+            const auto &[source_, frame_downsample_] = estimator_icp.Voxelize(feats_undistort, deskew);
 
-            std::cout << "source:" << source.size() << ", frame_downsample:" << frame_downsample.size() << std::endl;
+            std::cout << "source_:" << source_.size() << ", frame_downsample_:" << frame_downsample_.size() << std::endl;
             // MLS registration
-            if (!estimator_icp.update(source, estimator_icp.local_map_, true, false))
+            bool use_p2p = true;//false;
+            if (!estimator_icp.update(source_, estimator_icp.local_map_, use_p2p, false))
             {
                 std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
+            }
+
+            for (int k = 0; k < 15; k++)
+            {
+                std::cout << "\n\nStep:" << k << std::endl;
+                std::cout << "poses_:" << estimator_icp.poses_.size() << std::endl;
+
+                // re-do the undistortion with latest velocity
+                *feats_undistort = *Measures.lidar;
+                const auto &[source, frame_downsample] = estimator_icp.Voxelize(feats_undistort, deskew);
+                std::cout << "source:" << source.size() << ", frame_downsample:" << frame_downsample.size() << std::endl;
+
+                // redoo the registration refinement with re-undistorted points
+                estimator_icp.update_refine(source, estimator_icp.local_map_);
+            }
+
+            // redoo the undistortion and voxelization after the MLS update
+            *feats_undistort = *Measures.lidar;
+            const auto &[source, frame_downsample] = estimator_icp.Voxelize(feats_undistort, deskew);
+            std::cout << "source:" << source.size() << ", frame_downsample:" << frame_downsample.size() << std::endl;
+
+            use_als = false;
+            if (use_als && shift_time_sinc)
+            {
+                state_point = estimator_icp.get_x(); // state after registration
+                if (!als_obj->refine_als)            // als was not setup
+                {
+                    std::cout << "Init ALS from known T" << std::endl;
+
+                    Sophus::SE3 known_T = als2mls; // T_LG * first_ppk_gnss_pose_inverse;
+
+                    estimator_icp.LocalMap(featsFromMap);
+                    if (!this->downsample) // if it is sparse ALS data from NLS
+                    {
+                        V3D t = known_T.translation();
+                        t.z() += 20.;
+                        Sophus::SE3 als2mls_for_sparse_ALS = Sophus::SE3(known_T.so3().matrix(), t);
+                        std::cout << "Init ALS from known T map refinement" << std::endl;
+
+                        als_obj->init(als2mls_for_sparse_ALS, featsFromMap); // with refinement
+                        // als_obj->init(als2mls_for_sparse_ALS);
+                    }
+                    else
+                    {
+                        std::cout << "Init ALS from known T" << std::endl;
+                        als_obj->init(known_T, featsFromMap); // with refinement
+                    }
+
+                    auto refined_extrinsic = als_obj->als_to_mls;
+
+                    std::cout << "known_T          :\n"
+                              << known_T.matrix() << std::endl;
+                    std::cout << "refined_extrinsic:\n"
+                              << refined_extrinsic.matrix() << std::endl;
+
+                    // auto t_ = refined_extrinsic.translation();
+                    // t_[2] = known_T.translation()[2];
+                    // als2mls = Sophus::SE3(refined_extrinsic.so3(), t_);
+                    // als2mls = refined_extrinsic;
+
+                    als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
+                }
+                else
+                {
+                    als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
+                    {
+                        const auto &reference_localMap_cloud = als_obj->als_cloud;
+                        const auto &refference_kdtree = als_obj->localKdTree_map_als;
+                        // std::cout << "kdtree set input ALS points: " << als_obj->als_cloud->size() << std::endl;
+
+                        estimator_icp.update(frame_downsample, reference_localMap_cloud, refference_kdtree);
+
+                        state_point = estimator_icp.get_x(); // state after registration
+                    }
+                }
+
+                if (pubLaserALSMap.getNumSubscribers() != 0)
+                {
+                    als_obj->getCloud(featsFromMap);
+                    publish_map(pubLaserALSMap);
+                }
             }
 
             feats_down_size = frame_downsample.size();
@@ -1096,7 +1281,8 @@ void DataHandler::BagHandler()
 
             //-------------------------------------------------------------------
 
-            time_of_day_sec += (Measures.lidar_end_time - Measures.lidar_beg_time);
+            time_of_day_sec += (Measures.lidar_beg_time - prev_lidar_timestamp);
+
             std::cout << "time_of_day_sec:" << time_of_day_sec << ", m0.tod:" << m0.tod << std::endl;
             if (!reader.initted)
             {
@@ -1131,13 +1317,13 @@ void DataHandler::BagHandler()
                     // first_ppk_gnss_pose_inverse = interpolated_pose.inverse(); //this will rotate the world - so that gravity
                     // the earth gravity can be added using the current system rotation in the world frame
 
-                    // tmp_pose = first_ppk_gnss_pose_inverse * interpolated_pose;
-
                     // Convert to Euler (ZYX: yaw-pitch-roll)
                     V3D euler = interpolated_pose.so3().matrix().eulerAngles(2, 1, 0);
                     // euler[0] = yaw (around Z), euler[1] = pitch (around Y), euler[2] = roll (around X)
                     std::cout << "Euler angles (rad): " << euler.transpose() << std::endl;
                     std::cout << "Euler angles (deg): " << euler.transpose() * 180.0 / M_PI << std::endl;
+
+                    als2mls = T_LG * first_ppk_gnss_pose_inverse;
 
                     ppk_gnss_synced = true;
                     std::cout << "\nsynchronised\n, press enter..." << std::endl;
@@ -1146,7 +1332,13 @@ void DataHandler::BagHandler()
                 }
 
                 double time_start = time_of_day_sec - .1;
-                double time_end = time_of_day_sec;
+                // double time_end = time_of_day_sec;
+
+                if (shift_time_sinc)
+                {
+                    // diff_lidar_ros2gnss_tod = Measures.lidar_beg_time - tod;// time_of_day_sec;
+                    time_start = Measures.lidar_beg_time - diff_lidar_ros2gnss_tod;
+                }
 
                 auto interpolated_pose = reader.closestPose(time_start);
                 // auto interpolated_pose = reader.closestPoseUnix(lidar_end_time);
@@ -1155,7 +1347,7 @@ void DataHandler::BagHandler()
                 tmp_index = reader.curr_index;
                 const auto &msg_time = measurements[tmp_index].tod;
 
-                se3 = T_LG * first_ppk_gnss_pose_inverse * interpolated_pose; // in first frame
+                se3 = als2mls * interpolated_pose; // in first frame
 
                 if (true)
                 {
@@ -1167,8 +1359,7 @@ void DataHandler::BagHandler()
                     // todo - we can do it the other way around and add the gravity in IMU body frame
                     // publishAccelerationArrow(marker_pub, -raw_acc, msg_time);
 
-                    *feats_undistort = *Measures.lidar;              // lidar frame
-                    TransformPoints(Lidar_wrt_IMU, feats_undistort); // lidar to IMU frame - front IMU
+                    *feats_undistort = *Measures.lidar; // lidar cloud in IMU frame
 
                     reader.undistort_const_vel(time_start, feats_undistort); // const vel model
                     // reader.undistort_imu(time_start, feats_undistort); //imu measurements
@@ -1194,8 +1385,11 @@ void DataHandler::BagHandler()
                     shift_time_sinc = estimateTimeOffset(lidar, gnss_imu, lidar_time, gnss_imu_time, time_diff, GNSS_IMU_calibration_distance);
                     std::cout << "time_diff:" << time_diff << std::endl;
                     time_of_day_sec += time_diff;
+
                     if (shift_time_sinc)
                     {
+                        diff_lidar_ros2gnss_tod = Measures.lidar_beg_time - time_of_day_sec;
+
                         std::cout << "\nsynchronised\n, press enter..., time_of_day_sec:" << time_of_day_sec << std::endl;
                         std::cin.get();
 
@@ -1205,57 +1399,49 @@ void DataHandler::BagHandler()
                         reader.init(first_lidar_time);
 
                         Sophus::SE3 gnss_at_first_lidar_time = reader.closestPose(first_lidar_time); // gnss at first lidar time
-                        tmp_index = reader.curr_index;
-
-                        // THERE IS A BUG HERE
-
-                        // FIGURE OUT HOW TO SOLVE IT
-
                         // take only the position of the first pose - keeps the orientation as it it, so gravity = earth gravity
                         first_ppk_gnss_pose_inverse = Sophus::SE3(M3D::Identity(), gnss_at_first_lidar_time.translation()).inverse();
+                        interpolated_pose = reader.closestPose(first_lidar_time); // gnss at current lidar time
 
-                        auto tmp_pose = first_ppk_gnss_pose_inverse * interpolated_pose;
+                        auto first_gnss_imu_pose_local = first_ppk_gnss_pose_inverse * interpolated_pose;
+                        // auto first_gnss_imu_pose_local = gnss_imu[0];
+                        tmp_index = reader.curr_index;
 
                         Sophus::SE3 T_L0 = first_lidar_pose; // first LiDAR–inertial pose
                         // Alignment transform: GNSS -> LiDAR
                         // T_LG = T_L0 * se3.inverse();
-                        T_LG = T_L0 * tmp_pose.inverse();
+                        T_LG = T_L0 * first_gnss_imu_pose_local.inverse();
 
                         // use only the yaw angle
                         double yaw = T_LG.so3().matrix().eulerAngles(2, 1, 0)[0]; // rotation around Z // yaw, pitch, roll (Z,Y,X order)
                         Eigen::AngleAxisd yawRot(yaw, V3D::UnitZ());
-                        T_LG = Sophus::SE3(yawRot.toRotationMatrix(), V3D::Zero());
+                        // T_LG = Sophus::SE3(yawRot.toRotationMatrix(), V3D::Zero());
+
+                        als2mls = T_LG * first_ppk_gnss_pose_inverse;
 
                         // Transform any GNSS pose into LiDAR–Inertial frame
-                        // Sophus::SE3 T_Lk = T_LG * se3;
+                        // Sophus::SE3 T_Lk = T_LG * se3; => T_L0 * inv(se3[0]) * se3
+
+                        lidar.clear();
+                        gnss_imu.clear();
+                        lidar_time.clear();
+                        gnss_imu_time.clear();
                     }
-
-                    // find the motion change in first and motion change in second
-
-                    // take the lidar odometry pose + time from init + curr scan delta
-                    // take the gnss-imu time  pose + time tod
-
-                    // given
-
-                    // std::vector<Sophus::SE3> sensor1_poses; (lidar)
-                    // std::vector<Sophus::SE3> sensor2_poses; (gnss-imu)
-
-                    // std::vector<double> sensor1_time;
-                    // std::vector<double> sensor2_time;
-
-                    // check if delta pose from the first-last sensor1_poses > 50
-                    // check if delta pose from the first-last sensor2_poses > 50
-                    // there is enough motion in both trajectorries
-
-                    // aling the trajectory and find the time_diff
-
-                    // i know that gnss-imu starts earlier
                 }
             }
             else
             {
                 std::cout << "GNSS reader not initted..." << std::endl;
                 throw std::runtime_error("GNSS reader not initted...");
+            }
+
+            prev_lidar_timestamp = Measures.lidar_beg_time;
+
+            bool save = true;
+            if (save && shift_time_sinc)
+            {
+                //save the lidar pose 
+                //save the gnss pose 
             }
         }
     }

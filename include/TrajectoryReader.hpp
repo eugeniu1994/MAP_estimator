@@ -843,8 +843,8 @@ public:
         try
         {
             int n = pcl_in->points.size();
-            auto first_point_time = pcl_in->points[0].time;
-            auto last_point_time = pcl_in->points[n - 1].time;
+            auto first_point_time = pcl_in->points.front().time;
+            auto last_point_time = pcl_in->points.back().time;
             double delta_time = last_point_time - first_point_time; // first point time is zero
             auto start_pose = closestPose(tod_cloud_start);
             auto finish_pose = closestPose(tod_cloud_start + delta_time);
@@ -1009,13 +1009,17 @@ private:
         std::cout << "Parsed axes rotation matrix:\n"
                   << R << std::endl;
 
-        R_axes << 0, -1, 0, // x (forward) -> -y
-            1, 0, 0,        // y (left)    -> x
-            0, 0, 1;        // z (up)      -> z
+
+        R_axes << 0, -1, 0,       // x (forward) -> -y
+                  1, 0, 0,        // y (left)    -> x
+                  0, 0, 1;        // z (up)      -> z
                             // | Trajectory axis | IMU axis |
                             // | --------------- | -------- |
                             // | x-forward       | y        |
                             // | y-left          | -x       |
                             // | z-up            | z        |
+
+
+
     }
 };
