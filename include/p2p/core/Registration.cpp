@@ -104,8 +104,8 @@ static std::vector<bool> global_valid(100000, false);
 
         const auto &[JTJ, JTr, cost] = result;
 
-        auto normalized_cost = cost/source.size();
-        std::cout<<"normalized_cost:"<<normalized_cost<<std::endl;
+        //auto normalized_cost = cost/source.size();
+        //std::cout<<"normalized_cost:"<<normalized_cost<<std::endl;
 
         return std::make_tuple(JTJ, JTr);
     }
@@ -377,6 +377,7 @@ static std::vector<bool> global_valid(100000, false);
         return std::make_tuple(JTJ, JTr);
     }
 
+
 } // namespace
 
 #ifdef _OPENMP
@@ -422,6 +423,113 @@ namespace p2p
 
         return T_icp * initial_guess; // put in global, using the init guess
     }
+
+
+
+    // Numerical Jacobian for pose residual:
+    // r(T) = Log( T_meas^{-1} * T )
+    // compute J = dr / d(dx) with left-multiplicative update T <- exp(dx) * T
+    Eigen::Matrix<double,6,6> numerical_pose_jacobian(const Sophus::SE3 &T,
+                                               const Sophus::SE3 &Tmeas,
+                                              double eps = 1e-6)
+    {
+        Eigen::Matrix<double,6,6> J;
+        Eigen::Matrix<double,6,1> r0 = ( Tmeas.inverse() * T ).log();
+
+        for (int k = 0; k < 6; ++k) {
+            Eigen::Matrix<double,6,1> dx = Eigen::Matrix<double,6,1>::Zero();
+            dx[k] = eps;
+            Sophus::SE3 Tp = Sophus::SE3::exp(dx) * T;           // left update
+            Eigen::Matrix<double,6,1> r_plus = ( Tmeas.inverse() * Tp ).log();
+            J.col(k) = (r_plus - r0) / eps;
+        }
+        return J;
+    }
+
+
+    Sophus::SE3 RegisterPointAndGNSS(const Sophus::SE3 &T_measured, const std::vector<V3D> &frame,
+                              const VoxelHashMap &voxel_map,
+                              const Sophus::SE3 &initial_guess,
+                              double max_correspondence_distance,
+                              double kernel)
+    {
+        if (voxel_map.Empty())
+        {
+            return initial_guess;
+        }
+
+        std::vector<V3D> source = frame;
+        TransformPoints(initial_guess, source);
+
+        // ICP-loop
+        Sophus::SE3 T_icp = Sophus::SE3();
+
+        // Noise parameters
+        //double lidar_point_std_ = 0.01;    // 1cm for LiDAR points
+        double se3_trans_std_ = .2;               // 1 m for SE3 translation
+        double se3_rot_std_ = 5.0 * M_PI / 180.0; // 5 degree for rotation
+
+        Eigen::Matrix<double, 6, 6> se3_info_matrix_;
+        // SE3 information matrix - block diagonal for rotation and translation
+        se3_info_matrix_.setZero();
+        se3_info_matrix_.block<3,3>(0,0) = Eigen::Matrix3d::Identity() / (se3_trans_std_ * se3_trans_std_);
+        se3_info_matrix_.block<3,3>(3,3) = Eigen::Matrix3d::Identity() / (se3_rot_std_ * se3_rot_std_);
+
+        for (int j = 0; j <= MAX_NUM_ITERATIONS_; ++j)
+        {
+            const auto &[src, tgt] = voxel_map.GetPointCorrespondences(source, max_correspondence_distance);
+            const auto &[JTJ, JTr] = BuildLinearSystem(src, tgt, kernel);
+
+            Eigen::Matrix6d H; // state_size x state_size
+            Eigen::Vector6d b; // state_size x 1
+            H.setZero();
+            b.setZero();
+
+            H = JTJ;
+            b = JTr;
+            {
+                //T_current, T_gnss, 
+                auto T_current = T_icp * initial_guess;
+
+                Eigen::Matrix<double, 6, 1> r_gnss = (T_current.inverse() * T_measured).log();
+                Eigen::Matrix<double, 6, 6> J_gnss;
+                                
+                r_gnss = ( T_measured.inverse() * T_current ).log(); // 6x1
+                J_gnss = numerical_pose_jacobian(T_current, T_measured, 1e-6);
+                std::cout<<"numerical_pose_jacobian:\n"<<J_gnss<<std::endl;
+                //J_gnss.setIdentity();
+
+                Eigen::Matrix6d H_se3;
+                Eigen::Vector6d g_se3;
+
+                H_se3 = J_gnss.transpose() * se3_info_matrix_ * J_gnss;
+                g_se3 = J_gnss.transpose() * se3_info_matrix_ * r_gnss;
+
+                H = JTJ + H_se3;
+                b = JTr + g_se3;
+            }
+
+
+
+            const Eigen::Vector6d dx = H.ldlt().solve(-b);   // translation and rotation perturbations
+            const Sophus::SE3 estimation = Sophus::SE3::exp(dx); // this is in local-align init guess to map
+            T_icp = estimation * T_icp;                          // the amount of correction starting from init guess
+
+            // Termination criteria
+            if (dx.norm() < ESTIMATION_THRESHOLD_ || j >= MAX_NUM_ITERATIONS_)
+            {
+                std::cout << "RegisterPointAndGNSS with src:" << src.size() << " in " << j << " iterations " << std::endl;
+                break;
+            }
+
+            TransformPoints(estimation, source);
+        }
+
+        return T_icp * initial_guess; // put in global, using the init guess
+    }
+
+
+
 
     Sophus::SE3 RegisterPlane(const std::vector<V3D> &frame,
                               const VoxelHashMap &voxel_map,
@@ -603,7 +711,7 @@ namespace p2p
                 if (dx.norm() < ESTIMATION_THRESHOLD_ || j >= max_iter_)
                 {
                     //std::cout<<"src:"<<src.size()<<", tgt:"<<tgt.size()<<", planes:"<<planes.size()<<std::endl;
-                    std::cout << "Plane registered with source:" << source.size() << " in " << j << " iterations " << std::endl;
+                    std::cout << "RegisterPlane with source:" << source.size() << " in " << j << " iterations " << std::endl;
                     break;
                 }
 
@@ -618,4 +726,62 @@ namespace p2p
 
         return T_icp * initial_guess; // put in global, using the init guess;
     }
+
+
+
+    Sophus::SE3 RegisterTightly(const std::vector<V3D> &frame,
+                                const VoxelHashMap &mls_map,
+                                const PointCloudXYZI::Ptr &als_map, 
+                                const pcl::KdTreeFLANN<PointType>::Ptr &als_tree,
+                                const Sophus::SE3 &initial_guess,
+                                double max_correspondence_distance,
+                                double kernel)
+    
+    {
+        if (mls_map.Empty())
+        {
+            return initial_guess;
+        }
+
+        std::vector<V3D> source = frame;
+        TransformPoints(initial_guess, source);
+
+        double lambda = 1e-6;
+
+        Sophus::SE3 T_icp = Sophus::SE3();
+        for (int j = 0; j <= MAX_NUM_ITERATIONS_; ++j)
+        {
+            //MLS correspondences & contribution
+            const auto &[src_mls, tgt_mls] = mls_map.GetPointCorrespondences(source, max_correspondence_distance);
+            const auto &[JTJ_mls, JTr_mls] = BuildLinearSystem(src_mls, tgt_mls, kernel);
+
+            //ALS correspondences & contribution
+            establishCorrespondences(source, als_map, als_tree);
+            const auto &[JTJ_als, JTr_als] = BuildLinearSystem(source, kernel);
+            
+
+            
+            Eigen::Matrix6d JTJ_damped = JTJ_mls + JTJ_als;
+            JTJ_damped.noalias() += lambda * Eigen::Matrix6d::Identity();
+            Eigen::Vector6d JTr; // state_size x 1
+            JTr.setZero();
+            JTr = JTr_mls + JTr_als;
+
+            const Eigen::Vector6d dx = JTJ_damped.ldlt().solve(-JTr); // translation and rotation perturbations
+            const Sophus::SE3 estimation = Sophus::SE3::exp(dx); // this is in local-align init guess to map
+            T_icp = estimation * T_icp;                          // the amount of correction starting from init guess
+
+            // Termination criteria
+            if (dx.norm() < ESTIMATION_THRESHOLD_ || j >= MAX_NUM_ITERATIONS_)
+            {
+                std::cout << "RegisterTightly with src:" << src_mls.size() << " in " << j << " iterations " << std::endl;
+                break;
+            }
+
+            TransformPoints(estimation, source);
+        }
+
+        return T_icp * initial_guess; // put in global, using the init guess
+    }
+
 } // namespace p2p

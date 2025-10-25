@@ -1110,7 +1110,7 @@ void DataHandler::BagHandler()
     bool found_first_gps_time = false;
 
     Sophus::SE3 als2mls = Sophus::SE3();
-
+    
     for (const rosbag::MessageInstance &m : view)
     {
         std::string topic = m.getTopic();
@@ -1173,11 +1173,32 @@ void DataHandler::BagHandler()
             std::cout << "source_:" << source_.size() << ", frame_downsample_:" << frame_downsample_.size() << std::endl;
             // MLS registration
             bool use_p2p = true; // false;
-            if (!estimator_icp.update(source_, estimator_icp.local_map_, use_p2p, false))
-            {
-                std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
-            }
 
+            
+            
+            
+
+            if (shift_time_sinc)
+            {
+                // diff_lidar_ros2gnss_tod = Measures.lidar_beg_time - tod;// time_of_day_sec;
+                double time_start = Measures.lidar_beg_time - diff_lidar_ros2gnss_tod;
+                auto interpolated_pose = reader.closestPose(time_start);
+                se3 = als2mls * interpolated_pose; // in first frame
+
+                if (!estimator_icp.update(se3, source_, estimator_icp.local_map_))
+                {
+                    std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
+                }
+            }
+            else{
+
+                if (!estimator_icp.update(source_, estimator_icp.local_map_, use_p2p, false))
+                {
+                    std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
+                }
+            }
+            
+            
             if (false) //  if ((estimator_icp.GetPredictionModel().so3().log() * 180. / M_PI).norm() > .1)
             {
                 for (int k = 0; k < 5; k++) // 15 for prev data
@@ -1200,7 +1221,7 @@ void DataHandler::BagHandler()
             const auto &[source, frame_downsample] = estimator_icp.Voxelize(feats_undistort, deskew);
             std::cout << "source:" << source.size() << ", frame_downsample:" << frame_downsample.size() << std::endl;
 
-            //use_als = false;// true;
+            use_als = false;// true;
             if (use_als && shift_time_sinc)
             {
                 state_point = estimator_icp.get_x(); // state after registration
@@ -1240,9 +1261,6 @@ void DataHandler::BagHandler()
                     // als2mls = refined_extrinsic;
 
                     als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
-
-                    //Reset the loca MLS map -> it has global drift
-                    estimator_icp.local_map_.Clear();
                 }
                 else
                 {
@@ -1254,14 +1272,9 @@ void DataHandler::BagHandler()
                         int als_cloud_points = reference_localMap_cloud->size();
                         if(als_cloud_points > 100)
                         {
-                            //put this back later 
+                            //Just a test do not register against ALS 
                             //estimator_icp.update(frame_downsample, reference_localMap_cloud, refference_kdtree);
-                            //
-
-                            estimator_icp.update_tightlyCoupled(frame_downsample, estimator_icp.local_map_,
-                                reference_localMap_cloud, refference_kdtree);
-
-                            state_point = estimator_icp.get_x(); // state after registration
+                            //state_point = estimator_icp.get_x(); // state after registration
                         }
                         else
                         {
@@ -1378,7 +1391,7 @@ void DataHandler::BagHandler()
                 se3 = als2mls * interpolated_pose; // in first frame
 
                 publish_ppk_gnss(se3, msg_time);
-                if (false)
+                if (true)
                 {
                     // reader.addEarthGravity(measurements[reader.curr_index], raw_gyro, raw_acc, G_m_s2); //this will add the world gravity
                     reader.addGravity(measurements[reader.curr_index], se3, raw_gyro, raw_acc, G_m_s2); // gravity in curr body frame
@@ -1455,6 +1468,7 @@ void DataHandler::BagHandler()
                         gnss_imu_time.clear();
                     }
                 }
+                
             }
             else
             {
@@ -1463,88 +1477,6 @@ void DataHandler::BagHandler()
             }
 
             prev_lidar_timestamp = Measures.lidar_beg_time;
-
-
-    #ifdef SAVE_DATA
-            bool save = true;
-            std::cout << "save_poses:" << save_poses << ", save_clouds_path:" << save_clouds_path << std::endl;
-
-            if (save && shift_time_sinc)
-            {
-                switch (lidar_type)
-                {
-                case Hesai:
-                    std::cout << "Hesai save the cloud" << std::endl;
-                    {
-                        pcl::PointCloud<hesai_ros::Point> pl_orig;
-                        pcl::fromROSMsg(*Measures.lidar_msg, pl_orig);
-
-                        int n = pl_orig.points.size();
-                        double first_point_time = pl_orig.points[0].timestamp;
-                        double last_point_time = pl_orig.points[n - 1].timestamp;
-                        // std::cout<<"first_point_time:"<<first_point_time<<std::endl;
-
-                        //  If not enough poses for the estimation, do not de-skew
-                        const size_t N = estimator_icp.poses_.size();
-                        if (N <= 2) return;
-                        double delta_time = last_point_time - first_point_time;  // first point time is zero
-                        if (delta_time <= 1e-9) {
-                            std::cout << "error in undistort_const_vel_lidar : delta_time is " << delta_time
-                                    << std::endl;
-                            return;
-                        }
-
-                        // Estimate linear and angular velocities
-                        const auto &start_pose = estimator_icp.poses()[N - 2];
-                        const auto &finish_pose = estimator_icp.poses()[N - 1];
-                        const auto delta_pose = (start_pose.inverse() * finish_pose).log() / delta_time;
-
-                        double t = 0;
-                        for (int i = 0; i < n; i++) {
-                            const auto &p = pl_orig.points[i];
-                            Eigen::Vector3d P_i = Eigen::Vector3d(p.x, p.y, p.z);
-                            t = p.timestamp - first_point_time;
-                            const auto motion = finish_pose * Sophus::SE3::exp((t)*delta_pose);
-
-                            Eigen::Vector3d point = motion * Lidar_wrt_IMU * P_i;
-
-                            // Assign to the preallocated index
-                            pl_orig.points[i].x = point.x();
-                            pl_orig.points[i].y = point.y();
-                            pl_orig.points[i].z = point.z();
-                        }
-
-
-                        //const pcl::PointCloud<hesai_ros::Point> &pl_orig = imu_obj->DeSkewOriginalCloud<hesai_ros::Point>(Measures.lidar_msg, state_point, save_clouds_local);
-                        std::cout << "save " << pl_orig.size() << " points" << std::endl;
-
-                        std::string filename = save_clouds_path + "Hesai/" + std::to_string(scan_id) + "_cloud_" + std::to_string(lidar_end_time) + ".pcd";
-                        pcl::io::savePCDFile(filename, pl_orig, true); // Binary format
-
-
-                        const Eigen::Vector3d &t_model = finish_pose.translation();
-                        Eigen::Quaterniond q_model(finish_pose.so3().matrix());
-
-                        q_model.normalize();
-                        std::ofstream foutMLS(save_clouds_path + "MLS.txt", std::ios::app);
-                        //  foutMLS.setf(std::ios::scientific, std::ios::floatfield);
-                        foutMLS.setf(std::ios::fixed, std::ios::floatfield);
-                        foutMLS.precision(20);
-                        // # ' id time tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds,
-                        // translation and rotation quaternion)
-                        foutMLS << scan_id<< " "<< lidar_end_time << " " << t_model(0) << " " << t_model(1) << " " << t_model(2) << " "
-                                << q_model.x() << " " << q_model.y() << " " << q_model.z() << " " << q_model.w()
-                                << std::endl;
-                        foutMLS.close();
-                    }
-                    break;
-
-                default:
-                    std::cout << "Unknown LIDAR type:" << lidar_type << std::endl;
-                    break;
-                }
-            }
-#endif
         }
     }
 

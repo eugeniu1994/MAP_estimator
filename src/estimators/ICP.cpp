@@ -55,11 +55,11 @@ ICP::Vector3dVectorTuple ICP::Voxelize(PointCloudXYZI::Ptr &frame, bool deskew) 
 
         double first_point_time = frame->points[0].time;
         double last_point_time = frame->points.back().time;
-        double mid_ = (last_point_time - first_point_time)/2.;
-        //std::cout<<"mid_:"<<mid_<<std::endl;
+        double mid_ = (last_point_time - first_point_time) / 2.;
+        // std::cout<<"mid_:"<<mid_<<std::endl;
 
         auto delta_pose = GetPredictionModel().log();
-        auto delta_pose_dt = delta_pose/(last_point_time - first_point_time);
+        auto delta_pose_dt = delta_pose / (last_point_time - first_point_time);
 
         // std::vector<double> timestamps;
         // timestamps.reserve(N);
@@ -76,9 +76,8 @@ ICP::Vector3dVectorTuple ICP::Voxelize(PointCloudXYZI::Ptr &frame, bool deskew) 
         // for (auto &t : timestamps)
         //     t = (t - tmin) / range;
 
-        
         tbb::parallel_for(size_t(0), N, [&](size_t i)
-        {
+                          {
             const auto motion = Sophus::SE3::exp((frame->points[i].time - first_point_time - mid_) * delta_pose_dt);
             //const auto motion = Sophus::SE3::exp((timestamps[i] - mid_pose_timestamp) * delta_pose);
 
@@ -121,9 +120,9 @@ bool ICP::update(const std::vector<V3D> &source, const p2p::VoxelHashMap &local_
 
     // if (p2p_)
     // {
-        const auto model_deviation = initial_guess.inverse() * new_pose;
-        adaptive_threshold_.UpdateModelDeviation(model_deviation);
-        poses_.push_back(new_pose);
+    const auto model_deviation = initial_guess.inverse() * new_pose;
+    adaptive_threshold_.UpdateModelDeviation(model_deviation);
+    poses_.push_back(new_pose);
     //}
     x_.rot = new_pose.so3();
     x_.pos = new_pose.translation();
@@ -141,16 +140,16 @@ bool ICP::update_refine(const std::vector<V3D> &source, const p2p::VoxelHashMap 
     // Get motion prediction and adaptive_threshold
     const double sigma = GetAdaptiveThreshold();
 
-    Sophus::SE3 imu_init_guess(x_.rot, x_.pos); //this is from the prev iteration 
-    //imu_init_guess = initial_guess; // const vel model
+    Sophus::SE3 imu_init_guess(x_.rot, x_.pos); // this is from the prev iteration
+    // imu_init_guess = initial_guess; // const vel model
 
     Sophus::SE3 new_pose = p2p::RegisterPoint(source, local_map_, imu_init_guess,
-                                            3.0 * sigma, // max_correspondence_distance
-                                            sigma / 3.0); // kernel th
-                      
-    
-    if (!poses_.empty()) {
-        poses_.back() = new_pose; //change the last pose with the one updated from ALS
+                                              3.0 * sigma,  // max_correspondence_distance
+                                              sigma / 3.0); // kernel th
+
+    if (!poses_.empty())
+    {
+        poses_.back() = new_pose; // change the last pose with the one updated from ALS
     }
     // if (p2p_)
     // {
@@ -175,11 +174,75 @@ bool ICP::update(const std::vector<V3D> &source, const PointCloudXYZI::Ptr &map,
     imu_init_guess = last_pose; // const vel model - take this from mls estimate
 
     Sophus::SE3 new_pose = p2p::RegisterPlane(source, map, tree, imu_init_guess,
-                                            3.0 * sigma,           // max_correspondence_distance
-                                            sigma / 3.0); // kernel th
+                                              3.0 * sigma,  // max_correspondence_distance
+                                              sigma / 3.0); // kernel th
 
-    if (!poses_.empty()) {
-        poses_.back() = new_pose; //change the last pose with the one updated from ALS
+    if (!poses_.empty())
+    {
+        poses_.back() = new_pose; // change the last pose with the one updated from ALS
+    }
+
+    x_.rot = new_pose.so3();
+    x_.pos = new_pose.translation();
+
+    return true;
+}
+
+bool ICP::update(const Sophus::SE3 &gnss, const std::vector<V3D> &source, const p2p::VoxelHashMap &local_map_)
+{
+    // Compute initial_guess for ICP
+    const auto last_pose = !poses_.empty() ? poses_.back() : Sophus::SE3();
+    const auto prediction = GetPredictionModel();
+    const auto initial_guess = last_pose * prediction; // const velocity model
+
+    // Get motion prediction and adaptive_threshold
+    const double sigma = GetAdaptiveThreshold();
+
+    Sophus::SE3 imu_init_guess(x_.rot, x_.pos);
+    imu_init_guess = initial_guess; // const vel model
+
+    Sophus::SE3 new_pose = p2p::RegisterPointAndGNSS(gnss, source, local_map_, imu_init_guess,
+                                                     3.0 * sigma,  // max_correspondence_distance
+                                                     sigma / 3.0); // kernel th
+
+    const auto model_deviation = initial_guess.inverse() * new_pose;
+    adaptive_threshold_.UpdateModelDeviation(model_deviation);
+    poses_.push_back(new_pose);
+
+    x_.rot = new_pose.so3();
+    x_.pos = new_pose.translation();
+    return true;
+}
+
+bool ICP::update_tightlyCoupled(const std::vector<V3D> &source, const p2p::VoxelHashMap &local_map_,
+                                const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree)
+
+{
+    // Compute initial_guess for ICP
+    const auto last_pose = !poses_.empty() ? poses_.back() : Sophus::SE3();
+    const auto prediction = GetPredictionModel();
+    const auto initial_guess = last_pose * prediction; // const velocity model
+
+    // Get motion prediction and adaptive_threshold
+    const double sigma = GetAdaptiveThreshold();
+
+    Sophus::SE3 imu_init_guess(x_.rot, x_.pos);
+    imu_init_guess = initial_guess; // const vel model
+
+    Sophus::SE3 new_pose = p2p::RegisterTightly(source,
+                                                local_map_,
+                                                map, tree,
+                                                imu_init_guess,
+                                                3.0 * sigma, // max_correspondence_distance
+                                                sigma / 3.0);
+
+    const auto model_deviation = initial_guess.inverse() * new_pose;
+    adaptive_threshold_.UpdateModelDeviation(model_deviation);
+    //poses_.push_back(new_pose);
+    
+    if (!poses_.empty())
+    {
+        poses_.back() = new_pose; // change the last pose with the one updated from ALS
     }
 
     x_.rot = new_pose.so3();

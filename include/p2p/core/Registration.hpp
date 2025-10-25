@@ -10,11 +10,19 @@ namespace p2p
 {
     using Vector3dVector = std::vector<V3D>;
     typedef Eigen::Matrix<double, 6, 6> Matrix6d;
+
     Sophus::SE3 RegisterPoint(const std::vector<V3D> &frame,
                                const VoxelHashMap &voxel_map,
                                const Sophus::SE3 &initial_guess,
                                double max_correspondence_distance,
                                double kernel);
+    
+    Sophus::SE3 RegisterPointAndGNSS(const Sophus::SE3 &T_measured, 
+                              const std::vector<V3D> &frame,
+                              const VoxelHashMap &voxel_map,
+                              const Sophus::SE3 &initial_guess,
+                              double max_correspondence_distance,
+                              double kernel);
 
     Sophus::SE3 RegisterPlane(const std::vector<V3D> &frame,
                                const VoxelHashMap &voxel_map,
@@ -28,6 +36,14 @@ namespace p2p
                               const Sophus::SE3 &initial_guess,
                               double max_correspondence_distance,
                               double kernel);
+
+    Sophus::SE3 RegisterTightly(const std::vector<V3D> &frame,
+                                const VoxelHashMap &mls_map,
+                                const PointCloudXYZI::Ptr &als_map, 
+                                const pcl::KdTreeFLANN<PointType>::Ptr &als_tree,
+                                const Sophus::SE3 &initial_guess,
+                                double max_correspondence_distance,
+                                double kernel);
 } // namespace p2p
 
 #endif

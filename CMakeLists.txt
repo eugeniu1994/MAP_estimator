@@ -52,6 +52,8 @@ message("Current CPU archtecture: ${CMAKE_SYSTEM_PROCESSOR}")
 #   add_definitions(-DMP_PROC_NUM=1)
 # endif()
 #USE ALL THE VAILABLE CORES
+
+#THIS CAN BE UNSTABLE IF PARALLEL - LEAVE IT WITH 3-4 ONLY 
 include(ProcessorCount)
 ProcessorCount(N)
 message("Processer number:  ${N}")
@@ -133,7 +135,7 @@ catkin_package(
 
 add_definitions(-DWITHOUT_NUMPY) #for matplotlib
 
-# add_definitions(-DSAVE_DATA) #uncomment this to enable saving the data - note it will slow down the execution time
+add_definitions(-DSAVE_DATA) #uncomment this to enable saving the data - note it will slow down the execution time
 
 set(USE_EKF TRUE)
 set(USE_STATIC_KDTREE TRUE) # or FALSE to disable
@@ -267,9 +269,13 @@ if(BUILD_ICP)
 
     set(TARGET_LINK_LIBS_ICP ${TARGET_LINK_LIBS} p2p::core gtsam) #maybe GTSAM is not needed yet here
     SET(MAIN_SOURCE_FILES_ICP src/IMU.cpp src/GNSS.cpp src/utils.cpp src/estimators/Estimator.cpp)
-    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/estimators/ICP.cpp)
+    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/estimators/ICP.cpp src/estimators/ALS_ekf.cpp)
 
-    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/src_icp/DataHandler_icp.cpp src/estimators/ALS_ekf.cpp)
+    #the one used before kiss-icp fused with ALS
+    set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/src_icp/DataHandler_icp.cpp )
+    # set(MAIN_SOURCE_FILES_ICP ${MAIN_SOURCE_FILES_ICP} src/src_icp/GNSS-ICP_fusion.cpp )
+
+
     add_executable(icp_test src/src_icp/main.cpp ${MAIN_SOURCE_FILES_ICP})
     target_link_libraries(icp_test ${TARGET_LINK_LIBS_ICP} ${CERES_LIBRARIES} )
 

@@ -25,6 +25,10 @@ public:
     ~ICP() {}
 
     bool update(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_, bool p2p_ = true, bool save_nn=false);
+    bool update(const Sophus::SE3 &gnss, const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_);
+
+    bool update_tightlyCoupled(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree);
+
     bool update_refine(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_);
 
     bool update(const std::vector<V3D> &src, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree);
@@ -36,6 +40,8 @@ public:
     Vector3dVectorTuple Voxelize(PointCloudXYZI::Ptr &frame, bool deskew = false) const;
     p2p::VoxelHashMap local_map_;
 
+    Sophus::SE3 GetPredictionModel() const;
+    
 private:
     //ICP pipeline modules
     Config config_;
@@ -43,7 +49,7 @@ private:
 
     double GetAdaptiveThreshold();
 
-    Sophus::SE3 GetPredictionModel() const;
+    
 
     bool HasMoved();
     bool has_moved = false;

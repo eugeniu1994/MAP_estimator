@@ -24,8 +24,8 @@ input_laz_directory = '/media/eugeniu/T7/Maanmittauslaitos_Tiedostopalvelu_REST-
 east_min, east_max = 397123., 402000.
 north_min, north_max = 6784218, 6789000
 
-output_directory = "/media/eugeniu/T7/Lowcost_trajs/MML_5pt/Lieksa_2021/data_las_cropped"
-input_laz_directory = "/media/eugeniu/T7/Lowcost_trajs/MML_5pt/Lieksa_2021"
+output_directory = "/media/eugeniu/T7/Lowcost_trajs/MML_5pt/CALIBRATE_2023/data_las_cropped"
+input_laz_directory = "/media/eugeniu/T7/Lowcost_trajs/MML_5pt/CALIBRATE_2023"
 east_min, east_max = -99999999999, 99999999999.
 north_min, north_max = -99999999999, 99999999999.
 
