@@ -300,6 +300,18 @@ void TransformPoints(const Sophus::SE3 &T, std::vector<V3D> &points)
                       });
 }
 
+void TransformPoints(const Sophus::SE3 &T, std::vector<V3D_4> &points)
+{
+    tbb::parallel_for(tbb::blocked_range<int>(0, points.size()),
+                      [&](tbb::blocked_range<int> r)
+                      {
+                          for (int i = r.begin(); i < r.end(); ++i)
+                          {
+                              points[i] = T * points[i];
+                          }
+                      });
+}
+
 void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<VUX_PointType>::Ptr &cloud)
 {
     tbb::parallel_for(tbb::blocked_range<int>(0, cloud->size()),
@@ -336,7 +348,6 @@ void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<PointType>::Ptr &clou
 
 void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D> &eigen_cloud)
 {
-    // Reserve space for points to avoid reallocation
     pcl_cloud->points.resize(eigen_cloud.size());
 
     for (size_t i = 0; i < eigen_cloud.size(); ++i)
@@ -347,6 +358,7 @@ void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D> &eigen_clo
         point.x = vec.x();
         point.y = vec.y();
         point.z = vec.z();
+
         // point.intensity = 0.0f; // Set to a default value
         // point.time = 0.0f;      // Set to a default value
     }
@@ -356,6 +368,30 @@ void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D> &eigen_clo
     pcl_cloud->height = 1; // Unorganized point cloud
     pcl_cloud->is_dense = true;
 }
+
+void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D_4> &eigen_cloud)
+{
+    pcl_cloud->points.resize(eigen_cloud.size());
+
+    for (size_t i = 0; i < eigen_cloud.size(); ++i)
+    {
+        const auto &vec = eigen_cloud[i];
+        PointType &point = pcl_cloud->points[i];
+
+        point.x = vec.x();
+        point.y = vec.y();
+        point.z = vec.z();
+
+        point.intensity = vec.displacement; // Set to a default value
+        // point.time = 0.0f;      // Set to a default value
+    }
+
+    // Set cloud dimensions
+    pcl_cloud->width = pcl_cloud->points.size();
+    pcl_cloud->height = 1; // Unorganized point cloud
+    pcl_cloud->is_dense = true;
+}
+
 
 void PCL2EIGEN(const PointCloudXYZI::Ptr &pcl_cloud, std::vector<V3D> &eigen_cloud)
 {

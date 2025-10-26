@@ -8,6 +8,127 @@
 #include <pcl/point_cloud.h>
 #include <Eigen/Eigen>
 #include <Eigen/Core>
+#include <Eigen/Dense>
+
+struct V3D_4 : public Eigen::Vector3d
+{
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+    double displacement = 0.0;
+
+    // Constructors
+    V3D_4() : Eigen::Vector3d(), displacement(0.0) {}
+
+    V3D_4(double x, double y, double z, double disp = 0.0)
+        : Eigen::Vector3d(x, y, z), displacement(disp) {}
+
+    V3D_4(const Eigen::Vector3d &v, double disp = 0.0)
+        : Eigen::Vector3d(v), displacement(disp) {}
+
+    // Copy constructor
+    V3D_4(const V3D_4& other) 
+        : Eigen::Vector3d(static_cast<const Eigen::Vector3d&>(other)), 
+          displacement(other.displacement) {}
+
+    // Assignment operators
+    V3D_4 &operator=(const Eigen::Vector3d &v)
+    {
+        Eigen::Vector3d::operator=(v);
+        return *this;
+    }
+
+    V3D_4 &operator=(const V3D_4& other)
+    {
+        if (this != &other) {
+            Eigen::Vector3d::operator=(other);
+            displacement = other.displacement;
+        }
+        return *this;
+    }
+
+    // Arithmetic operators that preserve displacement
+    V3D_4 operator+(const V3D_4& other) const
+    {
+        return V3D_4(static_cast<const Eigen::Vector3d&>(*this) + 
+                     static_cast<const Eigen::Vector3d&>(other), 
+                     displacement); // Keep this object's displacement
+    }
+
+    V3D_4 operator-(const V3D_4& other) const
+    {
+        return V3D_4(static_cast<const Eigen::Vector3d&>(*this) - 
+                     static_cast<const Eigen::Vector3d&>(other), 
+                     displacement); // Keep this object's displacement
+    }
+
+    V3D_4 operator*(double scalar) const
+    {
+        return V3D_4(static_cast<const Eigen::Vector3d&>(*this) * scalar, 
+                     displacement); // Keep displacement
+    }
+
+    V3D_4 operator/(double scalar) const
+    {
+        return V3D_4(static_cast<const Eigen::Vector3d&>(*this) / scalar, 
+                     displacement); // Keep displacement
+    }
+
+    // Compound assignment operators
+    V3D_4& operator+=(const V3D_4& other)
+    {
+        Eigen::Vector3d::operator+=(other);
+        return *this;
+    }
+
+    V3D_4& operator-=(const V3D_4& other)
+    {
+        Eigen::Vector3d::operator-=(other);
+        return *this;
+    }
+
+    V3D_4& operator*=(double scalar)
+    {
+        Eigen::Vector3d::operator*=(scalar);
+        return *this;
+    }
+
+    V3D_4& operator/=(double scalar)
+    {
+        Eigen::Vector3d::operator/=(scalar);
+        return *this;
+    }
+
+    // Dot product (inherited from Eigen::Vector3d)
+    using Eigen::Vector3d::dot;
+
+    // Cross product
+    V3D_4 cross(const V3D_4& other) const
+    {
+        return V3D_4(Eigen::Vector3d::cross(other), displacement);
+    }
+
+    // Norm operations (inherited from Eigen::Vector3d)
+    using Eigen::Vector3d::norm;
+    using Eigen::Vector3d::squaredNorm;
+    using Eigen::Vector3d::normalized;
+
+    // Normalize and return new vector
+    V3D_4 normalizedWithDisplacement() const
+    {
+        return V3D_4(this->normalized(), displacement);
+    }
+
+    // Conversion operators (your original ones are fine)
+    operator Eigen::Vector3d&() { return *this; }
+    operator const Eigen::Vector3d&() const { return *this; }
+};
+
+// External operators
+inline V3D_4 operator*(double scalar, const V3D_4& vec)
+{
+    return vec * scalar;
+}
+
 
 struct EIGEN_ALIGN16 PointType // point used for registration
 {

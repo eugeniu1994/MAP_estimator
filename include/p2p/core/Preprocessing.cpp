@@ -17,9 +17,9 @@ namespace
 
 namespace p2p
 {
-    std::vector<V3D> VoxelDownsample(const std::vector<V3D> &frame, double voxel_size)
+    std::vector<V3D_4> VoxelDownsample(const std::vector<V3D_4> &frame, double voxel_size)
     {
-        tsl::robin_map<Voxel, V3D, VoxelHash> grid;
+        tsl::robin_map<Voxel, V3D_4, VoxelHash> grid;
         grid.reserve(frame.size());
         double inv_voxel_size = 1.0 / voxel_size;
         std::for_each(frame.cbegin(), frame.cend(), [&](const auto &point)
@@ -27,28 +27,34 @@ namespace p2p
                     const auto &voxel = PointToVoxel(point, inv_voxel_size);
                     if (!grid.contains(voxel)) grid.insert({voxel, point}); });
 
-        std::vector<V3D> frame_dowsampled(grid.size());
-        //std::vector<V3D> frame_dowsampled; frame_dowsampled.reserve(grid.size());
+        std::vector<V3D_4> frame_dowsampled(grid.size());
+        //std::vector<V3D_4> frame_dowsampled; frame_dowsampled.reserve(grid.size());
         std::transform(grid.begin(), grid.end(), frame_dowsampled.begin(),
                [](const auto& entry) { return entry.second; });
 
         return frame_dowsampled;
     }
 
-    std::vector<V3D> VoxelDownsample(const PointCloudXYZI::Ptr &frame, double voxel_size)
+    std::vector<V3D_4> VoxelDownsample(const PointCloudXYZI::Ptr &frame, double voxel_size)
     {
-        tsl::robin_map<Voxel, V3D, VoxelHash> grid;
+        tsl::robin_map<Voxel, V3D_4, VoxelHash> grid;
         grid.reserve(frame->size());
         double inv_voxel_size = 1.0 / voxel_size;
+        int n = frame->size();
         for (const auto &pointXYZI : frame->points)
+        //for(int i=0;i<n;i++)
         {
-            V3D point(pointXYZI.x, pointXYZI.y, pointXYZI.z);
+            //const auto &pointXYZI = frame->points[i];
+            V3D_4 point(pointXYZI.x, pointXYZI.y, pointXYZI.z, pointXYZI.intensity);
             const auto &voxel = PointToVoxel(point, inv_voxel_size);
-            if (!grid.contains(voxel)) grid.insert({voxel, point});
+            if (!grid.contains(voxel)) 
+            {
+                grid.insert({voxel, point});
+            }
         }
         
-        std::vector<V3D> frame_dowsampled(grid.size());
-        //std::vector<V3D> frame_dowsampled; frame_dowsampled.reserve(grid.size());
+        std::vector<V3D_4> frame_dowsampled(grid.size());
+        //std::vector<V3D_4> frame_dowsampled; frame_dowsampled.reserve(grid.size());
         //for (const auto &[voxel, point] : grid){
         //    (void)voxel;
         //    frame_dowsampled.emplace_back(point);}

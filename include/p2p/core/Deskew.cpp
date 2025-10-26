@@ -11,7 +11,7 @@ namespace
 namespace kiss_icp
 {
     // this will deskew the scan at the mid
-    void DeSkewScan(std::vector<V3D> &frame,
+    void DeSkewScan(std::vector<V3D_4> &frame,
                     const std::vector<double> &timestamps,
                     const Sophus::SE3 &start_pose,
                     const Sophus::SE3 &finish_pose)
@@ -23,7 +23,7 @@ namespace kiss_icp
             frame[i] = motion * frame[i]; });
     }
 
-    void DeSkewScan_StartFrame(std::vector<V3D> &frame,
+    void DeSkewScan_StartFrame(std::vector<V3D_4> &frame,
                                const std::vector<double> &timestamps,
                                const Sophus::SE3 &start_pose,
                                const Sophus::SE3 &finish_pose)
@@ -35,7 +35,7 @@ namespace kiss_icp
                               frame[i] = motion * frame[i]; });
     }
 
-    void DeSkewScan_EndFrame(std::vector<V3D> &frame,
+    void DeSkewScan_EndFrame(std::vector<V3D_4> &frame,
                              const std::vector<double> &timestamps,
                              const Sophus::SE3 &start_pose,
                              const Sophus::SE3 &finish_pose)

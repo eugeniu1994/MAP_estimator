@@ -135,7 +135,7 @@ catkin_package(
 
 add_definitions(-DWITHOUT_NUMPY) #for matplotlib
 
-add_definitions(-DSAVE_DATA) #uncomment this to enable saving the data - note it will slow down the execution time
+# add_definitions(-DSAVE_DATA) #uncomment this to enable saving the data - note it will slow down the execution time
 
 set(USE_EKF TRUE)
 set(USE_STATIC_KDTREE TRUE) # or FALSE to disable
@@ -181,8 +181,8 @@ else()
     endif()
     set(TARGET_LINK_LIBS ${TARGET_LINK_LIBS} p2p::core)
     set(TARGET_LINK_LIBS ${TARGET_LINK_LIBS} gtsam)
-    set(MAIN_SOURCE_FILES ${MAIN_SOURCE_FILES} src/estimators/ICP.cpp src/Graph.cpp src/estimators/ALS_icp.cpp)
-    set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src/estimators/ICP.cpp src/Graph.cpp src/estimators/ALS_icp.cpp)
+    set(MAIN_SOURCE_FILES ${MAIN_SOURCE_FILES} src/estimators/ICP.cpp src/Graph.cpp ) #src/estimators/ALS_icp.cpp
+    set(MAIN_SOURCE_FILES3 ${MAIN_SOURCE_FILES3} src/estimators/ICP.cpp src/Graph.cpp ) #src/estimators/ALS_icp.cpp
 endif()
 
 # message(STATUS "MAIN_SOURCE_FILES: ${MAIN_SOURCE_FILES}")

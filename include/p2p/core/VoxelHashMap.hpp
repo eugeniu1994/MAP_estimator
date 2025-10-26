@@ -7,6 +7,7 @@
 
 #include "../../utils.h"
 #include "icp_util.hpp"
+#include <Eigen/Dense>
 
 namespace p2p
 {
@@ -14,10 +15,10 @@ namespace p2p
     {
         struct VoxelBlock
         {
-            std::vector<V3D> points;
+            std::vector<V3D_4> points;
             int num_points_;
 
-            inline void AddPoint(const V3D &point)
+            inline void AddPoint(const V3D_4 &point)
             {
                 if (points.size() < num_points_)
                 {
@@ -53,12 +54,12 @@ namespace p2p
         inline void Clear() { map_.clear(); }
         inline bool Empty() const { return map_.empty(); }
 
-        void Update(const std::vector<V3D> &points, const V3D &origin);
-        void Update(const std::vector<V3D> &points, const Sophus::SE3 &pose);
+        void Update(const std::vector<V3D_4> &points, const V3D_4 &origin);
+        void Update(const std::vector<V3D_4> &points, const Sophus::SE3 &pose);
 
-        void AddPoints(const std::vector<V3D> &points);
-        void RemovePointsFarFromLocation(const V3D &origin);
-        std::vector<V3D> Pointcloud() const;
+        void AddPoints(const std::vector<V3D_4> &points);
+        void RemovePointsFarFromLocation(const V3D_4 &origin);
+        std::vector<V3D_4> Pointcloud() const;
 
         double voxel_size_, inv_voxel_size_;
         double max_distance_;

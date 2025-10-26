@@ -9,9 +9,9 @@
 namespace p2p
 {
     /// Voxelize point cloud keeping the original coordinates
-    std::vector<V3D> VoxelDownsample(const std::vector<V3D> &frame, double voxel_size);
+    std::vector<V3D_4> VoxelDownsample(const std::vector<V3D_4> &frame, double voxel_size);
 
-    std::vector<V3D> VoxelDownsample(const PointCloudXYZI::Ptr &frame, double voxel_size);
+    std::vector<V3D_4> VoxelDownsample(const PointCloudXYZI::Ptr &frame, double voxel_size);
 
 } // namespace p2p
 

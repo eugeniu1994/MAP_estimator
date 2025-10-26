@@ -14,23 +14,25 @@ namespace Eigen
     using Vector6d = Eigen::Matrix<double, state_size, 1>;
 } // namespace Eigen
 
+#define use_motion_correction_uncertainty
+
 namespace
 {
 
-struct landmark
-{
-    int map_point_index;   // index of the point from the reference map
-    int cloud_point_index; // index pf the points from the cloud
-    V3D norm;              // the normal of the plane in global frame (normalized)
-    double d;              // d parameter of the plane
-    double var;            // plane measurement variance
+    struct landmark
+    {
+        int map_point_index;   // index of the point from the reference map
+        int cloud_point_index; // index pf the points from the cloud
+        V3D_4 norm;            // the normal of the plane in global frame (normalized)
+        double d;              // d parameter of the plane
+        double var;            // plane measurement variance
+        V3D_4 tgt;
+    };
 
-    V3D tgt;
-};
+    static std::vector<landmark> global_landmarks(100000);
+    static std::vector<bool> global_valid(100000, false);
 
-
-static std::vector<landmark> global_landmarks(100000);
-static std::vector<bool> global_valid(100000, false);
+    double max_displacement = 0.0, inv_max_displacement = 1.0;
 
     inline double square(double x) { return x * x; }
 
@@ -57,9 +59,33 @@ static std::vector<bool> global_valid(100000, false);
         double cost;
     };
 
+    double ComputePointWeight(double sensor_stddev, double displacement)
+    {
+        // Total uncertainty = sensor noise + motion correction uncertainty
+        double motion_stddev = displacement / 3.0; // Convert max displacement to stddev
+
+        // Combined standard deviation
+        double total_stddev = std::sqrt(sensor_stddev * sensor_stddev + motion_stddev * motion_stddev);
+
+        // Weight is inverse of variance (information)
+        double variance = total_stddev * total_stddev;
+        return 1.0 / variance; // w = 1/σ²
+    }
+
+    // auto AdaptiveWeight = [&](double residual2, double displacement) {
+    //     double sensor_stddev = 0.01;
+    //     double motion_stddev = displacement / 3.0;
+    //     double total_stddev = std::sqrt(sensor_stddev * sensor_stddev + motion_stddev * motion_stddev);
+
+    //     // Scale kernel by uncertainty - points with higher uncertainty get larger kernels (more tolerant)
+    //     double adaptive_kernel = kernel * (1.0 + total_stddev * 10.0);  // Adjust scaling factor as needed
+
+    //     return square(adaptive_kernel) / square(adaptive_kernel + residual2);
+    // };
+
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d> BuildLinearSystem(
-        const std::vector<V3D> &source,
-        const std::vector<V3D> &target,
+        const std::vector<V3D_4> &source,
+        const std::vector<V3D_4> &target,
         const double kernel)
 
     {
@@ -90,10 +116,20 @@ static std::vector<bool> global_valid(100000, false);
                 for (auto i = r.begin(); i < r.end(); ++i)
                 {
                     const auto &[J_r, residual] = compute_jacobian_and_residual(i);
-                    double w = Weight(residual.squaredNorm());
 
-                    JTJ_private.noalias() += J_r.transpose() * w * J_r;
-                    JTr_private.noalias() += J_r.transpose() * w * residual;
+                    double w_robust = Weight(residual.squaredNorm());
+
+#ifdef use_motion_correction_uncertainty
+                    // double w_uncertainty = ComputePointWeight(0.01, source[i].displacement);
+                    //  Fast normalized uncertainty weight: 1.0 (best) to near 0 (worst)
+                    double w_uncertainty = 1.0 - (source[i].displacement * inv_max_displacement);
+                    w_uncertainty = std::max(w_uncertainty, 0.01); // Keep minimal weight
+                    double total_weight = w_robust * w_uncertainty;
+#else
+                    double total_weight = w_robust;
+#endif
+                    JTJ_private.noalias() += J_r.transpose() * total_weight * J_r;
+                    JTr_private.noalias() += J_r.transpose() * total_weight * residual;
                     cost_private += residual.norm();
                 }
                 return J;
@@ -104,21 +140,22 @@ static std::vector<bool> global_valid(100000, false);
 
         const auto &[JTJ, JTr, cost] = result;
 
-        //auto normalized_cost = cost/source.size();
-        //std::cout<<"normalized_cost:"<<normalized_cost<<std::endl;
+        // auto normalized_cost = cost/source.size();
+        // std::cout<<"normalized_cost:"<<normalized_cost<<std::endl;
 
         return std::make_tuple(JTJ, JTr);
     }
 
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d> BuildLinearSystem_planes(
-        const std::vector<V3D> &source,
+        const std::vector<V3D_4> &source,
         const std::vector<Eigen::Matrix<double, 4, 1>> &target,
         const double kernel)
 
     {
         auto compute_jacobian_and_residual_points = [&](auto i)
         {
-            const V3D residual = source[i] - target[i].template head<3>();
+            // change here
+            const V3D_4 residual = source[i]; // - target[i].template head<3>();
 
             Eigen::Matrix3_6d J_r;
             J_r.block<3, 3>(0, 0) = Eye3d;                              // df/dt
@@ -129,10 +166,10 @@ static std::vector<bool> global_valid(100000, false);
         auto compute_jacobian_and_residual_planes = [&](auto i)
         {
             const V3D &unit_norm = target[i].template head<3>();
-            auto [H_point_wrt_pose, p2p_residual] = compute_jacobian_and_residual_points(i);  //J:3x6   r:3x1
-            
+            auto [H_point_wrt_pose, p2p_residual] = compute_jacobian_and_residual_points(i); // J:3x6   r:3x1
+
             auto residual = (unit_norm).dot(p2p_residual);
-            //auto residual = (p2p_residual).dot(unit_norm);
+            // auto residual = (p2p_residual).dot(unit_norm);
 
             Eigen::Matrix<double, 1, 6> J_r;
             J_r = (unit_norm.transpose() * H_point_wrt_pose);
@@ -157,7 +194,7 @@ static std::vector<bool> global_valid(100000, false);
         auto Weight = [&](double residual2)
         {
             return square(kernel) / square(kernel + residual2);
-            //return (kernel * kernel) / ((kernel * kernel) + residual2);
+            // return (kernel * kernel) / ((kernel * kernel) + residual2);
         };
 
         // const auto &[JTJ, JTr, cost]
@@ -183,16 +220,16 @@ static std::vector<bool> global_valid(100000, false);
                     // }
                     // else // point to plane
                     // {
-                        const auto &[J_r, residual] = compute_jacobian_and_residual_planes(i);
-                        double w = Weight(residual * residual);
+                    const auto &[J_r, residual] = compute_jacobian_and_residual_planes(i);
+                    double w = Weight(residual * residual);
 
-                        // JTJ_private.noalias() += J_r * w * J_r.transpose();
-                        // JTr_private.noalias() += J_r * w * residual;
+                    // JTJ_private.noalias() += J_r * w * J_r.transpose();
+                    // JTr_private.noalias() += J_r * w * residual;
 
-                        JTJ_private.noalias() += J_r.transpose() * w * J_r;
-                        JTr_private.noalias() += J_r.transpose() * w * residual;
+                    JTJ_private.noalias() += J_r.transpose() * w * J_r;
+                    JTr_private.noalias() += J_r.transpose() * w * residual;
 
-                        cost_private += (residual * residual);
+                    cost_private += (residual * residual);
                     //}
                 }
                 return J;
@@ -206,10 +243,9 @@ static std::vector<bool> global_valid(100000, false);
         return std::make_tuple(JTJ, JTr);
     }
 
-
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d> BuildLinearSystem(
-        const std::vector<V3D> &source,
-        const std::vector<V3D> &target,
+        const std::vector<V3D_4> &source,
+        const std::vector<V3D_4> &target,
         const std::vector<Eigen::Matrix<double, 4, 1>> &plane,
         const double kernel)
 
@@ -221,7 +257,7 @@ static std::vector<bool> global_valid(100000, false);
 
         auto compute_jacobian_and_residual_points = [&](auto i)
         {
-            const V3D residual = source[i] - target[i];
+            const V3D_4 residual = source[i] - target[i];
 
             Eigen::Matrix3_6d J_r;
             J_r.block<3, 3>(0, 0) = Eye3d;                              // df/dt
@@ -234,42 +270,21 @@ static std::vector<bool> global_valid(100000, false);
             V3D unit_norm = plane[i].template head<3>();
             auto d_ = plane[i](3);
 
-            auto [H_point_wrt_pose, p2p_residual] = compute_jacobian_and_residual_points(i);  //J:3x6   r:3x1
+            auto [H_point_wrt_pose, p2p_residual] = compute_jacobian_and_residual_points(i); // J:3x6   r:3x1
 
-            //auto residual = unit_norm.dot(source[i]) + d_;
+            // auto residual = unit_norm.dot(source[i]) + d_;
             auto residual = (unit_norm).dot(p2p_residual);
 
             Eigen::Matrix<double, 1, 6> J_r;
-
             J_r = (unit_norm.transpose() * H_point_wrt_pose);
             return std::make_tuple(J_r, residual);
-
-            //J_r.block<1, 3>(0, 0) = unit_norm.transpose();  //derivative w.r.t to translation 
-            //J_r.block<1, 3>(0, 3) = source[i].cross(unit_norm); //derivative w.r.t. rotation 
-
-                    
-            //fails because of the frame in which the src points are
-            // Use rotated point in local frame before computing rotation jacobian.
-            // Eigen::Vector3d p_local = R_T * source[i];
-            // J_r.block<1, 3>(0, 3) = -(p_local.cross(unit_norm)).transpose(); //derivative w.r.t. rotation 
-            
-
-            //M3D point_I_crossmat; //issue here source[i] should be in sensor frame 
-            //point_I_crossmat << SKEW_SYM_MATRX(source[i]);
-            //J_r.block<1, 3>(0, 3) = (point_I_crossmat * (R_T * unit_norm)).transpose(); // R is transposed already
-            //           global = local
-            //(R*p) × unit_norm = p×(R^⊤ * unit_norm)
-
-            //
-
-            //return std::make_tuple(J_r, residual);
         };
 
         auto Weight = [&](double residual2)
         {
-            //return square(kernel) / square(kernel + residual2);
+            // return square(kernel) / square(kernel + residual2);
 
-            return (kernel*kernel) / (kernel*kernel + residual2);
+            return (kernel * kernel) / (kernel * kernel + residual2);
         };
 
         // const auto &[JTJ, JTr, cost]
@@ -285,10 +300,20 @@ static std::vector<bool> global_valid(100000, false);
                 for (auto i = r.begin(); i < r.end(); ++i)
                 {
                     const auto &[J_r, residual] = compute_jacobian_and_residual_planes(i);
-                    double w = Weight(residual * residual);
+                    double w_robust = Weight(residual * residual);
 
-                    JTJ_private.noalias() += J_r.transpose() * w * J_r;
-                    JTr_private.noalias() += J_r.transpose() * w * residual;
+#ifdef use_motion_correction_uncertainty
+                    // double w_uncertainty = ComputePointWeight(0.01, source[i].displacement);
+                    //  Fast normalized uncertainty weight: 1.0 (best) to near 0 (worst)
+                    double w_uncertainty = 1.0 - (source[i].displacement * inv_max_displacement);
+                    w_uncertainty = std::max(w_uncertainty, 0.01); // Keep minimal weight
+                    double total_weight = w_robust * w_uncertainty;
+#else
+                    double total_weight = w_robust;
+#endif
+
+                    JTJ_private.noalias() += J_r.transpose() * total_weight * J_r;
+                    JTr_private.noalias() += J_r.transpose() * total_weight * residual;
 
                     cost_private += (residual * residual);
                 }
@@ -303,9 +328,8 @@ static std::vector<bool> global_valid(100000, false);
         return std::make_tuple(JTJ, JTr);
     }
 
-
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d> BuildLinearSystem(
-        const std::vector<V3D> &source,
+        const std::vector<V3D_4> &source,
         const double kernel)
 
     {
@@ -314,7 +338,7 @@ static std::vector<bool> global_valid(100000, false);
             const landmark &land = global_landmarks[i];
 
             const auto &src = source[land.cloud_point_index];
-            const V3D residual = src - land.tgt;
+            const V3D_4 residual = src - land.tgt;
 
             Eigen::Matrix3_6d J_r;
             J_r.block<3, 3>(0, 0) = Eye3d;                        // df/dt
@@ -325,10 +349,7 @@ static std::vector<bool> global_valid(100000, false);
         auto compute_jacobian_and_residual_planes = [&](auto i)
         {
             const landmark &landmark = global_landmarks[i];
-
-            //V3D unit_norm = plane[i].template head<3>();
-
-            auto [H_point_wrt_pose, p2p_residual] = compute_jacobian_and_residual_points(i);  //J:3x6   r:3x1
+            auto [H_point_wrt_pose, p2p_residual] = compute_jacobian_and_residual_points(i); // J:3x6   r:3x1
 
             auto residual = (p2p_residual).dot(landmark.norm);
 
@@ -340,7 +361,7 @@ static std::vector<bool> global_valid(100000, false);
         auto Weight = [&](double residual2)
         {
             return square(kernel) / square(kernel + residual2);
-            //return (kernel*kernel) / (kernel*kernel + residual2);
+            // return (kernel*kernel) / (kernel*kernel + residual2);
         };
 
         // const auto &[JTJ, JTr]
@@ -355,13 +376,22 @@ static std::vector<bool> global_valid(100000, false);
                 auto &[JTJ_private, JTr_private, cost_private] = J;
                 for (auto i = r.begin(); i < r.end(); ++i)
                 {
-                    if(global_valid[i])
+                    if (global_valid[i])
                     {
                         const auto &[J_r, residual] = compute_jacobian_and_residual_planes(i);
-                        double w = Weight(residual * residual);
+                        double w_robust = Weight(residual * residual);
 
-                        JTJ_private.noalias() += J_r.transpose() * w * J_r;
-                        JTr_private.noalias() += J_r.transpose() * w * residual;
+#ifdef use_motion_correction_uncertainty
+                    // double w_uncertainty = ComputePointWeight(0.01, source[i].displacement);
+                    //  Fast normalized uncertainty weight: 1.0 (best) to near 0 (worst)
+                    double w_uncertainty = 1.0 - (source[i].displacement * inv_max_displacement);
+                    w_uncertainty = std::max(w_uncertainty, 0.01); // Keep minimal weight
+                    double total_weight = w_robust * w_uncertainty;
+#else
+                    double total_weight = w_robust;
+#endif
+                        JTJ_private.noalias() += J_r.transpose() * total_weight * J_r;
+                        JTr_private.noalias() += J_r.transpose() * total_weight * residual;
 
                         cost_private += (residual * residual);
                     }
@@ -377,7 +407,6 @@ static std::vector<bool> global_valid(100000, false);
         return std::make_tuple(JTJ, JTr);
     }
 
-
 } // namespace
 
 #ifdef _OPENMP
@@ -386,7 +415,7 @@ static std::vector<bool> global_valid(100000, false);
 
 namespace p2p
 {
-    Sophus::SE3 RegisterPoint(const std::vector<V3D> &frame,
+    Sophus::SE3 RegisterPoint(const std::vector<V3D_4> &frame,
                               const VoxelHashMap &voxel_map,
                               const Sophus::SE3 &initial_guess,
                               double max_correspondence_distance,
@@ -397,11 +426,26 @@ namespace p2p
             return initial_guess;
         }
 
-        std::vector<V3D> source = frame;
+        std::vector<V3D_4> source = frame;
         TransformPoints(initial_guess, source);
 
         // ICP-loop
         Sophus::SE3 T_icp = Sophus::SE3();
+
+        auto computeMaxDisplacement = [&](const std::vector<V3D_4> &points) -> double {
+            double max_disp = 0.0;
+            #pragma omp parallel for reduction(max : max_disp)
+            for (size_t i = 0; i < points.size(); ++i) {
+                max_disp = std::max(max_disp, points[i].displacement);
+            }
+            // Avoid division by zero
+            if (max_disp < 1e-6) max_disp = 1e-6;
+            std::cout << "max_displacement: " << max_disp << std::endl;
+            return max_disp;
+        };
+
+        double max_displacement = computeMaxDisplacement(source);
+        double inv_max_displacement = 1.0 / max_displacement;
 
         for (int j = 0; j <= MAX_NUM_ITERATIONS_; ++j)
         {
@@ -414,7 +458,7 @@ namespace p2p
             // Termination criteria
             if (dx.norm() < ESTIMATION_THRESHOLD_ || j >= MAX_NUM_ITERATIONS_)
             {
-                std::cout << "Points registered with src:" << src.size() << " in " << j << " iterations " << std::endl;
+                std::cout << "RegisterPoint with src:" << src.size() << " in " << j << " iterations " << std::endl;
                 break;
             }
 
@@ -424,56 +468,69 @@ namespace p2p
         return T_icp * initial_guess; // put in global, using the init guess
     }
 
-
-
     // Numerical Jacobian for pose residual:
     // r(T) = Log( T_meas^{-1} * T )
     // compute J = dr / d(dx) with left-multiplicative update T <- exp(dx) * T
-    Eigen::Matrix<double,6,6> numerical_pose_jacobian(const Sophus::SE3 &T,
-                                               const Sophus::SE3 &Tmeas,
-                                              double eps = 1e-6)
+    Eigen::Matrix<double, 6, 6> numerical_pose_jacobian(const Sophus::SE3 &T,
+                                                        const Sophus::SE3 &Tmeas,
+                                                        double eps = 1e-6)
     {
-        Eigen::Matrix<double,6,6> J;
-        Eigen::Matrix<double,6,1> r0 = ( Tmeas.inverse() * T ).log();
+        Eigen::Matrix<double, 6, 6> J;
+        Eigen::Matrix<double, 6, 1> r0 = (Tmeas.inverse() * T).log();
 
-        for (int k = 0; k < 6; ++k) {
-            Eigen::Matrix<double,6,1> dx = Eigen::Matrix<double,6,1>::Zero();
+        for (int k = 0; k < 6; ++k)
+        {
+            Eigen::Matrix<double, 6, 1> dx = Eigen::Matrix<double, 6, 1>::Zero();
             dx[k] = eps;
-            Sophus::SE3 Tp = Sophus::SE3::exp(dx) * T;           // left update
-            Eigen::Matrix<double,6,1> r_plus = ( Tmeas.inverse() * Tp ).log();
+            Sophus::SE3 Tp = Sophus::SE3::exp(dx) * T; // left update
+            Eigen::Matrix<double, 6, 1> r_plus = (Tmeas.inverse() * Tp).log();
             J.col(k) = (r_plus - r0) / eps;
         }
         return J;
     }
 
-
-    Sophus::SE3 RegisterPointAndGNSS(const Sophus::SE3 &T_measured, const std::vector<V3D> &frame,
-                              const VoxelHashMap &voxel_map,
-                              const Sophus::SE3 &initial_guess,
-                              double max_correspondence_distance,
-                              double kernel)
+    Sophus::SE3 RegisterPointAndGNSS(const Sophus::SE3 &T_measured, const std::vector<V3D_4> &frame,
+                                     const VoxelHashMap &voxel_map,
+                                     const Sophus::SE3 &initial_guess,
+                                     double max_correspondence_distance,
+                                     double kernel)
     {
         if (voxel_map.Empty())
         {
             return initial_guess;
         }
 
-        std::vector<V3D> source = frame;
+        std::vector<V3D_4> source = frame;
         TransformPoints(initial_guess, source);
 
         // ICP-loop
         Sophus::SE3 T_icp = Sophus::SE3();
 
         // Noise parameters
-        //double lidar_point_std_ = 0.01;    // 1cm for LiDAR points
+        // double lidar_point_std_ = 0.01;    // 1cm for LiDAR points
         double se3_trans_std_ = .2;               // 1 m for SE3 translation
         double se3_rot_std_ = 5.0 * M_PI / 180.0; // 5 degree for rotation
 
         Eigen::Matrix<double, 6, 6> se3_info_matrix_;
         // SE3 information matrix - block diagonal for rotation and translation
         se3_info_matrix_.setZero();
-        se3_info_matrix_.block<3,3>(0,0) = Eigen::Matrix3d::Identity() / (se3_trans_std_ * se3_trans_std_);
-        se3_info_matrix_.block<3,3>(3,3) = Eigen::Matrix3d::Identity() / (se3_rot_std_ * se3_rot_std_);
+        se3_info_matrix_.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity() / (se3_trans_std_ * se3_trans_std_);
+        se3_info_matrix_.block<3, 3>(3, 3) = Eigen::Matrix3d::Identity() / (se3_rot_std_ * se3_rot_std_);
+
+        auto computeMaxDisplacement = [&](const std::vector<V3D_4> &points) -> double {
+            double max_disp = 0.0;
+            #pragma omp parallel for reduction(max : max_disp)
+            for (size_t i = 0; i < points.size(); ++i) {
+                max_disp = std::max(max_disp, points[i].displacement);
+            }
+            // Avoid division by zero
+            if (max_disp < 1e-6) max_disp = 1e-6;
+            std::cout << "max_displacement: " << max_disp << std::endl;
+            return max_disp;
+        };
+
+        double max_displacement = computeMaxDisplacement(source);
+        double inv_max_displacement = 1.0 / max_displacement;
 
         for (int j = 0; j <= MAX_NUM_ITERATIONS_; ++j)
         {
@@ -488,16 +545,17 @@ namespace p2p
             H = JTJ;
             b = JTr;
             {
-                //T_current, T_gnss, 
+                // T_current, T_gnss,
                 auto T_current = T_icp * initial_guess;
 
                 Eigen::Matrix<double, 6, 1> r_gnss = (T_current.inverse() * T_measured).log();
                 Eigen::Matrix<double, 6, 6> J_gnss;
-                                
-                r_gnss = ( T_measured.inverse() * T_current ).log(); // 6x1
+
+                r_gnss = (T_measured.inverse() * T_current).log(); // 6x1
                 J_gnss = numerical_pose_jacobian(T_current, T_measured, 1e-6);
-                std::cout<<"numerical_pose_jacobian:\n"<<J_gnss<<std::endl;
-                //J_gnss.setIdentity();
+                std::cout << "numerical_pose_jacobian:\n"
+                          << J_gnss << std::endl;
+                // J_gnss.setIdentity();
 
                 Eigen::Matrix6d H_se3;
                 Eigen::Vector6d g_se3;
@@ -509,9 +567,7 @@ namespace p2p
                 b = JTr + g_se3;
             }
 
-
-
-            const Eigen::Vector6d dx = H.ldlt().solve(-b);   // translation and rotation perturbations
+            const Eigen::Vector6d dx = H.ldlt().solve(-b);       // translation and rotation perturbations
             const Sophus::SE3 estimation = Sophus::SE3::exp(dx); // this is in local-align init guess to map
             T_icp = estimation * T_icp;                          // the amount of correction starting from init guess
 
@@ -528,10 +584,7 @@ namespace p2p
         return T_icp * initial_guess; // put in global, using the init guess
     }
 
-
-
-
-    Sophus::SE3 RegisterPlane(const std::vector<V3D> &frame,
+    Sophus::SE3 RegisterPlane(const std::vector<V3D_4> &frame,
                               const VoxelHashMap &voxel_map,
                               const Sophus::SE3 &initial_guess,
                               double max_correspondence_distance,
@@ -542,7 +595,7 @@ namespace p2p
             return initial_guess;
         }
 
-        std::vector<V3D> source = frame;
+        std::vector<V3D_4> source = frame;
         TransformPoints(initial_guess, source);
 
         // ICP-loop
@@ -550,7 +603,7 @@ namespace p2p
         int max_iter_ = 25;
         for (int j = 0; j <= max_iter_; ++j)
         {
-            //auto R = (T_icp * initial_guess).so3().matrix().transpose();
+            // auto R = (T_icp * initial_guess).so3().matrix().transpose();
 
             const auto &[src, tgt] = voxel_map.GetPlaneCorrespondences(source, max_correspondence_distance);
             const auto &[JTJ, JTr] = BuildLinearSystem_planes(src, tgt, kernel);
@@ -572,13 +625,13 @@ namespace p2p
     }
 
     constexpr double MAX_SQ_DIST = 1.0;
-    //std::tuple<std::vector<V3D>, std::vector<V3D>, std::vector<Eigen::Matrix<double, 4, 1>>>
-    void establishCorrespondences(const std::vector<V3D> &frame,
-                             const pcl::PointCloud<PointType>::Ptr &map,
-                             const pcl::KdTreeFLANN<PointType>::Ptr &tree)
+    // std::tuple<std::vector<V3D_4>, std::vector<V3D_4>, std::vector<Eigen::Matrix<double, 4, 1>>>
+    void establishCorrespondences(const std::vector<V3D_4> &frame,
+                                  const pcl::PointCloud<PointType>::Ptr &map,
+                                  const pcl::KdTreeFLANN<PointType>::Ptr &tree)
     {
-        // std::vector<V3D> src_points;
-        // std::vector<V3D> tgt_points;
+        // std::vector<V3D_4> src_points;
+        // std::vector<V3D_4> tgt_points;
         // std::vector<Eigen::Matrix<double, 4, 1>> plane_coeffs;
 
         // src_points.reserve(frame.size());
@@ -592,7 +645,7 @@ namespace p2p
         {
             global_valid[i] = false;
 
-            const V3D &p_src = frame[i];
+            const V3D_4 &p_src = frame[i];
             PointType point_world;
             point_world.x = p_src.x();
             point_world.y = p_src.y();
@@ -606,7 +659,7 @@ namespace p2p
                 if (pointSearchSqDis.back() <= MAX_SQ_DIST)
                 {
                     const auto &p_tgt = map->points[pointSearchInd[0]];
-                    V3D tgt_point(p_tgt.x, p_tgt.y, p_tgt.z);
+                    V3D_4 tgt_point(p_tgt.x, p_tgt.y, p_tgt.z);
 
                     PointVector points_near;
                     std::vector<double> point_weights;
@@ -618,28 +671,27 @@ namespace p2p
                         point_weights.push_back(1.);
                     }
 
-
-                    double plane_threshold = .1; 
+                    double plane_threshold = .1;
 
                     // plane coefficients [nx, ny, nz, d]
                     Eigen::Matrix<double, 4, 1> pabcd;
-//                     if (ekf::esti_plane(pabcd, points_near, plane_threshold)) // good plane
-//                     {
-// #pragma omp critical
-//                         {
-//                             src_points.push_back(p_src);
-//                             tgt_points.push_back(tgt_point);
-//                             plane_coeffs.push_back(pabcd);
-//                         }
-//                     }
+                    //                     if (ekf::esti_plane(pabcd, points_near, plane_threshold)) // good plane
+                    //                     {
+                    // #pragma omp critical
+                    //                         {
+                    //                             src_points.push_back(p_src);
+                    //                             tgt_points.push_back(tgt_point);
+                    //                             plane_coeffs.push_back(pabcd);
+                    //                         }
+                    //                     }
 
                     double plane_var = 0;
-                    if (ekf::esti_plane(pabcd, points_near, plane_threshold)) 
+                    if (ekf::esti_plane(pabcd, points_near, plane_threshold))
                     {
                         landmark l;
                         l.map_point_index = pointSearchInd[0];
                         l.cloud_point_index = i;
-                        l.norm = V3D(pabcd(0), pabcd(1), pabcd(2));
+                        l.norm = V3D_4(pabcd(0), pabcd(1), pabcd(2));
                         l.d = pabcd(3);
                         l.var = plane_var;
 
@@ -652,10 +704,10 @@ namespace p2p
             }
         }
 
-       // return {src_points, tgt_points, plane_coeffs};
+        // return {src_points, tgt_points, plane_coeffs};
     }
 
-    Sophus::SE3 RegisterPlane(const std::vector<V3D> &frame,
+    Sophus::SE3 RegisterPlane(const std::vector<V3D_4> &frame,
                               const PointCloudXYZI::Ptr &map,
                               const pcl::KdTreeFLANN<PointType>::Ptr &tree,
                               const Sophus::SE3 &initial_guess,
@@ -664,58 +716,68 @@ namespace p2p
     {
         std::cout << "icp update ALS" << std::endl;
 
-        std::vector<V3D> source = frame;
+        std::vector<V3D_4> source = frame;
         TransformPoints(initial_guess, source); // transformed to map frame
 
+        // required modification
 
-        // required modification 
-
-        // do not transform all the source points 
-        //     do the transformation in the NN search - return the transformed ones 
-        // in the establish correspondences - keep a predifined global landmarks and re-used them 
-        // check for convergence when to update the DA correspondences 
+        // do not transform all the source points
+        //     do the transformation in the NN search - return the transformed ones
+        // in the establish correspondences - keep a predifined global landmarks and re-used them
+        // check for convergence when to update the DA correspondences
         //     similar to iekf
-        //     do register untill no more changes - then proceed with update DA 
-        // everything for 5 iterations only 
+        //     do register untill no more changes - then proceed with update DA
+        // everything for 5 iterations only
 
-        // ICP-loop 
+        // ICP-loop
         Sophus::SE3 T_icp = Sophus::SE3();
         int max_iter_ = 50;
 
-        constexpr double MAX_SQ_DIST = 1.0;
+        auto computeMaxDisplacement = [&](const std::vector<V3D_4> &points) -> double {
+            double max_disp = 0.0;
+            #pragma omp parallel for reduction(max : max_disp)
+            for (size_t i = 0; i < points.size(); ++i) {
+                max_disp = std::max(max_disp, points[i].displacement);
+            }
+            // Avoid division by zero
+            if (max_disp < 1e-6) max_disp = 1e-6;
+            std::cout << "max_displacement: " << max_disp << std::endl;
+            return max_disp;
+        };
+
+        double max_displacement = computeMaxDisplacement(source);
+        double inv_max_displacement = 1.0 / max_displacement;
 
         for (int j = 0; j <= max_iter_; ++j)
         {
-            //auto R_T = (T_icp * initial_guess).so3().matrix().transpose();
-            //const auto &[src, tgt, planes] = establishCorrespondences(source, map, tree);
+            // const auto &[src, tgt, planes] = establishCorrespondences(source, map, tree);
 
             establishCorrespondences(source, map, tree);
 
             // std::cout<<"src:"<<src.size()<<", tgt:"<<tgt.size()<<", planes:"<<planes.size()<<std::endl;
-            //if(src.size() > 0)
+            // if(src.size() > 0)
             //{
-                //const auto &[JTJ, JTr] = BuildLinearSystem(src, tgt, planes, kernel, R_T);
 
-                const auto &[JTJ, JTr] = BuildLinearSystem(source, kernel);
+            const auto &[JTJ, JTr] = BuildLinearSystem(source, kernel);
 
-                //const Eigen::Vector6d dx = JTJ.ldlt().solve(-JTr);   // translation and rotation perturbations
-                double lambda = 1e-6;
-                Eigen::Matrix6d JTJ_damped = JTJ;
-                JTJ_damped += lambda * Eigen::Matrix6d::Identity();
-                Eigen::Vector6d dx = JTJ_damped.ldlt().solve(-JTr);
+            // const Eigen::Vector6d dx = JTJ.ldlt().solve(-JTr);   // translation and rotation perturbations
+            double lambda = 1e-6;
+            Eigen::Matrix6d JTJ_damped = JTJ;
+            JTJ_damped += lambda * Eigen::Matrix6d::Identity();
+            Eigen::Vector6d dx = JTJ_damped.ldlt().solve(-JTr);
 
-                const Sophus::SE3 estimation = Sophus::SE3::exp(dx); // this is in local-align init guess to map
-                T_icp = estimation * T_icp;                          // the amount of correction starting from init guess
+            const Sophus::SE3 estimation = Sophus::SE3::exp(dx); // this is in local-align init guess to map
+            T_icp = estimation * T_icp;                          // the amount of correction starting from init guess
 
-                // Termination criteria
-                if (dx.norm() < ESTIMATION_THRESHOLD_ || j >= max_iter_)
-                {
-                    //std::cout<<"src:"<<src.size()<<", tgt:"<<tgt.size()<<", planes:"<<planes.size()<<std::endl;
-                    std::cout << "RegisterPlane with source:" << source.size() << " in " << j << " iterations " << std::endl;
-                    break;
-                }
+            // Termination criteria
+            if (dx.norm() < ESTIMATION_THRESHOLD_ || j >= max_iter_)
+            {
+                // std::cout<<"src:"<<src.size()<<", tgt:"<<tgt.size()<<", planes:"<<planes.size()<<std::endl;
+                std::cout << "RegisterPlane with source:" << source.size() << " in " << j << " iterations " << std::endl;
+                break;
+            }
 
-                TransformPoints(estimation, source);
+            TransformPoints(estimation, source);
             // }
             // else
             // {
@@ -727,40 +789,52 @@ namespace p2p
         return T_icp * initial_guess; // put in global, using the init guess;
     }
 
-
-
-    Sophus::SE3 RegisterTightly(const std::vector<V3D> &frame,
+    Sophus::SE3 RegisterTightly(const std::vector<V3D_4> &frame,
                                 const VoxelHashMap &mls_map,
-                                const PointCloudXYZI::Ptr &als_map, 
+                                const PointCloudXYZI::Ptr &als_map,
                                 const pcl::KdTreeFLANN<PointType>::Ptr &als_tree,
                                 const Sophus::SE3 &initial_guess,
                                 double max_correspondence_distance,
                                 double kernel)
-    
+
     {
         if (mls_map.Empty())
         {
             return initial_guess;
         }
 
-        std::vector<V3D> source = frame;
+        std::vector<V3D_4> source = frame;
         TransformPoints(initial_guess, source);
 
         double lambda = 1e-6;
 
         Sophus::SE3 T_icp = Sophus::SE3();
+
+        auto computeMaxDisplacement = [&](const std::vector<V3D_4> &points) -> double {
+            double max_disp = 0.0;
+            #pragma omp parallel for reduction(max : max_disp)
+            for (size_t i = 0; i < points.size(); ++i) {
+                max_disp = std::max(max_disp, points[i].displacement);
+            }
+            // Avoid division by zero
+            if (max_disp < 1e-6) max_disp = 1e-6;
+            std::cout << "max_displacement: " << max_disp << std::endl;
+            return max_disp;
+        };
+
+        double max_displacement = computeMaxDisplacement(source);
+        double inv_max_displacement = 1.0 / max_displacement;
+
         for (int j = 0; j <= MAX_NUM_ITERATIONS_; ++j)
         {
-            //MLS correspondences & contribution
+            // MLS correspondences & contribution
             const auto &[src_mls, tgt_mls] = mls_map.GetPointCorrespondences(source, max_correspondence_distance);
             const auto &[JTJ_mls, JTr_mls] = BuildLinearSystem(src_mls, tgt_mls, kernel);
 
-            //ALS correspondences & contribution
+            // ALS correspondences & contribution
             establishCorrespondences(source, als_map, als_tree);
             const auto &[JTJ_als, JTr_als] = BuildLinearSystem(source, kernel);
-            
 
-            
             Eigen::Matrix6d JTJ_damped = JTJ_mls + JTJ_als;
             JTJ_damped.noalias() += lambda * Eigen::Matrix6d::Identity();
             Eigen::Vector6d JTr; // state_size x 1
@@ -768,8 +842,8 @@ namespace p2p
             JTr = JTr_mls + JTr_als;
 
             const Eigen::Vector6d dx = JTJ_damped.ldlt().solve(-JTr); // translation and rotation perturbations
-            const Sophus::SE3 estimation = Sophus::SE3::exp(dx); // this is in local-align init guess to map
-            T_icp = estimation * T_icp;                          // the amount of correction starting from init guess
+            const Sophus::SE3 estimation = Sophus::SE3::exp(dx);      // this is in local-align init guess to map
+            T_icp = estimation * T_icp;                               // the amount of correction starting from init guess
 
             // Termination criteria
             if (dx.norm() < ESTIMATION_THRESHOLD_ || j >= MAX_NUM_ITERATIONS_)

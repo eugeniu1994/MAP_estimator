@@ -11,7 +11,7 @@
 class ICP : public Estimator
 {
 public:
-    using Vector3dVector = std::vector<V3D>;
+    using Vector3dVector = std::vector<V3D_4>;
     using Vector3dVectorTuple = std::tuple<Vector3dVector, Vector3dVector>;
     typedef Eigen::Matrix<double, 6, 6> Matrix6d;
 
@@ -24,14 +24,14 @@ public:
     ICP() : ICP(Config{}) {}
     ~ICP() {}
 
-    bool update(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_, bool p2p_ = true, bool save_nn=false);
-    bool update(const Sophus::SE3 &gnss, const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_);
+    bool update(const std::vector<V3D_4> &src, const p2p::VoxelHashMap &local_map_, bool p2p_ = true, bool save_nn=false);
+    bool update(const Sophus::SE3 &gnss, const std::vector<V3D_4> &src, const p2p::VoxelHashMap &local_map_);
 
-    bool update_tightlyCoupled(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree);
+    bool update_tightlyCoupled(const std::vector<V3D_4> &src, const p2p::VoxelHashMap &local_map_, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree);
 
-    bool update_refine(const std::vector<V3D> &src, const p2p::VoxelHashMap &local_map_);
+    bool update_refine(const std::vector<V3D_4> &src, const p2p::VoxelHashMap &local_map_);
 
-    bool update(const std::vector<V3D> &src, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree);
+    bool update(const std::vector<V3D_4> &src, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree);
    
     void LocalMap(PointCloudXYZI::Ptr &map_points) const;
     std::vector<Sophus::SE3> poses() const { return poses_; };

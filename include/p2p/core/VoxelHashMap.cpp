@@ -15,8 +15,8 @@ namespace
             source.reserve(n);
             target.reserve(n);
         }
-        std::vector<V3D> source;
-        std::vector<V3D> target;
+        std::vector<V3D_4> source;
+        std::vector<V3D_4> target;
     };
 
     struct ResultPlaneTuple
@@ -26,7 +26,7 @@ namespace
             source.reserve(n);
             target.reserve(n);
         }
-        std::vector<V3D> source;
+        std::vector<V3D_4> source;
         std::vector<Eigen::Matrix<double, 4, 1>> target;
     };
 
@@ -75,7 +75,7 @@ namespace
     struct Neighbor
     {
         double distance;
-        V3D point;
+        V3D_4 point;
 
         // Custom comparison operator to make the priority queue a max-heap by distance
         bool operator<(const Neighbor &other) const
@@ -92,7 +92,7 @@ namespace p2p
         const Vector3dVector &points, double max_correspondance_distance) const
     {
         // Lambda Function to obtain the KNN of one point, maybe refactor
-        auto GetClosestNeighboor = [&](const V3D &point)
+        auto GetClosestNeighboor = [&](const V3D_4 &point)
         {
             const auto &voxel = PointToVoxel(point, inv_voxel_size_);
             size_t current_index = 0;
@@ -108,14 +108,14 @@ namespace p2p
                 }
             }
 
-            V3D closest_neighbor = Zero3d;
+            V3D_4 closest_neighbor = Zero3d;
             double closest_distance2 = std::numeric_limits<double>::max(), distance;
             std::for_each(voxels.cbegin(), voxels.cend(), [&](const auto &query_voxel)
                           {
                 auto search = map_.find(query_voxel);
                 if (search != map_.end()) {
                     const auto &points = search->second.points;
-                    const V3D &neighbor = *std::min_element(
+                    const V3D_4 &neighbor = *std::min_element(
                         points.cbegin(), points.cend(), [&](const auto &lhs, const auto &rhs) {
                             return (lhs - point).squaredNorm() < (rhs - point).squaredNorm();
                         });
@@ -129,7 +129,7 @@ namespace p2p
             return std::make_tuple(closest_neighbor, closest_distance2);
         };
 
-        using points_iterator = std::vector<V3D>::const_iterator;
+        using points_iterator = std::vector<V3D_4>::const_iterator;
         double max_correspondance_distance_2 = max_correspondance_distance * max_correspondance_distance;
         const auto [source, target] = tbb::parallel_reduce(
             // Range
@@ -169,9 +169,9 @@ namespace p2p
         return std::make_tuple(source, target);
     }
 
-    std::vector<V3D> VoxelHashMap::Pointcloud() const
+    std::vector<V3D_4> VoxelHashMap::Pointcloud() const
     {
-        std::vector<V3D> points; // try to use index here
+        std::vector<V3D_4> points; // try to use index here
         points.reserve(max_points_per_voxel_ * map_.size());
         for (const auto &[voxel, voxel_block] : map_)
         {
@@ -184,7 +184,7 @@ namespace p2p
         return points;
     }
 
-    void VoxelHashMap::Update(const Vector3dVector &points, const V3D &origin)
+    void VoxelHashMap::Update(const Vector3dVector &points, const V3D_4 &origin)
     {
         AddPoints(points);
 
@@ -200,11 +200,11 @@ namespace p2p
     {
         Vector3dVector points_transformed = points;
         TransformPoints(pose, points_transformed);
-        const V3D &origin = pose.translation();
+        const V3D_4 &origin = pose.translation();
         Update(points_transformed, origin);
     }
 
-    void VoxelHashMap::AddPoints(const std::vector<V3D> &points)
+    void VoxelHashMap::AddPoints(const std::vector<V3D_4> &points)
     {
         std::cout << "ALS map AddPoints: " << points.size() << std::endl;
         for (int i = 0; i < points.size(); i++)
@@ -224,7 +224,7 @@ namespace p2p
         }
     }
 
-    void VoxelHashMap::RemovePointsFarFromLocation(const V3D &origin)
+    void VoxelHashMap::RemovePointsFarFromLocation(const V3D_4 &origin)
     {
         std::cout << "RemovePointsFarFromLocation:" << std::endl;
         const auto max_distance2 = max_distance_ * max_distance_;
@@ -242,7 +242,7 @@ namespace p2p
         const Vector3dVector &points, double max_correspondance_distance) const
     {
         // Lambda Function to obtain the KNN of one point
-        auto GetClosestNeighboor = [&](const V3D &point, const double &max_sq_dist)
+        auto GetClosestNeighboor = [&](const V3D_4 &point, const double &max_sq_dist)
         {
             const auto &voxel = PointToVoxel(point, inv_voxel_size_);
             size_t current_index = 0;
@@ -303,7 +303,7 @@ namespace p2p
                 else
                 {
                     rv = false; // this does not use p2p yet
-                    const V3D &closest = plane.front();
+                    const V3D_4 &closest = plane.front();
                     pabcd(0) = closest.x();
                     pabcd(1) = closest.y();
                     pabcd(2) = closest.z();
@@ -315,7 +315,7 @@ namespace p2p
             return std::make_tuple(pabcd, rv);
         };
 
-        using points_iterator = std::vector<V3D>::const_iterator;
+        using points_iterator = std::vector<V3D_4>::const_iterator;
         double max_correspondance_distance_2 = max_correspondance_distance * max_correspondance_distance;
         const auto [source, target] = tbb::parallel_reduce(
             // Range

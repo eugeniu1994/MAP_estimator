@@ -8,7 +8,7 @@ using namespace p2p;
 
 void ICP::LocalMap(PointCloudXYZI::Ptr &map_points) const
 {
-    const std::vector<V3D> &eigen_cloud = local_map_.Pointcloud();
+    const std::vector<V3D_4> &eigen_cloud = local_map_.Pointcloud();
     Eigen2PCL(map_points, eigen_cloud);
 };
 
@@ -42,6 +42,14 @@ double ICP::GetAdaptiveThreshold()
         return config_.initial_threshold;
     }
     return adaptive_threshold_.ComputeThreshold();
+}
+
+double ComputeDisplacement(const Sophus::SE3 &corrected_distortion, double max_range)
+{
+    const double theta = Eigen::AngleAxisd(corrected_distortion.rotation_matrix()).angle();
+    const double delta_rot = 2.0 * max_range * std::sin(theta / 2.0);
+    const double delta_trans = corrected_distortion.translation().norm();
+    return delta_trans + delta_rot;
 }
 
 ICP::Vector3dVectorTuple ICP::Voxelize(PointCloudXYZI::Ptr &frame, bool deskew) const
@@ -81,12 +89,16 @@ ICP::Vector3dVectorTuple ICP::Voxelize(PointCloudXYZI::Ptr &frame, bool deskew) 
             const auto motion = Sophus::SE3::exp((frame->points[i].time - first_point_time - mid_) * delta_pose_dt);
             //const auto motion = Sophus::SE3::exp((timestamps[i] - mid_pose_timestamp) * delta_pose);
 
-            V3D P_i(frame->points[i].x, frame->points[i].y, frame->points[i].z);
-            V3D P_compensate = motion * P_i;
+            V3D_4 P_i(frame->points[i].x, frame->points[i].y, frame->points[i].z);
+            V3D_4 P_compensate = motion * P_i;
             
             frame->points[i].x = P_compensate(0);
             frame->points[i].y = P_compensate(1);
-            frame->points[i].z = P_compensate(2); });
+            frame->points[i].z = P_compensate(2); 
+            
+            double displacement = ComputeDisplacement(motion, P_i.norm());
+            frame->points[i].intensity = displacement;
+        });
 
         const auto &frame_downsample = p2p::VoxelDownsample(frame, voxel_size * 0.5);
         const auto &source = p2p::VoxelDownsample(frame_downsample, voxel_size * 1.5);
@@ -97,7 +109,7 @@ ICP::Vector3dVectorTuple ICP::Voxelize(PointCloudXYZI::Ptr &frame, bool deskew) 
     return {source, frame_downsample};
 }
 
-bool ICP::update(const std::vector<V3D> &source, const p2p::VoxelHashMap &local_map_, bool p2p_, bool save_nn)
+bool ICP::update(const std::vector<V3D_4> &source, const p2p::VoxelHashMap &local_map_, bool p2p_, bool save_nn)
 {
     // Compute initial_guess for ICP
     const auto last_pose = !poses_.empty() ? poses_.back() : Sophus::SE3();
@@ -130,7 +142,7 @@ bool ICP::update(const std::vector<V3D> &source, const p2p::VoxelHashMap &local_
     return true;
 }
 
-bool ICP::update_refine(const std::vector<V3D> &source, const p2p::VoxelHashMap &local_map_)
+bool ICP::update_refine(const std::vector<V3D_4> &source, const p2p::VoxelHashMap &local_map_)
 {
     // Compute initial_guess for ICP
     const auto last_pose = !poses_.empty() ? poses_.back() : Sophus::SE3();
@@ -163,7 +175,7 @@ bool ICP::update_refine(const std::vector<V3D> &source, const p2p::VoxelHashMap 
     return true;
 }
 
-bool ICP::update(const std::vector<V3D> &source, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree)
+bool ICP::update(const std::vector<V3D_4> &source, const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree)
 {
     const auto last_pose = !poses_.empty() ? poses_.back() : Sophus::SE3();
 
@@ -188,7 +200,7 @@ bool ICP::update(const std::vector<V3D> &source, const PointCloudXYZI::Ptr &map,
     return true;
 }
 
-bool ICP::update(const Sophus::SE3 &gnss, const std::vector<V3D> &source, const p2p::VoxelHashMap &local_map_)
+bool ICP::update(const Sophus::SE3 &gnss, const std::vector<V3D_4> &source, const p2p::VoxelHashMap &local_map_)
 {
     // Compute initial_guess for ICP
     const auto last_pose = !poses_.empty() ? poses_.back() : Sophus::SE3();
@@ -214,7 +226,7 @@ bool ICP::update(const Sophus::SE3 &gnss, const std::vector<V3D> &source, const 
     return true;
 }
 
-bool ICP::update_tightlyCoupled(const std::vector<V3D> &source, const p2p::VoxelHashMap &local_map_,
+bool ICP::update_tightlyCoupled(const std::vector<V3D_4> &source, const p2p::VoxelHashMap &local_map_,
                                 const PointCloudXYZI::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &tree)
 
 {
@@ -238,8 +250,8 @@ bool ICP::update_tightlyCoupled(const std::vector<V3D> &source, const p2p::Voxel
 
     const auto model_deviation = initial_guess.inverse() * new_pose;
     adaptive_threshold_.UpdateModelDeviation(model_deviation);
-    //poses_.push_back(new_pose);
-    
+    // poses_.push_back(new_pose);
+
     if (!poses_.empty())
     {
         poses_.back() = new_pose; // change the last pose with the one updated from ALS

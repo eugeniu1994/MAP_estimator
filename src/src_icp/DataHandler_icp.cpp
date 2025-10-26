@@ -1258,8 +1258,9 @@ void DataHandler::BagHandler()
                             //estimator_icp.update(frame_downsample, reference_localMap_cloud, refference_kdtree);
                             //
 
+                            //tightly coupled approach 
                             estimator_icp.update_tightlyCoupled(frame_downsample, estimator_icp.local_map_,
-                                reference_localMap_cloud, refference_kdtree);
+                               reference_localMap_cloud, refference_kdtree);
 
                             state_point = estimator_icp.get_x(); // state after registration
                         }
@@ -1466,7 +1467,7 @@ void DataHandler::BagHandler()
 
 
     #ifdef SAVE_DATA
-            bool save = true;
+            bool save = false;// true;
             std::cout << "save_poses:" << save_poses << ", save_clouds_path:" << save_clouds_path << std::endl;
 
             if (save && shift_time_sinc)

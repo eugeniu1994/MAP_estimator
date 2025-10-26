@@ -661,7 +661,11 @@ void TransformPoints(const M3D &R, const V3D &T, PointCloudXYZI::Ptr &points);
 
 void TransformPoints(const Sophus::SE3 &T, std::vector<V3D> &points);
 
+void TransformPoints(const Sophus::SE3 &T, std::vector<V3D_4> &points);
+
 void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D> &eigen_cloud);
+
+void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D_4> &eigen_cloud);
 
 void PCL2EIGEN(const PointCloudXYZI::Ptr &pcl_cloud, std::vector<V3D> &eigen_cloud);
 

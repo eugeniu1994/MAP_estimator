@@ -81,7 +81,7 @@ als:
 
 publish:
     scan_publish_en:  true       # false: close all the point cloud output
-    dense_publish_en:  false       # false: low down the points number in a global-frame point clouds scan.
+    dense_publish_en: true #false       # false: low down the points number in a global-frame point clouds scan.
     
     #for the next make sure that the code is compiled with save option true
     # save_clouds: false           #if this is true it will save the point clouds and their pose
