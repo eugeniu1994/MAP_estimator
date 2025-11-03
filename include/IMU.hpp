@@ -13,6 +13,38 @@
 
 #define MIN_INIT_COUNT (10)
 
+struct AccelNoiseEstimator {
+    const double min_std_ = 0.001;
+
+    int n = 0;
+    V3D mean = V3D::Zero();
+    V3D M2 = V3D::Zero(); // sum of squared diffs
+
+    void update(const V3D& sample) {
+        ++n;
+        V3D delta = sample - mean;
+        mean += delta / n;
+        V3D delta2 = sample - mean;
+        M2 += delta.cwiseProduct(delta2);
+    }
+
+    V3D variance() const {
+        return (n > 1) ? (M2 / (n - 1)).eval() : V3D::Constant(min_std_ * min_std_);
+    }
+
+    V3D stddev() const
+    {
+        return variance().cwiseSqrt().cwiseMax(V3D::Constant(min_std_));
+    }
+
+    M3D covariance() const
+    {
+        V3D stdv = stddev();
+        return stdv.array().square().matrix().asDiagonal();
+    }
+};
+
+
 class IMU_Class
 {
 public:
@@ -20,6 +52,8 @@ public:
 
     IMU_Class();
     ~IMU_Class();
+
+    AccelNoiseEstimator accelNoiseEstimator;
 
     void set_param(const V3D &tran, const M3D &rot, const V3D &gyr, const V3D &acc, const V3D &gyr_bias, const V3D &acc_bias);
     virtual void Process(const MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_un_);

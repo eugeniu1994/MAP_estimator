@@ -88,11 +88,12 @@ public:
 
     state propagete_NO_gravity(const double &dt, const input &i_in);
     
+    state boxplus(state x, vectorized_state f_);
 protected:
     state x_;
     cov P_ = cov::Identity(); // 24X24
 
-    state boxplus(state x, vectorized_state f_);
+    
     vectorized_state boxminus(state x1, state x2);
 };
 

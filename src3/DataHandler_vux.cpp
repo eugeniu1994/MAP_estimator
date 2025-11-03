@@ -737,7 +737,7 @@ void DataHandler::Subscribe()
     // folder_path = "/media/eugeniu/T7/roamer/03_RIEGL_RAW/02_RXP/VUX-1HA-22-2022-A/";
     
     
-#define integrate_vux
+//#define integrate_vux
 //#define integrate_ppk_gnss
     
     #ifdef integrate_vux
@@ -804,15 +804,15 @@ void DataHandler::Subscribe()
         0, 0, 1;
 
     M3D R_vux2mls; // from vux scanner to mls point cloud
-    // R_vux2mls << 0.0064031121, -0.8606533346, -0.5091510953,
-    //     -0.2586398121, 0.4904106092, -0.8322276624,
-    //     0.9659526116, 0.1370155907, -0.2194590626;
-    // V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
+    R_vux2mls << 0.0064031121, -0.8606533346, -0.5091510953,
+        -0.2586398121, 0.4904106092, -0.8322276624,
+        0.9659526116, 0.1370155907, -0.2194590626;
+    V3D t_vux2mls(-0.2238580597, -3.0124498678, -0.8051626709);
     //THE ONE ESTIMATED USING THE ALS POINT CLOUD - this are better based on the point clouds 
-    R_vux2mls << 0.0143844669, -0.8542734617, -0.5196248067,
-                -0.2613330313,  0.4984032661, -0.8266191572,
-                0.9651415098,  0.1476856018, -0.2160806080;
-    V3D t_vux2mls(-0.2772152452, -3.1178620759, -0.8987165442);
+    // R_vux2mls << 0.0143844669, -0.8542734617, -0.5196248067,
+    //             -0.2613330313,  0.4984032661, -0.8266191572,
+    //             0.9651415098,  0.1476856018, -0.2160806080;
+    // V3D t_vux2mls(-0.2772152452, -3.1178620759, -0.8987165442);
     Sophus::SE3 vux2mls_extrinsics = Sophus::SE3(R_vux2mls, t_vux2mls); // refined - vux to mls cloud
 
     Eigen::Matrix4d T_lidar2gnss;

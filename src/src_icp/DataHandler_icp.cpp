@@ -1209,7 +1209,10 @@ void DataHandler::BagHandler()
 
             // redoo the undistortion and voxelization with current velocity
             *feats_undistort = *Measures.lidar;
-            const auto &[source, frame_downsample] = estimator_icp.Voxelize(feats_undistort, deskew, true); // sort now
+            //const auto &[source, frame_downsample] = estimator_icp.Voxelize(feats_undistort, deskew, true); // sort now
+
+            const auto &source = source_;
+            const auto &frame_downsample = frame_downsample_;//test no double-undistortion 
             std::cout << "source:" << source.size() << ", frame_downsample:" << frame_downsample.size() << std::endl;
 
             // use_als = false;// true;
@@ -1261,7 +1264,7 @@ void DataHandler::BagHandler()
                     als_obj->Update(Sophus::SE3(state_point.rot, state_point.pos));
                     {
                         const auto &reference_localMap_cloud = als_obj->als_cloud;
-                        const auto &refference_kdtree = als_obj->localKdTree_map_als;
+                        //const auto &refference_kdtree = als_obj->localKdTree_map_als;
                         // std::cout << "kdtree set input ALS points: " << als_obj->als_cloud->size() << std::endl;
                         int als_cloud_points = reference_localMap_cloud->size();
                         if (als_cloud_points > 100)
@@ -1480,7 +1483,7 @@ void DataHandler::BagHandler()
             prev_lidar_timestamp = Measures.lidar_beg_time;
 
 #ifdef SAVE_DATA
-            bool save = false;// true;
+            bool save =  true;
             std::cout << "save_poses:" << save_poses << ", save_clouds_path:" << save_clouds_path << std::endl;
 
             if (save && shift_time_sinc)
@@ -1536,7 +1539,8 @@ void DataHandler::BagHandler()
 
                         std::string filename = save_clouds_path + "Hesai/" + std::to_string(scan_id) + "_cloud_" + std::to_string(lidar_end_time) + ".pcd";
 
-                        pcl::io::savePCDFile(filename, pl_orig, true); // Binary format
+                        //Put this back
+                        //pcl::io::savePCDFile(filename, pl_orig, true); // Binary format
 
                         const Eigen::Vector3d &t_model = finish_pose.translation();
                         Eigen::Quaterniond q_model(finish_pose.so3().matrix());

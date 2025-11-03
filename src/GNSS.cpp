@@ -81,8 +81,8 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
                 next_msg_time = next_msg_time - first_time;
             }
             double diff_next = fabs(next_msg_time - lidar_end_time);
-            std::cout<<"gps_time:"<<gps_time<<", lidar_end_time:"<<lidar_end_time<<std::endl;
-            std::cout<<"diff_curr_gnss2mls:"<<diff_curr_gnss2mls<<", diff_next:"<<diff_next<<std::endl;
+            //std::cout<<"gps_time:"<<gps_time<<", lidar_end_time:"<<lidar_end_time<<std::endl;
+            //std::cout<<"diff_curr_gnss2mls:"<<diff_curr_gnss2mls<<", diff_next:"<<diff_next<<std::endl;
             if (diff_curr_gnss2mls > diff_next)
             {
                 continue; // continue to go to the next message
@@ -94,7 +94,7 @@ void GNSS::Process(std::deque<gps_common::GPSFix::ConstPtr> &gps_buffer,
         if(true)
         {
             auto gpsTime = msg->time; //this is the actual GPS time  1980-01-06
-            std::cout<<"GPS time from 1980-01-06: "<<gpsTime<<std::endl;
+            //std::cout<<"GPS time from 1980-01-06: "<<gpsTime<<std::endl;
             const int leapSeconds = 18; // Number of leap seconds as of October 2023
             double utcTime = gpsTime - leapSeconds;
             //long totalSeconds = static_cast<long>(utcTime);

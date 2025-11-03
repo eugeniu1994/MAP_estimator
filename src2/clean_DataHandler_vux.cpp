@@ -216,6 +216,8 @@ void DataHandler::local_map_update()
     
     double local_map_radius = 150;// 100;// 75;// ;
     //local_map_radius = 400;
+
+    local_map_radius = 75;// to make it faster
     
     double x_min = state_point.pos.x() - local_map_radius;
     double y_min = state_point.pos.y() - local_map_radius;

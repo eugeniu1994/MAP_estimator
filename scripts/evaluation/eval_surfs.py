@@ -20,15 +20,15 @@ sns.set_context("notebook", font_scale=1.4)  # 1.6 × base font size (~10 by def
 
 # p2plane error, furtherst_d, closest_d, curvature, neighbours in a radius ball 
 methods = {
-    'GNSS-IMU 0': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss0/surface-eval',
-    'GNSS-IMU 1': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss1/surface-eval',
-    'GNSS-IMU 2': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss2/surface-eval',
-    'GNSS-IMU 3': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss3/surface-eval',
+    'GNSS-INS ': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss0/surface-eval',
+    'GNSS-INS + MLS': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss1/surface-eval',
+    'GNSS-INS + D-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss2/surface-eval',
+    'GNSS-INS + S-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss3/surface-eval',
 
-    'Hesai 0': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai0/surface-eval',
-    'Hesai 1': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai1/surface-eval',
-    'Hesai 2': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai2/surface-eval',
-    'Hesai 3': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai3/surface-eval',
+    'Hesai': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai0/surface-eval',
+    'Hesai + MLS': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai1/surface-eval',
+    'Hesai + D-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai2/surface-eval',
+    'Hesai + S-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai3/surface-eval',
 }
 
 lab = ['A','B','C','D','E','F','G','H']
@@ -74,9 +74,9 @@ for label, folder in methods.items():
 
             all_data.append(errors)
 
-            # scans-=1
-            # if scans < 0:
-            #     break
+            scans-=1
+            if scans < 0:
+                break
 
     data[label] = np.vstack(all_data)
 
@@ -138,6 +138,7 @@ def show_stats():
         #plt.xticks(rotation=90)
         #plt.xticks([])
         plt.xticks(lt, lab) 
+        
         if first_got_legend:
             plt.legend().set_visible(False)
             
@@ -195,18 +196,18 @@ def show_stats():
 
     
     # KDE plots for distribution
-    print('draw KDE')
-    for metric_name, col_idx in metrics.items():
-        plt.figure(figsize=(10, 5))
-        for i, label in enumerate(data):
-            sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.3, linestyle = linestyles[i])
-        plt.title(f'Distribution of {metric_name}')
-        plt.xlabel(metric_name)
-        plt.ylabel("Density")
-        plt.legend(title="Method", loc='best')
-        plt.grid(False)
-        plt.tight_layout()
-        plt.draw()
+    # print('draw KDE')
+    # for metric_name, col_idx in metrics.items():
+    #     plt.figure(figsize=(10, 5))
+    #     for i, label in enumerate(data):
+    #         sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.3, linestyle = linestyles[i])
+    #     plt.title(f'Distribution of {metric_name}')
+    #     plt.xlabel(metric_name)
+    #     plt.ylabel("Density")
+    #     plt.legend(title="Method", loc='best')
+    #     plt.grid(False)
+    #     plt.tight_layout()
+    #     plt.draw()
 
     #     break
 
@@ -347,5 +348,5 @@ def show_correlation():
 show_stats()
 plt.draw()
 
-show_correlation()
+# show_correlation()
 plt.show()

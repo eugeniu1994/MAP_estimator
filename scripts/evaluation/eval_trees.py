@@ -13,7 +13,7 @@ font = 18
 plt.rcParams.update({'font.size': font})
 sns.set(style="whitegrid")
 sns.set_context("notebook", font_scale=1.4)  # 1.6 × base font size (~10 by default)
-font = 16
+# font = 16
 
 plt.rcParams.update({'font.size': font})
 plt.rc('axes', titlesize=font)     # Set the font size of the title
@@ -205,7 +205,7 @@ def plot_error_vs_iter_with_injected_rotation():
           ncol = ncol, fancybox=True, shadow=True)
 
     plt.grid(False)
-    plt.show()
+    plt.draw()
 
 plot_error_vs_iter_with_injected_rotation()
 
@@ -437,6 +437,21 @@ methods = {
     'Hesai 3': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai3/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
 }
 
+methods = {
+    'GNSS-INS ': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss0/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'GNSS-INS + MLS': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss1/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'GNSS-INS + D-ALS': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss2/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'GNSS-INS + S-ALS': '/media/eugeniu/T7/las_georeferenced/big_cov_init/gnss3/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+
+    'Hesai': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai0/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'Hesai + MLS': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai1/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'Hesai + D-ALS': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai2/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+    'Hesai + S-ALS': '/media/eugeniu/T7/las_georeferenced/big_cov_init/hesai3/results/Results/Stem_curves/Found_stem_tree_attributes.txt',
+}
+
+
+
+
 lab = ['A','B','C','D','E','F','G','H']
 
 def plot_trees(tree, ref_tree, label, c='green', s=60, marker='o', alpha=0.5):
@@ -502,8 +517,8 @@ for label, data in matches.items():
     #     np.savetxt('/media/eugeniu/T7/las_georeferenced/Ref_ALS_Hesai_fused/results/Results/Stem_curves/xyz_model_hesai0.txt', matched_query, fmt='%.6f', delimiter=',')
 
 
-summarize(abs_errors_dict, "Absolute Errors")
-summarize(rel_errors_dict, "Relative Errors")
+# summarize(abs_errors_dict, "Absolute Errors")
+# summarize(rel_errors_dict, "Relative Errors")
 
 bbox_to_anchor=(0.5, -0.1)
 bbox_to_anchor=(0.5, 1.25)

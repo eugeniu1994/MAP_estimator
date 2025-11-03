@@ -10,7 +10,7 @@
 
     <rosparam command="load" file="$(find s_mls)/config/hesai.yaml" />
 
-    <param name="max_iteration" type="int" value="3" /> <!--3-->
+    <param name="max_iteration" type="int" value="10" /> <!--3 was used so far-->
     <param name="Bag" type="string" value="$(arg bag_file)" />
     
     <param name="filter_size_surf" type="double" value=".5" /> <!-- .5 -->

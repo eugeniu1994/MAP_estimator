@@ -31,6 +31,18 @@ methods = {
     'Hesai 3': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai3/surface-eval',
 }
 
+methods = {
+    'GNSS-INS ': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss0/surface-eval',
+    'GNSS-INS + MLS': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss1/surface-eval',
+    'GNSS-INS + D-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss2/surface-eval',
+    'GNSS-INS + S-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/gnss3/surface-eval',
+
+    'Hesai': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai0/surface-eval',
+    'Hesai + MLS': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai1/surface-eval',
+    'Hesai + D-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai2/surface-eval',
+    'Hesai + S-ALS': '/home/eugeniu/xz_final_clouds/big_cov_init/hesai3/surface-eval',
+}
+
 lab = ['A','B','C','D','E','F','G','H']
 lt = [1, 2, 3, 4, 5, 6, 7, 8]
 
@@ -195,18 +207,18 @@ def show_stats():
 
     
     # KDE plots for distribution
-    print('draw KDE')
-    for metric_name, col_idx in metrics.items():
-        plt.figure(figsize=(10, 5))
-        for i, label in enumerate(data):
-            sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.3, linestyle = linestyles[i])
-        plt.title(f'Distribution of {metric_name}')
-        plt.xlabel(metric_name)
-        plt.ylabel("Density")
-        plt.legend(title="Method", loc='best')
-        plt.grid(False)
-        plt.tight_layout()
-        plt.draw()
+    # print('draw KDE')
+    # for metric_name, col_idx in metrics.items():
+    #     plt.figure(figsize=(10, 5))
+    #     for i, label in enumerate(data):
+    #         sns.kdeplot(data[label][:, col_idx], label=label, fill=True, bw_adjust=0.3, linestyle = linestyles[i])
+    #     plt.title(f'Distribution of {metric_name}')
+    #     plt.xlabel(metric_name)
+    #     plt.ylabel("Density")
+    #     plt.legend(title="Method", loc='best')
+    #     plt.grid(False)
+    #     plt.tight_layout()
+    #     plt.draw()
 
     #     break
 
@@ -252,7 +264,7 @@ def show_stats():
         cdf_gnss = np.linspace(0, 1, len(avg_values_gnss))
         cdf_hesai = np.linspace(0, 1, len(avg_values_hesa))
         
-        plt.plot(avg_values_gnss, cdf_gnss, label="avg GNSS-IMU")
+        plt.plot(avg_values_gnss, cdf_gnss, label="avg GNSS-INS")
         plt.plot(avg_values_hesa, cdf_hesai, label="avg Hesai")
 
         #plt.title(f'Cumulative Distribution of {metric_name}')
@@ -344,7 +356,7 @@ def show_correlation():
         plt.draw()
 
 
-show_stats()
+# show_stats()
 plt.draw()
 
 show_correlation()

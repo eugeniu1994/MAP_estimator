@@ -9,8 +9,8 @@
     <param name="max_iteration" type="int" value="3" /> <!--3-->
     <param name="Bag" type="string" value="$(arg bag_file)" />
     
-    <param name="filter_size_surf" type="double" value=".25" /> <!-- .5 -->
-    <param name="filter_size_map" type="double" value=".25" />
+    <param name="filter_size_surf" type="double" value="1" /> <!-- .25 best so far -->
+    <param name="filter_size_map" type="double" value="1" />
     
 
     <node pkg="s_mls" type="icp_test" name="icp_test" output="screen" /> 

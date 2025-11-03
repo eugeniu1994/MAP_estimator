@@ -14,7 +14,7 @@ namespace Eigen
     using Vector6d = Eigen::Matrix<double, state_size, 1>;
 } // namespace Eigen
 
-//#define use_motion_correction_uncertainty
+// #define use_motion_correction_uncertainty
 
 namespace
 {
@@ -346,20 +346,25 @@ namespace
                         //  Fast normalized uncertainty weight: 1.0 (best) to near 0 (worst)
                         // double combined_disp = 0.5 * (local_src[i].displacement + target[i].displacement);
                         double w_uncertainty = 1.0 - (local_src[i].displacement * inv_max_displacement);
-                        //w_uncertainty = std::max(w_uncertainty, 0.01); // Keep minimal weight w_uncertainty = std::clamp(w_uncertainty, 0.1, 1.0);
-                        w_uncertainty = std::max(w_uncertainty, 0.5);
+                        w_uncertainty = std::max(w_uncertainty, 0.01); // Keep minimal weight w_uncertainty = std::clamp(w_uncertainty, 0.1, 1.0);
+                        //w_uncertainty = std::max(w_uncertainty, 0.5);
 
                         double total_weight = w_robust * w_uncertainty;
 
-                        // double motion_stddev = (local_src[i].displacement * inv_max_displacement) / 3.0; // Convert normalized displacement to stddev
-                        // double motion_stddev = .1;  //10cm
-                        // double motion_stddev = .01; //1cm
-                        // double motion_stddev = 1.0; //1m
-                        // double motion_stddev = std::clamp(local_src[i].displacement * inv_max_displacement, 0.05, .95);
+                        // double motion_stddev = std::max(0.01, (local_src[i].displacement * inv_max_displacement) / 3.0); // Convert normalized displacement to stddev
+                        // //double motion_stddev = .01; //1cm
+
                         // double variance = motion_stddev * motion_stddev; // Weight is inverse of variance (information)
                         // Eigen::Matrix<double, 6, 6> C_xi = variance * Eigen::Matrix<double, 6, 6>::Identity();
                         // M3D C_p = J_r * C_xi.transpose() * J_r.transpose();
+
+                        // // Suppose you have covariance in sensor frame
+                        // Eigen::Matrix3d C_local = motion_covariance_for_point(i);  // 3x3 in LiDAR frame
+                        // Eigen::Matrix3d C_map = R_map_sensor * C_local * R_map_sensor.transpose();
+                        // Eigen::Matrix3d W = (C_map + 1e-6 * Eigen::Matrix3d::Identity()).inverse();
+
                         // M3D W = (C_p + 1e-6 * M3D::Identity()).inverse(); // small 3x3 inverse is cheap
+
 #else
                         double total_weight = w_robust;
 #endif

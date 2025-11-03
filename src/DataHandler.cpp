@@ -168,8 +168,8 @@ void DataHandler::local_map_update()
 
     pcl::PointCloud<PointType>::Ptr tmpSurf(new pcl::PointCloud<PointType>());
     
-    //double threshold = 75;
-    double threshold = 150;
+    double threshold = 75;
+    //double threshold = 150;
 
     double x_min = state_point.pos.x() - threshold;
     double y_min = state_point.pos.y() - threshold;

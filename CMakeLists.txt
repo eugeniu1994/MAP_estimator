@@ -258,12 +258,14 @@ target_link_libraries(georeference ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${
 # target_link_libraries(lidar_gnss_extrinsic ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}
 
 
-set(BUILD_ICP TRUE)
+set(BUILD_ICP FALSE) #TRUE
 
 if(BUILD_ICP)
+    #it might require 'catkin_make clean'
     message("Build ICP registration.")
     #add the icp estimator
     if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/include/p2p/)
+        message("Add the p2p source .")
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/include/p2p ${CMAKE_CURRENT_BINARY_DIR}/p2p)
     endif()
 

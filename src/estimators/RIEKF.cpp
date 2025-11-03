@@ -543,6 +543,10 @@ void RIEKF::lidar_observation_model(residual_struct &ekfom_data, PointCloudXYZI:
 bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZI::Ptr &map,
                    std::vector<PointVector> &Nearest_Points, int maximum_iter, bool extrinsic_est)
 {
+
+    std::cout<<"Running standard UPDATE function"<<std::endl;
+
+
     normvec->resize(int(feats_down_body->points.size()));
 
     residual_struct status;
@@ -600,10 +604,8 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZ
         KH.block<state_size, noise_size>(0, 0) = K * H;
         // K*z is positive since z is used as -z
         // K*z + (K*H-I)*(x_-x_pred)
-
         // K​=P*​H^T​(H*​P*​H^T​+Rk​)−1  the standard ekf K gain    K_k = P_k * H_k.T * inv( H_k * P_k * H_k.T + R_k )
         // x = x + (K*(z−h(x)) + (K*H − I)*(x-x_k))   ikf        status.innovation = z−h(x)
-
         // but here K is  K = (H^T*R^−1*H  +  P^−1)*H^T*R^-1
 
         vectorized_state dx_ = K * status.innovation + (KH - cov::Identity()) * dx_new;
@@ -612,7 +614,7 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZ
         status.converge = true;
         for (int j = 0; j < state_size; j++)
         {
-            if (std::fabs(dx_[j]) > ESTIMATION_THRESHOLD_) // If dx_>ESTIMATION_THRESHOLD_ no convergence is considered
+            if (std::fabs(dx_[j]) > ESTIMATION_THRESHOLD_) // If dx_>ESTIMATION_THRESHOLD_ = 0.001 no convergence is considered
             {
                 status.converge = false;
                 break;
@@ -634,7 +636,36 @@ bool RIEKF::update(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZ
         }
     }
 
-    std::cout << "Update in " << iteration_finished << " iterations " << std::endl;
+    std::cout << "Update in " << iteration_finished<<"/"<<maximum_iter << " iterations " << std::endl;
+
+    std::cout<<"\nGravity:"<<x_.grav.transpose()<<", vel:"<<x_.vel.transpose()<<std::endl;
+
+    /*
+    
+
+    check the iterations required, the bias values for both, and the gravity vector - in one file
+    in the second save the estimated pose for evaluation purposes - 
+
+
+    q_model.normalize();
+                        std::ofstream foutMLS(poseSavePath + "MLS.txt", std::ios::app);
+                        //std::ofstream foutMLS(save_clouds_path + "MLS.txt", std::ios::app);
+                        // foutMLS.setf(std::ios::scientific, std::ios::floatfield);
+                        foutMLS.setf(std::ios::fixed, std::ios::floatfield);
+                        foutMLS.precision(20);
+                        // # ' id time tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds, translation and rotation quaternion)
+                        foutMLS << pcd_index << " " << std::to_string(lidar_end_time) << " " << t_model(0) << " " << t_model(1) << " " << t_model(2) << " "
+                                << q_model.x() << " " << q_model.y() << " " << q_model.z() << " " << q_model.w() << std::endl;
+                        foutMLS.close();
+
+    */
+
+
+
+
+
+
+
 
 #ifdef ADAPTIVE_KERNEL
     Sophus::SE3 initial_guess(x_propagated.rot, x_propagated.pos);

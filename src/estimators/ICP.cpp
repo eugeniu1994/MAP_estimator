@@ -149,8 +149,8 @@ ICP::Vector3dVectorTuple ICP::Voxelize(PointCloudXYZI::Ptr &frame, bool deskew, 
             frame->points[i].y = P_compensate(1);
             frame->points[i].z = P_compensate(2); 
             
-            //double displacement = ComputeDisplacement(motion, P_i.norm());
-            //frame->points[i].displacement = displacement;
+            // double displacement = ComputeDisplacement(motion, P_i.norm());
+            // frame->points[i].intensity = displacement;
         });
 
         // if(sort)

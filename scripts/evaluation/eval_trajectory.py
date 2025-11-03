@@ -53,6 +53,7 @@ matplotlib.rc('ytick', labelsize=14)
 from scipy.stats import linregress
 
 font = 16
+label_fontSize = 16
 plt.rcParams.update({'font.size': font})
 plt.rc('axes', titlesize=font)     # Set the font size of the title
 #plt.rc('axes', labelsize=font)     # Set the font size of the x and y labels
@@ -407,10 +408,12 @@ def show_this():
     slope_noise_ape, intercept_b, r_value_b, p_value_b, std_err_b = linregress(c_noise_levels_t, c_trans_ape_model_noise)
 
     plt.plot(c_noise_levels_t, c_trans_ape_model_noise, color='red', linestyle='--', marker='d', markersize=markersize, label=f'Noise translation error (slope={slope_noise_ape:.2f})')
-    plt.plot(c_noise_levels_t, c_trans_ape_model, 'g-o', markersize=markersize,  label=f'Model translation error (slope={slope_model_ape:.2f})')
+    plt.scatter(c_noise_levels_t, c_trans_ape_model, color='g', marker='o', s=markersize**2,  label=f'Model translation error (slope={slope_model_ape:.2f})')
+    fit_line = np.array(c_noise_levels_t) * slope_model_ape + intercept_a
+    plt.plot(c_noise_levels_t, fit_line, color='g', linestyle='--', linewidth=2, label="_nolegend_")
     plt.xticks(c_noise_levels_t)
-    plt.xlabel('Noise level std (cm)')
-    plt.ylabel('Translation APE (cm)')
+    plt.xlabel('Noise level std (cm)', fontsize=label_fontSize)
+    plt.ylabel('Translation APE (cm)', fontsize=label_fontSize)
     #plt.title('Translation Error vs. Noise')
     plt.grid(False)
     #plt.gca().set_aspect('equal')
@@ -422,13 +425,14 @@ def show_this():
     plt.figure()
     #plt.plot(noise_levels_r, rot_ape_model, color='green', linestyle='--', marker='d', label='Rotation (only) Error')
     plt.plot(c_noise_levels_r, c_rot_ape_model_noise, color='red', linestyle='--', marker='d', markersize=markersize, label=f'Noise rotation error (slope={slope_noise_rpe:.2f})')
-    plt.plot(c_noise_levels_r, c_rot_ape_model, 'g-o', markersize=markersize, label=f'Model rotation error (slope={slope_model_rpe:.2f})')
-    plt.xticks(c_noise_levels_r)
-    plt.xlabel('Noise level std (deg)')
-    plt.ylabel('Rotation APE (deg)')
+    plt.scatter(c_noise_levels_r, c_rot_ape_model, color='g', marker='o', s=markersize**2, label=f'Model rotation error (slope={slope_model_rpe:.2f})')
+    fit_line_r = np.array(c_noise_levels_r) * slope_model_rpe + intercept_a
+    plt.plot(c_noise_levels_r, fit_line_r, color='g', linestyle='--', linewidth=2, label="_nolegend_")
 
-    plt.xlabel(r'Noise level std ($^\circ$)')
-    plt.ylabel(r'Rotation APE ($^\circ$)')
+    plt.xticks(c_noise_levels_r)
+
+    plt.xlabel(r'Noise level std ($^\circ$)', fontsize=label_fontSize)
+    plt.ylabel(r'Rotation APE ($^\circ$)', fontsize=label_fontSize)
 
     #plt.title('Rotation Error vs. Noise')
     plt.grid(False)
@@ -451,7 +455,7 @@ def show_this():
     print('Rotation Model is better than Noise by a factor of slope_noise_rpe / slope_model_rpe = ', slope_noise_rpe/slope_model_rpe)
     
     
-
+    plt.show()
 
 show_this()
 
