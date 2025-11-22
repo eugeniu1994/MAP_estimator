@@ -54,6 +54,9 @@ struct ForwardResult
     cov P_pred;     // P_{k|k-1}
     cov P_update;   // P_{k|k}
     cov F;          // State transition Jacobian
+
+    state x_update2;
+    cov P_update2;  
 };
 
 

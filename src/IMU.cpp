@@ -543,6 +543,10 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
         f0.P_pred = kf_state.get_P();
         f0.x_update = kf_state.get_x();
         f0.P_update = kf_state.get_P();
+
+        f0.x_update2 = kf_state.get_x();
+        f0.P_update2 = kf_state.get_P();
+
         forward_results_.push_back(f0);
     }
 
@@ -826,15 +830,23 @@ void IMU_Class::backwardPass(Estimator &kf_state)
     forward_results_[N - 1].x_update = kf_state.get_x();
     forward_results_[N - 1].P_update = kf_state.get_P();
 
-    // Backward recursion
-    for (int k = N - 2; k > 0; k--)
+    forward_results_[N - 1].P_update2 = kf_state.get_P();
+    forward_results_[N - 1].x_update2 = kf_state.get_x();
+
+    auto P_prev = forward_results_[0].P_update;
+    auto P_curr = kf_state.get_P();
+
+    for (int k = 0; k < N; k++)
     {
-        // Predicted covariance at time k classic RTS
-        cov P_k_pred = forward_results_[k].P_pred; // P_{k|k-1}
-
-        // Updated covariance from next timestep
-        // cov P_k_pred = forward_results_[k+1].P_update;  // this fails
-
+        double alpha = static_cast<double>(k) / N;
+        forward_results_[k].P_update2 = (1.0 - alpha) * P_prev + alpha * P_curr;;
+    }
+        
+    // Backward recursion
+    for (int k = N - 2; k >= 0; k--)
+    {
+        // Predicted covariance at time k classic RTS - I need the updated covariance here
+        cov P_k_pred = forward_results_[k].P_pred; // P_{k|k-1} - this will non-zero correction reaching the previous lidar state.
         cov P_k1_pred = forward_results_[k + 1].P_pred; // P_{k+1|k}
         cov F_k1 = forward_results_[k + 1].F;           // F_{k+1}
 
@@ -852,19 +864,24 @@ void IMU_Class::backwardPass(Estimator &kf_state)
         auto predicted_ = forward_results_[k].x_pred;
         auto updated_ = forward_results_[k].x_update;
         auto t_diff = (predicted_.pos - updated_.pos).norm();
-        std::cout << "correction :" << t_diff << std::endl;
+
+        std::cout << "\nk=" << k << " first  correction norm (pos): " << t_diff << std::endl;
+
+        //-------------------------------------------------------------------------
+
+        P_k_pred = forward_results_[k].P_update2; //taken from linear interpolation of updated covs 
+        //F_k1 = forward_results_[k].F;
+        C_k = P_k_pred * F_k1.transpose() * P_k1_pred.inverse();
+        dx_correction_ = C_k * kf_state.boxminus(forward_results_[k + 1].x_update2, forward_results_[k + 1].x_pred);
+        forward_results_[k].x_update2 = kf_state.boxplus(forward_results_[k].x_pred, dx_correction_);
+
+        forward_results_[k].P_update2 = P_k_pred +
+                                        C_k * (forward_results_[k + 1].P_update2 - P_k1_pred) * C_k.transpose();
+
+        updated_ = forward_results_[k].x_update2;
+        t_diff = (predicted_.pos - updated_.pos).norm();
+        std::cout << "k=" << k << " second correction norm (pos): " << t_diff << std::endl;
     }
-
-
-    If I try to plot the results, the correction for the first IMU is not zero 
-    use some step size, or try different Fx 
-
-    compare which one is better 
-
-    //to be done here 
-    //use the updated values of the IMU to correct the IMU buffer values 
-    //redoo motion compensation
-    //1 time registration refinement 
 }
 
 void IMU_Class::Process(const MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_un_)
