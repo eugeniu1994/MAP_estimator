@@ -57,6 +57,9 @@ struct ForwardResult
 
     state x_update2;
     cov P_update2;  
+
+    state x_update3;
+    cov P_update3;  
 };
 
 

@@ -547,6 +547,9 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
         f0.x_update2 = kf_state.get_x();
         f0.P_update2 = kf_state.get_P();
 
+        f0.x_update3 = kf_state.get_x();
+        f0.P_update3 = kf_state.get_P();
+
         forward_results_.push_back(f0);
     }
 
@@ -817,12 +820,131 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
     }
 }
 
+/*#include <gtsam/geometry/Pose3.h>
+#include <gtsam/geometry/Rot3.h>
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/slam/PriorFactor.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+
+using namespace gtsam;
+
+class PoseGraphOptimizer
+{
+private:
+    gtsam::NonlinearFactorGraph graph_;
+    gtsam::Values initial_estimate_;
+    int pose_counter_;
+
+public:
+    gtsam::Pose3 convertToGTSAMPose(const state &s)
+    {
+        Sophus::SE3 pose(s.rot, s.pos);
+        return Pose3(pose.matrix());
+    }
+
+    Sophus::SE3 convertFromGTSAMPose(const gtsam::Pose3 &pose)
+    {
+        Eigen::Matrix4d T = pose.matrix(); // Get 4x4 matrix
+        return Sophus::SE3(T.topLeftCorner<3, 3>(), T.topRightCorner<3, 1>());
+    }
+
+    noiseModel::Gaussian::shared_ptr covarianceToNoiseModel(const cov &full_cov)
+    {
+        // Extract 6x6 pose covariance from the full 24x24 covariance matrix
+        // GTSAM order: (rotation, translation) = (rx, ry, rz, x, y, z)
+        Eigen::Matrix<double, 6, 6> pose_cov;
+
+        // Rotation covariance (3x3) - goes first in GTSAM
+        pose_cov.block<3, 3>(0, 0) = full_cov.block<3, 3>(R_ID, R_ID);
+
+        // Translation covariance (3x3) - goes second in GTSAM
+        pose_cov.block<3, 3>(3, 3) = full_cov.block<3, 3>(P_ID, P_ID);
+
+        // Cross terms: rotation-translation correlation
+        pose_cov.block<3, 3>(0, 3) = full_cov.block<3, 3>(R_ID, P_ID);
+
+        // Cross terms: translation-rotation correlation (symmetric)
+        pose_cov.block<3, 3>(3, 0) = full_cov.block<3, 3>(P_ID, R_ID);
+
+        // Convert covariance to noise model
+        return noiseModel::Gaussian::Covariance(pose_cov);
+    }
+
+    void buildGraph(const std::vector<ForwardResult>& imu_states,
+                   const state& prev_lidar_state, const Eigen::MatrixXd& prev_lidar_cov,
+                   const state& curr_lidar_state, const Eigen::MatrixXd& curr_lidar_cov) 
+    {
+        pose_counter_ = 0;
+        
+        Pose3 prev_lidar_pose = convertToGTSAMPose(prev_lidar_state);
+        Pose3 curr_lidar_pose = convertToGTSAMPose(curr_lidar_state);
+
+        // auto prev_lidar_noise = covarianceToNoiseModel(prev_lidar_cov);
+        // auto curr_lidar_noise = covarianceToNoiseModel(curr_lidar_cov);
+        
+        auto prev_lidar_noise = noiseModel::Diagonal::Sigmas(
+        (Vector(6) << 0.001, 0.001, 0.001, 0.0001, 0.0001, 0.0001).finished());
+        auto curr_lidar_noise = noiseModel::Diagonal::Sigmas(
+        (Vector(6) << 0.001, 0.001, 0.001, 0.0001, 0.0001, 0.0001).finished());
+        auto imu_noise = noiseModel::Diagonal::Sigmas(
+            (Vector(6) << 0.1, 0.1, 0.1, 0.05, 0.05, 0.05).finished());
+
+
+        graph_.add(PriorFactor<Pose3>(pose_counter_, prev_lidar_pose, prev_lidar_noise));
+        initial_estimate_.insert(pose_counter_, prev_lidar_pose);
+        pose_counter_++;
+        int N = imu_states.size();
+        for (size_t i = 1; i < N; i++) {
+            Pose3 imu_pose = convertToGTSAMPose(imu_states[i].x_pred); //current state prediction 
+            initial_estimate_.insert(pose_counter_, imu_pose);
+            
+            gtsam::Pose3 relative_pose = convertToGTSAMPose(imu_states[i-1].x_pred).between(imu_pose);
+            //auto imu_noise = covarianceToNoiseModel(imu_states[i].P_pred);
+
+            graph_.add(BetweenFactor<Pose3>(pose_counter_ - 1, pose_counter_, relative_pose, imu_noise));
+            
+            pose_counter_++;
+        }
+        gtsam::Pose3 relative_pose = convertToGTSAMPose(imu_states[N-2].x_pred).between(convertToGTSAMPose(imu_states[N-1].x_pred));
+        graph_.add(BetweenFactor<Pose3>(pose_counter_ - 1, pose_counter_, relative_pose, imu_noise));
+
+        graph_.add(PriorFactor<Pose3>(pose_counter_, curr_lidar_pose, curr_lidar_noise));
+        initial_estimate_.insert(pose_counter_, curr_lidar_pose);
+    }
+
+    void optimize(std::vector<ForwardResult>& imu_states)
+    {
+        gtsam::LevenbergMarquardtOptimizer optimizer(graph_, initial_estimate_);
+        gtsam::Values result = optimizer.optimize();
+        std::cout<<"result.size():"<<result.size()<<std::endl;
+        for (size_t i = 0; i < result.size(); i++)
+        {
+            Sophus::SE3 optimized_pose = convertFromGTSAMPose(result.at<gtsam::Pose3>(i));
+            auto &s = imu_states[i].x_update3;
+
+            std::cout<<"diff:"<<(s.pos - optimized_pose.translation()).norm()<<std::endl;
+
+            s.pos = optimized_pose.translation();
+            s.rot = optimized_pose.so3();
+
+            //imu_states[i].x_update3 = s;
+        }
+    }
+};*/
+
 
 // RTS smoother after forward pass
 void IMU_Class::backwardPass(Estimator &kf_state)
 {
     std::cout << "IMU_Buffer:" << IMU_Buffer.size() << std::endl;
     std::cout << "forward_results_:" << forward_results_.size() << std::endl;
+
+
+    //TODO, for the best config, update the following
+    //IMU_Buffer.push_back(set_pose6d(offs_t, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.matrix()));
+    //vel, pos, and rot of each IMU,   figure out how to correc the w and acc
+    
 
     int N = forward_results_.size();
 
@@ -833,17 +955,26 @@ void IMU_Class::backwardPass(Estimator &kf_state)
     forward_results_[N - 1].P_update2 = kf_state.get_P();
     forward_results_[N - 1].x_update2 = kf_state.get_x();
 
+    forward_results_[N - 1].P_update3 = kf_state.get_P();
+    forward_results_[N - 1].x_update3 = kf_state.get_x();
+
     auto P_prev = forward_results_[0].P_update;
     auto P_curr = kf_state.get_P();
 
     for (int k = 0; k < N; k++)
     {
         double alpha = static_cast<double>(k) / N;
-        forward_results_[k].P_update2 = (1.0 - alpha) * P_prev + alpha * P_curr;;
+        forward_results_[k].P_update2 = (1.0 - alpha) * P_prev + alpha * P_curr;
     }
         
+
+    // PoseGraphOptimizer graph;
+    // graph.buildGraph(forward_results_, forward_results_[0].x_update, forward_results_[0].P_update,
+    // forward_results_[N-1].x_update, forward_results_[N-1].P_update);
+    // graph.optimize(forward_results_);
+
     // Backward recursion
-    for (int k = N - 2; k >= 0; k--)
+    for (int k = N - 2; k > 0; k--)
     {
         // Predicted covariance at time k classic RTS - I need the updated covariance here
         cov P_k_pred = forward_results_[k].P_pred; // P_{k|k-1} - this will non-zero correction reaching the previous lidar state.
@@ -881,6 +1012,22 @@ void IMU_Class::backwardPass(Estimator &kf_state)
         updated_ = forward_results_[k].x_update2;
         t_diff = (predicted_.pos - updated_.pos).norm();
         std::cout << "k=" << k << " second correction norm (pos): " << t_diff << std::endl;
+
+        //-------------------------------------------------------------------------
+        P_k_pred = forward_results_[0].P_update3; //taken from prev update step 
+        F_k1 = forward_results_[k].F;
+        C_k = P_k_pred * F_k1.transpose() * P_k1_pred.inverse();
+        dx_correction_ = C_k * kf_state.boxminus(forward_results_[k + 1].x_update2, forward_results_[k + 1].x_pred);
+        forward_results_[k].x_update2 = kf_state.boxplus(forward_results_[k].x_pred, dx_correction_);
+
+        forward_results_[k].P_update2 = P_k_pred +
+                                        C_k * (forward_results_[k + 1].P_update2 - P_k1_pred) * C_k.transpose();
+
+        updated_ = forward_results_[k].x_update2;
+        t_diff = (predicted_.pos - updated_.pos).norm();
+        std::cout << "k=" << k << " third  correction norm (pos): " << t_diff << std::endl;
+
+
     }
 }
 
