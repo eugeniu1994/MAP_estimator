@@ -547,8 +547,8 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
         f0.x_update2 = kf_state.get_x();
         f0.P_update2 = kf_state.get_P();
 
-        f0.x_update3 = kf_state.get_x();
-        f0.P_update3 = kf_state.get_P();
+        // f0.x_update3 = kf_state.get_x();
+        // f0.P_update3 = kf_state.get_P();
 
         forward_results_.push_back(f0);
     }
@@ -820,131 +820,136 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
     }
 }
 
-/*#include <gtsam/geometry/Pose3.h>
-#include <gtsam/geometry/Rot3.h>
-#include <gtsam/inference/Symbol.h>
-#include <gtsam/slam/BetweenFactor.h>
-#include <gtsam/slam/PriorFactor.h>
-#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#define plot_smoothing
 
-using namespace gtsam;
+#ifdef plot_smoothing
+#include "matplotlibcpp.h"
+namespace plt = matplotlibcpp;
 
-class PoseGraphOptimizer
+int something = 0;
+plt::MyClass2 myObj;
+void IMU_Class::plot_values(const std::vector<ForwardResult> &forward_results_)
 {
-private:
-    gtsam::NonlinearFactorGraph graph_;
-    gtsam::Values initial_estimate_;
-    int pose_counter_;
-
-public:
-    gtsam::Pose3 convertToGTSAMPose(const state &s)
+    something++;
+    if (something % 20 == 0)
     {
-        Sophus::SE3 pose(s.rot, s.pos);
-        return Pose3(pose.matrix());
-    }
+        std::vector<double> x_gt, y_gt, z_gt, u_gt, v_gt, w_gt; // the updated first and last points
 
-    Sophus::SE3 convertFromGTSAMPose(const gtsam::Pose3 &pose)
-    {
-        Eigen::Matrix4d T = pose.matrix(); // Get 4x4 matrix
-        return Sophus::SE3(T.topLeftCorner<3, 3>(), T.topRightCorner<3, 1>());
-    }
+        std::vector<double> x_imu, y_imu, z_imu, u_imu, v_imu, w_imu; // the imu predicted poses
+        std::vector<double> x_sm, y_sm, z_sm, u_sm, v_sm, w_sm;       // the smoothed predictions
+        M3D r;
+        V3D t;
 
-    noiseModel::Gaussian::shared_ptr covarianceToNoiseModel(const cov &full_cov)
-    {
-        // Extract 6x6 pose covariance from the full 24x24 covariance matrix
-        // GTSAM order: (rotation, translation) = (rx, ry, rz, x, y, z)
-        Eigen::Matrix<double, 6, 6> pose_cov;
-
-        // Rotation covariance (3x3) - goes first in GTSAM
-        pose_cov.block<3, 3>(0, 0) = full_cov.block<3, 3>(R_ID, R_ID);
-
-        // Translation covariance (3x3) - goes second in GTSAM
-        pose_cov.block<3, 3>(3, 3) = full_cov.block<3, 3>(P_ID, P_ID);
-
-        // Cross terms: rotation-translation correlation
-        pose_cov.block<3, 3>(0, 3) = full_cov.block<3, 3>(R_ID, P_ID);
-
-        // Cross terms: translation-rotation correlation (symmetric)
-        pose_cov.block<3, 3>(3, 0) = full_cov.block<3, 3>(P_ID, R_ID);
-
-        // Convert covariance to noise model
-        return noiseModel::Gaussian::Covariance(pose_cov);
-    }
-
-    void buildGraph(const std::vector<ForwardResult>& imu_states,
-                   const state& prev_lidar_state, const Eigen::MatrixXd& prev_lidar_cov,
-                   const state& curr_lidar_state, const Eigen::MatrixXd& curr_lidar_cov) 
-    {
-        pose_counter_ = 0;
-        
-        Pose3 prev_lidar_pose = convertToGTSAMPose(prev_lidar_state);
-        Pose3 curr_lidar_pose = convertToGTSAMPose(curr_lidar_state);
-
-        // auto prev_lidar_noise = covarianceToNoiseModel(prev_lidar_cov);
-        // auto curr_lidar_noise = covarianceToNoiseModel(curr_lidar_cov);
-        
-        auto prev_lidar_noise = noiseModel::Diagonal::Sigmas(
-        (Vector(6) << 0.001, 0.001, 0.001, 0.0001, 0.0001, 0.0001).finished());
-        auto curr_lidar_noise = noiseModel::Diagonal::Sigmas(
-        (Vector(6) << 0.001, 0.001, 0.001, 0.0001, 0.0001, 0.0001).finished());
-        auto imu_noise = noiseModel::Diagonal::Sigmas(
-            (Vector(6) << 0.1, 0.1, 0.1, 0.05, 0.05, 0.05).finished());
-
-
-        graph_.add(PriorFactor<Pose3>(pose_counter_, prev_lidar_pose, prev_lidar_noise));
-        initial_estimate_.insert(pose_counter_, prev_lidar_pose);
-        pose_counter_++;
-        int N = imu_states.size();
-        for (size_t i = 1; i < N; i++) {
-            Pose3 imu_pose = convertToGTSAMPose(imu_states[i].x_pred); //current state prediction 
-            initial_estimate_.insert(pose_counter_, imu_pose);
-            
-            gtsam::Pose3 relative_pose = convertToGTSAMPose(imu_states[i-1].x_pred).between(imu_pose);
-            //auto imu_noise = covarianceToNoiseModel(imu_states[i].P_pred);
-
-            graph_.add(BetweenFactor<Pose3>(pose_counter_ - 1, pose_counter_, relative_pose, imu_noise));
-            
-            pose_counter_++;
-        }
-        gtsam::Pose3 relative_pose = convertToGTSAMPose(imu_states[N-2].x_pred).between(convertToGTSAMPose(imu_states[N-1].x_pred));
-        graph_.add(BetweenFactor<Pose3>(pose_counter_ - 1, pose_counter_, relative_pose, imu_noise));
-
-        graph_.add(PriorFactor<Pose3>(pose_counter_, curr_lidar_pose, curr_lidar_noise));
-        initial_estimate_.insert(pose_counter_, curr_lidar_pose);
-    }
-
-    void optimize(std::vector<ForwardResult>& imu_states)
-    {
-        gtsam::LevenbergMarquardtOptimizer optimizer(graph_, initial_estimate_);
-        gtsam::Values result = optimizer.optimize();
-        std::cout<<"result.size():"<<result.size()<<std::endl;
-        for (size_t i = 0; i < result.size(); i++)
+        for (int i = 0; i < forward_results_.size(); i++)
         {
-            Sophus::SE3 optimized_pose = convertFromGTSAMPose(result.at<gtsam::Pose3>(i));
-            auto &s = imu_states[i].x_update3;
+            r = forward_results_[i].x_pred.rot.matrix();
+            t = forward_results_[i].x_pred.pos;
 
-            std::cout<<"diff:"<<(s.pos - optimized_pose.translation()).norm()<<std::endl;
+            x_imu.push_back(t.x());
+            y_imu.push_back(t.y());
+            z_imu.push_back(t.z());
+            u_imu.push_back(r(0, 0));
+            v_imu.push_back(r(0, 1));
+            w_imu.push_back(r(0, 2));
+            x_imu.push_back(t.x());
+            y_imu.push_back(t.y());
+            z_imu.push_back(t.z());
+            u_imu.push_back(r(1, 0));
+            v_imu.push_back(r(1, 1));
+            w_imu.push_back(r(1, 2));
+            x_imu.push_back(t.x());
+            y_imu.push_back(t.y());
+            z_imu.push_back(t.z());
+            u_imu.push_back(r(2, 0));
+            v_imu.push_back(r(2, 1));
+            w_imu.push_back(r(2, 2));
 
-            s.pos = optimized_pose.translation();
-            s.rot = optimized_pose.so3();
-
-            //imu_states[i].x_update3 = s;
+            //-------------------------------------
+            r = forward_results_[i].x_update.rot.matrix();
+            t = forward_results_[i].x_update.pos;
+            x_sm.push_back(t.x());
+            y_sm.push_back(t.y());
+            z_sm.push_back(t.z());
+            u_sm.push_back(r(0, 0));
+            v_sm.push_back(r(0, 1));
+            w_sm.push_back(r(0, 2));
+            x_sm.push_back(t.x());
+            y_sm.push_back(t.y());
+            z_sm.push_back(t.z());
+            u_sm.push_back(r(1, 0));
+            v_sm.push_back(r(1, 1));
+            w_sm.push_back(r(1, 2));
+            x_sm.push_back(t.x());
+            y_sm.push_back(t.y());
+            z_sm.push_back(t.z());
+            u_sm.push_back(r(2, 0));
+            v_sm.push_back(r(2, 1));
+            w_sm.push_back(r(2, 2));
         }
-    }
-};*/
 
+        {
+            r = forward_results_[0].x_update.rot.matrix();
+            t = forward_results_[0].x_update.pos;
+            x_gt.push_back(t.x());
+            y_gt.push_back(t.y());
+            z_gt.push_back(t.z());
+            u_gt.push_back(r(0, 0));
+            v_gt.push_back(r(0, 1));
+            w_gt.push_back(r(0, 2));
+            x_gt.push_back(t.x());
+            y_gt.push_back(t.y());
+            z_gt.push_back(t.z());
+            u_gt.push_back(r(1, 0));
+            v_gt.push_back(r(1, 1));
+            w_gt.push_back(r(1, 2));
+            x_gt.push_back(t.x());
+            y_gt.push_back(t.y());
+            z_gt.push_back(t.z());
+            u_gt.push_back(r(2, 0));
+            v_gt.push_back(r(2, 1));
+            w_gt.push_back(r(2, 2));
+
+            r = forward_results_.back().x_update.rot.matrix();
+            t = forward_results_.back().x_update.pos;
+            x_gt.push_back(t.x());
+            y_gt.push_back(t.y());
+            z_gt.push_back(t.z());
+            u_gt.push_back(r(0, 0));
+            v_gt.push_back(r(0, 1));
+            w_gt.push_back(r(0, 2));
+            x_gt.push_back(t.x());
+            y_gt.push_back(t.y());
+            z_gt.push_back(t.z());
+            u_gt.push_back(r(1, 0));
+            v_gt.push_back(r(1, 1));
+            w_gt.push_back(r(1, 2));
+            x_gt.push_back(t.x());
+            y_gt.push_back(t.y());
+            z_gt.push_back(t.z());
+            u_gt.push_back(r(2, 0));
+            v_gt.push_back(r(2, 1));
+            w_gt.push_back(r(2, 2));
+        }
+
+        std::cout << "x_imu:" << x_imu.size() << ", x_gt:" << x_gt.size() << ", x_sm:" << x_sm.size() << std::endl;
+
+        myObj.plot_imu_and_gt(
+            x_imu, y_imu, z_imu, u_imu, v_imu, w_imu,
+            x_sm, y_sm, z_sm, u_sm, v_sm, w_sm,
+            x_gt, y_gt, z_gt, u_gt, v_gt, w_gt,
+            15);
+
+        plt::show();
+    }
+}
+
+#endif
 
 // RTS smoother after forward pass
-void IMU_Class::backwardPass(Estimator &kf_state)
+bool IMU_Class::backwardPass(const MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI &pcl_out)
 {
     std::cout << "IMU_Buffer:" << IMU_Buffer.size() << std::endl;
     std::cout << "forward_results_:" << forward_results_.size() << std::endl;
-
-
-    //TODO, for the best config, update the following
-    //IMU_Buffer.push_back(set_pose6d(offs_t, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.matrix()));
-    //vel, pos, and rot of each IMU,   figure out how to correc the w and acc
-    
 
     int N = forward_results_.size();
 
@@ -952,83 +957,143 @@ void IMU_Class::backwardPass(Estimator &kf_state)
     forward_results_[N - 1].x_update = kf_state.get_x();
     forward_results_[N - 1].P_update = kf_state.get_P();
 
-    forward_results_[N - 1].P_update2 = kf_state.get_P();
-    forward_results_[N - 1].x_update2 = kf_state.get_x();
+    // forward_results_[N - 1].P_update2 = kf_state.get_P();
+    // forward_results_[N - 1].x_update2 = kf_state.get_x();
 
-    forward_results_[N - 1].P_update3 = kf_state.get_P();
-    forward_results_[N - 1].x_update3 = kf_state.get_x();
+    auto predicted_ = forward_results_.back().x_pred;
+    auto updated_ = forward_results_.back().x_update;
+    auto t_diff = (predicted_.pos - updated_.pos).norm();
 
-    auto P_prev = forward_results_[0].P_update;
-    auto P_curr = kf_state.get_P();
-
-    for (int k = 0; k < N; k++)
+    if (t_diff > .01) // more than 1 cm
     {
-        double alpha = static_cast<double>(k) / N;
-        forward_results_[k].P_update2 = (1.0 - alpha) * P_prev + alpha * P_curr;
+        std::cout << " Predicted-Updated  correction norm (pos): " << t_diff << std::endl;
+
+        // Backward recursion
+        for (int k = N - 2; k > 0; k--)
+        {
+            // Predicted covariance at time k classic RTS - I need the updated covariance here
+            cov P_k_pred = forward_results_[k].P_pred; // P_{k|k-1} - this will non-zero correction reaching the previous lidar state.
+            // cov P_k_pred = forward_results_[0].P_update; // taken from prev update step
+
+            // double alpha = static_cast<double>(k) / (N-1); //linear interpolated one
+            // cov P_k_pred = (1.0 - alpha) * P_prev + alpha * P_curr;
+
+            cov P_k1_pred = forward_results_[k + 1].P_pred; // P_{k+1|k}
+            cov F_k1 = forward_results_[k + 1].F;           // F_{k+1}
+
+            // Smoother gain for prediction states
+            cov C_k = P_k_pred * F_k1.transpose() * P_k1_pred.inverse();
+
+            // apply some decay threshold for dx to prevent smoothing the first state
+            double scale_ = double(k) / (N - 2); // std::cout<<"scale_ "<<scale_<<std::endl;
+
+            // Smoothed state : x_{k | N} = x_{k | k - 1} + C_k * (x_{k + 1 | N} - x_{k + 1 | k})
+            vectorized_state dx_correction_ = scale_ * C_k * kf_state.boxminus(forward_results_[k + 1].x_update, forward_results_[k + 1].x_pred);
+            forward_results_[k].x_update = kf_state.boxplus(forward_results_[k].x_pred, dx_correction_);
+
+            // Smoothed covariance: P_{k|N} = P_{k|k-1} + C_k * (P_{k+1|N} - P_{k+1|k}) * C_k^T
+            forward_results_[k].P_update = P_k_pred +
+                                           C_k * (forward_results_[k + 1].P_update - P_k1_pred) * C_k.transpose();
+
+            // auto predicted_ = forward_results_[k].x_pred;
+            // auto updated_ = forward_results_[k].x_update;
+            // auto t_diff = (predicted_.pos - updated_.pos).norm();
+
+            // std::cout << "\nk=" << k << " first  correction norm (pos): " << t_diff << std::endl;
+
+            //-------------------------------------------------------------------------
+
+            // // P_k_pred = forward_results_[k].P_update2; // taken from linear interpolation of updated covs
+            // P_k_pred = forward_results_[k].P_update2;   //filtered_P
+
+            // // F_k1 = forward_results_[k].F;
+            // C_k = P_k_pred * F_k1.transpose() * P_k1_pred.inverse();
+            // dx_correction_ = C_k * kf_state.boxminus(forward_results_[k + 1].x_update2, forward_results_[k + 1].x_pred);
+            // forward_results_[k].x_update2 = kf_state.boxplus(forward_results_[k].x_pred, dx_correction_);
+
+            // forward_results_[k].P_update2 = P_k_pred +
+            //                                 C_k * (forward_results_[k + 1].P_update2 - P_k1_pred) * C_k.transpose();
+
+            // updated_ = forward_results_[k].x_update2;
+            // t_diff = (predicted_.pos - updated_.pos).norm();
+            // std::cout << "k=" << k << " second correction norm (pos): " << t_diff << std::endl;
+
+            //-------------------------------------------------------------------------
+        }
+
+#ifdef plot_smoothing
+        plot_values(forward_results_);
+#endif;
+
+        pcl_out = *(meas.lidar);
+        V3D pos_imu, vel_imu, angvel_avr, acc_avr, acc_imu;
+        M3D R_imu;
+        double dt = 0;
+
+        const auto last = IMU_Buffer.back();
+        pos_imu << VEC_FROM_ARRAY(last.pos);
+        std::cout << ", pos:" << pos_imu.transpose() << std::endl;
+
+        for (int k = 0; k < IMU_Buffer.size(); k++)
+        {
+            const auto &x_smoothed = forward_results_[k].x_update;
+            auto &x_predict = IMU_Buffer[k];
+
+            acc_imu << VEC_FROM_ARRAY(x_predict.acc);
+            angvel_avr << VEC_FROM_ARRAY(x_predict.gyr);
+
+            IMU_Buffer[k] = set_pose6d(x_predict.offset_time, acc_imu, angvel_avr, x_smoothed.vel, x_smoothed.pos, x_smoothed.rot.matrix());
+        }
+
+        const auto last2 = IMU_Buffer.back();
+        pos_imu << VEC_FROM_ARRAY(last2.pos);
+        std::cout << ", pos:" << pos_imu.transpose() << std::endl;
+
+        imu_state = kf_state.get_x();
+
+        auto it_pcl = pcl_out.points.end() - 1;
+        auto begin_pcl = pcl_out.points.begin();
+
+        const auto &end_R_T = imu_state.rot.matrix().transpose();
+        const auto &R_L2I = imu_state.offset_R_L_I.matrix();
+        const auto &R_I2L = imu_state.offset_R_L_I.matrix().transpose();
+
+        for (auto it_kp = IMU_Buffer.end() - 1; it_kp != IMU_Buffer.begin(); it_kp--)
+        {
+            auto head = it_kp - 1;
+            auto tail = it_kp;
+            R_imu << MAT_FROM_ARRAY(head->rot);
+            vel_imu << VEC_FROM_ARRAY(head->vel);
+            pos_imu << VEC_FROM_ARRAY(head->pos);
+            acc_imu << VEC_FROM_ARRAY(tail->acc);
+            angvel_avr << VEC_FROM_ARRAY(tail->gyr);
+
+            for (; it_pcl->time > head->offset_time; it_pcl--)
+            {
+                dt = it_pcl->time - head->offset_time;
+                // P_compensate = R_imu_e ^ T * (R_i * P_i + T_ei)
+
+                M3D R_i(R_imu * Sophus::SO3::exp(angvel_avr * dt).matrix());
+                V3D P_i(it_pcl->x, it_pcl->y, it_pcl->z);
+                V3D T_ei(pos_imu + vel_imu * dt + 0.5 * acc_imu * dt * dt - imu_state.pos);
+                V3D P_compensate = R_I2L * (end_R_T * (R_i * (R_L2I * P_i + imu_state.offset_T_L_I) + T_ei) - imu_state.offset_T_L_I);
+
+                // just a test to skip the motion distortion
+                // P_compensate = P_i; // use the original point
+
+                it_pcl->x = P_compensate(0);
+                it_pcl->y = P_compensate(1);
+                it_pcl->z = P_compensate(2);
+
+                if (it_pcl == begin_pcl)
+                    break;
+            }
+        }
+
+        return true;
     }
-        
 
-    // PoseGraphOptimizer graph;
-    // graph.buildGraph(forward_results_, forward_results_[0].x_update, forward_results_[0].P_update,
-    // forward_results_[N-1].x_update, forward_results_[N-1].P_update);
-    // graph.optimize(forward_results_);
-
-    // Backward recursion
-    for (int k = N - 2; k > 0; k--)
-    {
-        // Predicted covariance at time k classic RTS - I need the updated covariance here
-        cov P_k_pred = forward_results_[k].P_pred; // P_{k|k-1} - this will non-zero correction reaching the previous lidar state.
-        cov P_k1_pred = forward_results_[k + 1].P_pred; // P_{k+1|k}
-        cov F_k1 = forward_results_[k + 1].F;           // F_{k+1}
-
-        // Smoother gain for prediction states
-        cov C_k = P_k_pred * F_k1.transpose() * P_k1_pred.inverse();
-
-        // Smoothed state : x_{k | N} = x_{k | k - 1} + C_k * (x_{k + 1 | N} - x_{k + 1 | k})
-        vectorized_state dx_correction_ = C_k * kf_state.boxminus(forward_results_[k + 1].x_update, forward_results_[k + 1].x_pred);
-        forward_results_[k].x_update = kf_state.boxplus(forward_results_[k].x_pred, dx_correction_);
-
-        // Smoothed covariance: P_{k|N} = P_{k|k-1} + C_k * (P_{k+1|N} - P_{k+1|k}) * C_k^T
-        forward_results_[k].P_update = P_k_pred +
-                                       C_k * (forward_results_[k + 1].P_update - P_k1_pred) * C_k.transpose();
-
-        auto predicted_ = forward_results_[k].x_pred;
-        auto updated_ = forward_results_[k].x_update;
-        auto t_diff = (predicted_.pos - updated_.pos).norm();
-
-        std::cout << "\nk=" << k << " first  correction norm (pos): " << t_diff << std::endl;
-
-        //-------------------------------------------------------------------------
-
-        P_k_pred = forward_results_[k].P_update2; //taken from linear interpolation of updated covs 
-        //F_k1 = forward_results_[k].F;
-        C_k = P_k_pred * F_k1.transpose() * P_k1_pred.inverse();
-        dx_correction_ = C_k * kf_state.boxminus(forward_results_[k + 1].x_update2, forward_results_[k + 1].x_pred);
-        forward_results_[k].x_update2 = kf_state.boxplus(forward_results_[k].x_pred, dx_correction_);
-
-        forward_results_[k].P_update2 = P_k_pred +
-                                        C_k * (forward_results_[k + 1].P_update2 - P_k1_pred) * C_k.transpose();
-
-        updated_ = forward_results_[k].x_update2;
-        t_diff = (predicted_.pos - updated_.pos).norm();
-        std::cout << "k=" << k << " second correction norm (pos): " << t_diff << std::endl;
-
-        //-------------------------------------------------------------------------
-        P_k_pred = forward_results_[0].P_update3; //taken from prev update step 
-        F_k1 = forward_results_[k].F;
-        C_k = P_k_pred * F_k1.transpose() * P_k1_pred.inverse();
-        dx_correction_ = C_k * kf_state.boxminus(forward_results_[k + 1].x_update2, forward_results_[k + 1].x_pred);
-        forward_results_[k].x_update2 = kf_state.boxplus(forward_results_[k].x_pred, dx_correction_);
-
-        forward_results_[k].P_update2 = P_k_pred +
-                                        C_k * (forward_results_[k + 1].P_update2 - P_k1_pred) * C_k.transpose();
-
-        updated_ = forward_results_[k].x_update2;
-        t_diff = (predicted_.pos - updated_.pos).norm();
-        std::cout << "k=" << k << " third  correction norm (pos): " << t_diff << std::endl;
-
-
-    }
+    return false;
 }
 
 void IMU_Class::Process(const MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_un_)
@@ -1089,6 +1154,198 @@ void IMU_Class::Process(const MeasureGroup &meas, Estimator &kf_state, PointClou
 
     Propagate(meas, kf_state, *pcl_un_);
 }
+
+/*void ImuProcess::smoother(const Sophus::SE3d &prev_updated_pose_to_imu)
+    {
+        // add the updated pose
+        all_states.push_back(imu_state);
+        all_covs.push_back(imu_integrator.get_cov());
+        all_inputs.push_back(measurements_);
+
+        std::cout << "all_states:" << all_states.size() << std::endl;
+        std::cout << "all_covs:" << all_covs.size() << std::endl;
+        std::cout << "all_inputs:" << all_inputs.size() << std::endl;
+        if (all_states.size() == 0 || all_covs.size() == 0 || all_inputs.size() == 0)
+        {
+            std::cout << "not equal sizes" << std::endl; // handle this
+            return;
+        }
+
+        int steps = all_states.size();
+        double dt = 0;
+        std::vector<basalt::PoseVelState<double>> rts_m(steps);
+        basalt::PoseVelState<double> m = all_states.back(); // latest updated pose
+
+        rts_m.back() = m;              // update pose from curr scan
+        rts_m.front() = all_states[0]; // update pose from prev scan
+
+        double numItems = steps - 2;
+        for (int i = steps - 2; i > 0; --i)
+        {
+            const basalt::PoseVelState<double> &filtered_m = all_states[i];
+            const auto &filtered_P = all_covs[i]; // 9x9
+
+            dt = fabs(all_inputs[i - 1].t_ns - all_inputs[i].t_ns) * 1e-9; // convert to seconds
+            // std::cout<<"dt-:"<<dt<<std::endl;
+
+            basalt::PoseVelState<double> mp;
+            basalt::Matrix9d Pp;
+            imu_integrator.smoothing_required_function(filtered_m, all_inputs[i], mp, dt, gravity_, filtered_P, F, Pp, cov_acc, cov_gyr);
+
+            auto Gk = filtered_P * F.transpose() * Pp.inverse(); // 9x9 //K[k]  = dot(P[k], F.T).dot(inv(P_pred))
+
+            // m = filtered_m + Gk @ (m - mp)
+            auto innovation = imu_integrator.boxminus(m, mp); // 9x1
+            Eigen::Matrix<double, 9, 1> dx = Gk * innovation;
+
+            std::cout << "" << i << ", filtered_P:" << filtered_P.norm() << ", Pp:" << Pp.norm() << ", Gk:" << Gk.norm() << ", innovation:" << innovation.norm() << std::endl;
+
+            // apply some decay threshold for dx to prevent smoothing the first state
+            double scale_ = 1.; // double(i) / numItems; // std::cout<<"scale_ "<<scale_<<std::endl;
+
+            m = imu_integrator.boxplus(filtered_m, scale_ * dx);
+            rts_m[i] = m;
+        }
+
+        something++;
+        if (something % 20 == 0)
+        {
+            const char *pythonScript = "/home/eugeniu/catkin_ws/src/kiss-icp/ros/script/plot_covs.py";
+            std::string command = "python " + std::string(pythonScript) + " ";
+            for (int c = 0; c < all_covs.size(); c++)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    for (int j = 0; j < 3; j++)
+                    {
+                        command = command + " " + std::to_string(all_covs[c](i, j));
+                    }
+                }
+            }
+            // std::cout<<"send to python \n"<<  command <<std::endl;
+            // std::cout<<"got from python - "<<command.c_str()<<std::endl;
+            int returnValue = system(command.c_str());
+        }
+
+
+    }*/
+
+// PoseGraphOptimizer graph;
+// graph.buildGraph(forward_results_, forward_results_[0].x_update, forward_results_[0].P_update,
+// forward_results_[N-1].x_update, forward_results_[N-1].P_update);
+// graph.optimize(forward_results_);
+/*#include <gtsam/geometry/Pose3.h>
+#include <gtsam/geometry/Rot3.h>
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/slam/PriorFactor.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+
+using namespace gtsam;
+
+class PoseGraphOptimizer
+{
+private:
+    gtsam::NonlinearFactorGraph graph_;
+    gtsam::Values initial_estimate_;
+    int pose_counter_;
+
+public:
+    gtsam::Pose3 convertToGTSAMPose(const state &s)
+    {
+        Sophus::SE3 pose(s.rot, s.pos);
+        return Pose3(pose.matrix());
+    }
+
+    Sophus::SE3 convertFromGTSAMPose(const gtsam::Pose3 &pose)
+    {
+        Eigen::Matrix4d T = pose.matrix(); // Get 4x4 matrix
+        return Sophus::SE3(T.topLeftCorner<3, 3>(), T.topRightCorner<3, 1>());
+    }
+
+    noiseModel::Gaussian::shared_ptr covarianceToNoiseModel(const cov &full_cov)
+    {
+        // Extract 6x6 pose covariance from the full 24x24 covariance matrix
+        // GTSAM order: (rotation, translation) = (rx, ry, rz, x, y, z)
+        Eigen::Matrix<double, 6, 6> pose_cov;
+
+        // Rotation covariance (3x3) - goes first in GTSAM
+        pose_cov.block<3, 3>(0, 0) = full_cov.block<3, 3>(R_ID, R_ID);
+
+        // Translation covariance (3x3) - goes second in GTSAM
+        pose_cov.block<3, 3>(3, 3) = full_cov.block<3, 3>(P_ID, P_ID);
+
+        // Cross terms: rotation-translation correlation
+        pose_cov.block<3, 3>(0, 3) = full_cov.block<3, 3>(R_ID, P_ID);
+
+        // Cross terms: translation-rotation correlation (symmetric)
+        pose_cov.block<3, 3>(3, 0) = full_cov.block<3, 3>(P_ID, R_ID);
+
+        // Convert covariance to noise model
+        return noiseModel::Gaussian::Covariance(pose_cov);
+    }
+
+    void buildGraph(const std::vector<ForwardResult>& imu_states,
+                   const state& prev_lidar_state, const Eigen::MatrixXd& prev_lidar_cov,
+                   const state& curr_lidar_state, const Eigen::MatrixXd& curr_lidar_cov)
+    {
+        pose_counter_ = 0;
+
+        Pose3 prev_lidar_pose = convertToGTSAMPose(prev_lidar_state);
+        Pose3 curr_lidar_pose = convertToGTSAMPose(curr_lidar_state);
+
+        // auto prev_lidar_noise = covarianceToNoiseModel(prev_lidar_cov);
+        // auto curr_lidar_noise = covarianceToNoiseModel(curr_lidar_cov);
+
+        auto prev_lidar_noise = noiseModel::Diagonal::Sigmas(
+        (Vector(6) << 0.001, 0.001, 0.001, 0.0001, 0.0001, 0.0001).finished());
+        auto curr_lidar_noise = noiseModel::Diagonal::Sigmas(
+        (Vector(6) << 0.001, 0.001, 0.001, 0.0001, 0.0001, 0.0001).finished());
+        auto imu_noise = noiseModel::Diagonal::Sigmas(
+            (Vector(6) << 0.1, 0.1, 0.1, 0.05, 0.05, 0.05).finished());
+
+
+        graph_.add(PriorFactor<Pose3>(pose_counter_, prev_lidar_pose, prev_lidar_noise));
+        initial_estimate_.insert(pose_counter_, prev_lidar_pose);
+        pose_counter_++;
+        int N = imu_states.size();
+        for (size_t i = 1; i < N; i++) {
+            Pose3 imu_pose = convertToGTSAMPose(imu_states[i].x_pred); //current state prediction
+            initial_estimate_.insert(pose_counter_, imu_pose);
+
+            gtsam::Pose3 relative_pose = convertToGTSAMPose(imu_states[i-1].x_pred).between(imu_pose);
+            //auto imu_noise = covarianceToNoiseModel(imu_states[i].P_pred);
+
+            graph_.add(BetweenFactor<Pose3>(pose_counter_ - 1, pose_counter_, relative_pose, imu_noise));
+
+            pose_counter_++;
+        }
+        gtsam::Pose3 relative_pose = convertToGTSAMPose(imu_states[N-2].x_pred).between(convertToGTSAMPose(imu_states[N-1].x_pred));
+        graph_.add(BetweenFactor<Pose3>(pose_counter_ - 1, pose_counter_, relative_pose, imu_noise));
+
+        graph_.add(PriorFactor<Pose3>(pose_counter_, curr_lidar_pose, curr_lidar_noise));
+        initial_estimate_.insert(pose_counter_, curr_lidar_pose);
+    }
+
+    void optimize(std::vector<ForwardResult>& imu_states)
+    {
+        gtsam::LevenbergMarquardtOptimizer optimizer(graph_, initial_estimate_);
+        gtsam::Values result = optimizer.optimize();
+        std::cout<<"result.size():"<<result.size()<<std::endl;
+        for (size_t i = 0; i < result.size(); i++)
+        {
+            Sophus::SE3 optimized_pose = convertFromGTSAMPose(result.at<gtsam::Pose3>(i));
+            auto &s = imu_states[i].x_update3;
+
+            std::cout<<"diff:"<<(s.pos - optimized_pose.translation()).norm()<<std::endl;
+
+            s.pos = optimized_pose.translation();
+            s.rot = optimized_pose.so3();
+
+            //imu_states[i].x_update3 = s;
+        }
+    }
+};*/
 
 #ifdef SAVE_DATA
 double saved_scan = 0;

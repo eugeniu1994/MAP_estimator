@@ -156,7 +156,7 @@ void DataHandler::Subscribe()
     gnss_obj->set_param(GNSS_T_wrt_IMU, GNSS_IMU_calibration_distance, postprocessed_gnss_path);
 
     std::shared_ptr<Batch> batch_obj(new Batch());
-    bool test_batch = false;//true;
+    bool test_batch = false; // true;
     RIEKF estimator_2;
     if (test_batch)
     {
@@ -363,6 +363,12 @@ void DataHandler::Subscribe()
                 break;
             }
 
+            if (scan_id > 1500) // for determinims 
+            {
+                std::cout << "Stop here... enough data 8000 scans" << std::endl;
+                break;
+            }
+
             {
                 double t00 = omp_get_wtime();
 
@@ -444,6 +450,28 @@ void DataHandler::Subscribe()
                     const auto &msg_time = measurements[tmp_index].tod;
 
                     se3 = T_LG * first_ppk_gnss_pose_inverse * interpolated_pose; // in first frame
+
+                    const auto &mi = measurements[reader.curr_index];
+                    V3D tran_std = V3D(mi.SDEast, mi.SDNorth, mi.SDHeight); //in meters
+                    V3D rot_std = V3D(mi.RollSD, mi.PitchSD, mi.HdngSD); //in degrees
+
+                    
+                    std::cout<<"GNSS tran:"<<tran_std.transpose()<<" m"<<std::endl;
+                    std::cout<<"GNSS rot :"<<rot_std.transpose()<<" deg"<<std::endl;
+
+                    {
+                        M3D R = (T_LG * first_ppk_gnss_pose_inverse).so3().matrix();
+                        V3D tran_std_new = (R * tran_std).cwiseAbs();
+                        V3D rot_std_new  = (R * rot_std).cwiseAbs() * 180.0/M_PI;
+
+                        std::cout << "Transformed translation std (m): " << tran_std_new.transpose() << "\n";
+                        std::cout << "Transformed rotation std (deg): " << rot_std_new.transpose() << "\n";
+                    }
+    
+    
+                        
+
+
                     publish_ppk_gnss(se3, msg_time);
                     if (false)
                     {
@@ -511,7 +539,7 @@ void DataHandler::Subscribe()
                         // use only the yaw angle
                         double yaw = T_LG.so3().matrix().eulerAngles(2, 1, 0)[0]; // rotation around Z // yaw, pitch, roll (Z,Y,X order)
                         Eigen::AngleAxisd yawRot(yaw, V3D::UnitZ());
-                        T_LG = Sophus::SE3(yawRot.toRotationMatrix(), V3D::Zero());
+                        //T_LG = Sophus::SE3(yawRot.toRotationMatrix(), V3D::Zero());
 
                         // Transform any GNSS pose into LiDAR–Inertial frame
                         // Sophus::SE3 T_Lk = T_LG * se3;
@@ -675,15 +703,48 @@ void DataHandler::Subscribe()
                     //     std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
                     // }
 
-
-                    estimator_.update_MLS(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, NUM_MAX_ITERATIONS, extrinsic_est_en);
-
-
-                    imu_obj->backwardPass(estimator_);
+                    als_integrated = true;//to save the poses
 
 
 
-                    if(false){
+                    bool use_se3_update = true;
+                    V3D std_pos_m = V3D(.1, .1, .1); // take this from the measurement itself - 10cm
+                    // V3D std_rot_deg = V3D(5, 5, 5);  // 5 degrees
+                    // V3D std_pos_m = V3D(.01, .01, .01);
+                    V3D std_rot_deg = V3D(10, 10, 10);
+
+                    bool use_als_update = true;
+
+                    estimator_.update_MLS(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, NUM_MAX_ITERATIONS, extrinsic_est_en,
+                                          use_als_update, als_obj->als_cloud, als_obj->localKdTree_map_als,
+                                          use_se3_update,se3,std_pos_m, std_rot_deg);
+
+                    
+
+
+                    // if(imu_obj->backwardPass(Measures, estimator_, *feats_undistort))
+                    // {
+                    //     std::cout<<"enough smoothing has been done, downsample and update..."<<std::endl;
+                    //     downSizeFilterSurf.setInputCloud(feats_undistort);
+                    //     downSizeFilterSurf.filter(*feats_down_body);
+                    //     feats_down_size = feats_down_body->points.size();
+
+                    //     //update
+                    // }
+
+                    // if(false)
+                    // {
+                    //     //double undistortion
+                    //     imu_obj->ConstVelUndistort(Measures, estimator_, feats_undistort, prev_mls, curr_mls);
+                    //     downSizeFilterSurf.setInputCloud(feats_undistort);
+                    //     downSizeFilterSurf.filter(*feats_down_body);
+                    //     feats_down_size = feats_down_body->points.size();
+
+                    //     //update
+                    // }
+
+                    if (false)
+                    {
                         // take this from std or separation data
                         auto std_pos_m = V3D(.1, .1, .1); // take this from the measurement itself - 10cm
                         auto std_rot_deg = V3D(5, 5, 5);  //- 5 degrees
@@ -813,13 +874,38 @@ void DataHandler::Subscribe()
                             }
                         }
                     }
+
+#ifdef SAVE_DATA
+                    std::cout << "save_poses:" << save_poses << ", save_clouds_path:" << save_clouds_path << std::endl;
+
+                    if (als_integrated)
+                    {
+                        if (save_poses) // this will save the MLS estimated SE3 poses
+                        {
+                            const V3D &t_model = state_point.pos;
+                            Eigen::Quaterniond q_model(state_point.rot.matrix());
+
+                            q_model.normalize();
+                            std::ofstream foutMLS(poseSavePath + "MLS.txt", std::ios::app);
+                            // std::ofstream foutMLS(save_clouds_path + "MLS.txt", std::ios::app);
+                            //  foutMLS.setf(std::ios::scientific, std::ios::floatfield);
+                            foutMLS.setf(std::ios::fixed, std::ios::floatfield);
+                            foutMLS.precision(20);
+                            // # ' id time tx ty tz qx qy qz qw' - tum format(scan id, scan timestamp seconds, translation and rotation quaternion)
+                            foutMLS << pcd_index << " " << std::to_string(lidar_end_time) << " " << t_model(0) << " " << t_model(1) << " " << t_model(2) << " "
+                                    << q_model.x() << " " << q_model.y() << " " << q_model.z() << " " << q_model.w() << std::endl;
+                            foutMLS.close();
+                        }
+                        pcd_index++;
+                    }
+#endif
                 }
 
                 double t11 = omp_get_wtime();
                 std::cout << "Mapping time(ms):  " << (t11 - t00) * 1000 << ", feats_down_size: " << feats_down_size << ", lidar_end_time:" << lidar_end_time << "\n"
                           << std::endl;
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(50)); // to simulate lidar measurements
+                // std::this_thread::sleep_for(std::chrono::milliseconds(50)); // to simulate lidar measurements
             }
         }
     }
@@ -828,4 +914,6 @@ void DataHandler::Subscribe()
         b->close();
 
     // cv::destroyAllWindows(); */
+
+    plt::close();
 }

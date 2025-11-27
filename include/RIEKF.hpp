@@ -7,7 +7,6 @@
 #include <ikd-Tree/ikd_Tree.h>
 #endif
 
-
 #include <chrono>
 
 using namespace ekf;
@@ -116,6 +115,9 @@ public:
     // pcl::KdTreeFLANN<PointType>::Ptr localKdTree_map_als;
     pcl::KdTreeFLANN<PointType>::Ptr cloud_tree;
 
+
+
+
     Eigen::Matrix<double, gps_dim, state_size> H_gnss;
     Eigen::Matrix<double, se3_dim, state_size> H_se3;
     // Position part
@@ -177,24 +179,25 @@ public:
             }
         }
 
-#ifdef _OPENMP
+// #ifdef _OPENMP
 
-        int total_threads = omp_get_num_threads();
-        int max_threads = omp_get_max_threads();
-        max_threads = std::max(max_threads, 4); // at least 4 threads (optional)
-        max_threads = 20;                       // remove this
-        omp_set_num_threads(max_threads);
-#pragma omp parallel
-        {
-            total_threads = omp_get_num_threads();
-#pragma omp master
-            {
-                std::cout << "Total OpenMP threads used : " << total_threads << std::endl;
-            }
-        }
-#endif
+//         int total_threads = omp_get_num_threads();
+//         int max_threads = omp_get_max_threads();
+//         max_threads = std::max(max_threads, 4); // at least 4 threads (optional)
+//         max_threads = 20;                       // remove this
+//         omp_set_num_threads(max_threads);
+// #pragma omp parallel
+//         {
+//             total_threads = omp_get_num_threads();
+// #pragma omp master
+//             {
+//                 std::cout << "Total OpenMP threads used : " << total_threads << std::endl;
+//             }
+//         }
+// #endif
         localKdTree_map.reset(new pcl::KdTreeFLANN<PointType>());
         // localKdTree_map_als.reset(new pcl::KdTreeFLANN<PointType>());
+
 
         cloud_tree.reset(new pcl::KdTreeFLANN<PointType>());
 
@@ -219,7 +222,9 @@ private:
 public:
 
 
-int update_MLS(double R, PointCloudXYZI::Ptr &feats_down_body, PointCloudXYZI::Ptr &map, int maximum_iter, bool extrinsic_est);
+int update_MLS(double R, PointCloudXYZI::Ptr &feats_down_body, const PointCloudXYZI::Ptr &map, int maximum_iter, bool extrinsic_est,
+              const bool use_als, const PointCloudXYZI::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree,
+              const bool use_se3, const Sophus::SE3 &gnss_se3, const V3D &gnss_std_pos_m, const V3D &gnss_std_rot_deg);
 
 
 

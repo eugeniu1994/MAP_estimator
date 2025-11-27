@@ -1132,12 +1132,12 @@ void DataHandler::Subscribe()
                     }
                 }
                 
-                // else if (!estimator_.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
-                // {
-                //     std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
-                // }
+                else if (!estimator_.update(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, Nearest_Points, NUM_MAX_ITERATIONS, extrinsic_est_en))
+                {
+                    std::cout << "\n------------------MLS update failed--------------------------------" << std::endl;
+                }
 
-                estimator_.update_MLS(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, NUM_MAX_ITERATIONS, extrinsic_est_en);
+                // estimator_.update_MLS(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, NUM_MAX_ITERATIONS, extrinsic_est_en);
                 
 
                 //use_als = false;

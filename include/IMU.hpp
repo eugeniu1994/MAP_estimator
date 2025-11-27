@@ -57,14 +57,8 @@ struct ForwardResult
 
     state x_update2;
     cov P_update2;  
-
-    state x_update3;
-    cov P_update3;  
 };
 
-
-#include "matplotlibcpp.h"
-namespace plt = matplotlibcpp;
 
 class IMU_Class
 {
@@ -92,7 +86,9 @@ public:
 
     void ConstVelUndistort(const MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_out, const Sophus::SE3 &prev_, const Sophus::SE3 &curr_);
     
-    void backwardPass(Estimator &kf_state);
+    bool backwardPass(const MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI &pcl_out);
+    
+    void plot_values(const std::vector<ForwardResult> &forward_results_);
 
 protected:
     state imu_state;

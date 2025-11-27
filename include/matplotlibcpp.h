@@ -566,7 +566,7 @@ void plot_surface(const std::vector<::std::vector<Numeric>> &x,
   PyObject *axis = PyObject_Call(
       gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
 
-  if (!axis) throw std::runtime_error("No axis");
+  if (!axis) throw std::runtime_error("No axis at line 569");
   Py_INCREF(axis);
 
   Py_DECREF(gca);
@@ -734,7 +734,7 @@ void plot3(const std::vector<Numeric> &x,
   PyObject *axis = PyObject_Call(
       gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
 
-  if (!axis) throw std::runtime_error("No axis");
+  if (!axis) throw std::runtime_error("No axis at line 737");
   Py_INCREF(axis);
 
   Py_DECREF(gca);
@@ -1137,7 +1137,7 @@ bool scatter(const std::vector<NumericX>& x,
   PyObject *axis = PyObject_Call(
       gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
 
-  if (!axis) throw std::runtime_error("No axis");
+  if (!axis) throw std::runtime_error("No axis at line 1140");
   Py_INCREF(axis);
 
   Py_DECREF(gca);
@@ -3093,9 +3093,308 @@ private:
 };
 
 
+class MyClass2 {      
+public:   
+    PyObject* fig = nullptr;
+    PyObject* ax1 = nullptr;
+    PyObject* ax2 = nullptr;
+
+    bool initted = false;
+    bool use_ion = false;
+    MyClass2() {
+        if(use_ion)
+            ion();   // interactive mode ON
+    }
+
+    void init_figure() {
+        //if (fig != nullptr) return;
+
+        detail::_interpreter::get();
+
+        fig = PyObject_CallObject(
+            detail::_interpreter::get().s_python_function_figure,
+            detail::_interpreter::get().s_python_empty_tuple);
+
+        if (!fig) throw std::runtime_error("Failed to create figure");
+
+        // === Create 2 subplots: 1 row, 2 columns ===
+        PyObject* add_subplot = PyObject_GetAttrString(fig, "add_subplot");
+        if (!add_subplot) throw std::runtime_error("No add_subplot");
+
+        // ax1 = subplot(1, 2, 1)
+        {
+            PyObject* args = PyTuple_New(3);
+            PyTuple_SetItem(args, 0, PyLong_FromLong(1));
+            PyTuple_SetItem(args, 1, PyLong_FromLong(2));
+            PyTuple_SetItem(args, 2, PyLong_FromLong(1));
+
+            PyObject* kwargs = PyDict_New();
+            PyDict_SetItemString(kwargs, "projection", PyString_FromString("3d"));
+
+            ax1 = PyObject_Call(add_subplot, args, kwargs);
+            if (!ax1) throw std::runtime_error("Failed to create ax1");
+
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+        }
+        // ========================
+        // ADD TITLE TO THIS SUBPLOT
+        // ========================
+        {
+            PyObject* set_title = PyObject_GetAttrString(ax1, "set_title");
+            if (!set_title) throw std::runtime_error("Failed to get set_title");
+
+            PyObject* title_args = PyTuple_New(1);
+            PyTuple_SetItem(title_args, 0, PyString_FromString("Predicted"));
+
+            PyObject* ret = PyObject_CallObject(set_title, title_args);
+            Py_XDECREF(ret);
+
+            Py_DECREF(set_title);
+            Py_DECREF(title_args);
+        }
+        // ax2 = subplot(1, 2, 2)
+        {
+            PyObject* args = PyTuple_New(3);
+            PyTuple_SetItem(args, 0, PyLong_FromLong(1));
+            PyTuple_SetItem(args, 1, PyLong_FromLong(2));
+            PyTuple_SetItem(args, 2, PyLong_FromLong(2));
+
+            PyObject* kwargs = PyDict_New();
+            PyDict_SetItemString(kwargs, "projection", PyString_FromString("3d"));
+
+            ax2 = PyObject_Call(add_subplot, args, kwargs);
+            if (!ax2) throw std::runtime_error("Failed to create ax2");
+
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+        }
+        {
+            PyObject* set_title = PyObject_GetAttrString(ax2, "set_title");
+            if (!set_title) throw std::runtime_error("Failed to get set_title");
+
+            PyObject* title_args = PyTuple_New(1);
+            PyTuple_SetItem(title_args, 0, PyString_FromString("Smoothed"));
+
+            PyObject* ret = PyObject_CallObject(set_title, title_args);
+            Py_XDECREF(ret);
+
+            Py_DECREF(set_title);
+            Py_DECREF(title_args);
+        }
+
+        Py_DECREF(add_subplot);
+    }
+
+    // ================================================================
+    // Helper to clear an axis safely
+    // ================================================================
+    void clear_axis(PyObject* ax) {
+        PyObject* cla = PyObject_GetAttrString(ax, "cla");
+        PyObject_CallObject(cla, nullptr);
+        Py_DECREF(cla);
+    }
+
+    // ================================================================
+    // Helper to plot IMU + GT onto a given axis
+    // ================================================================
+    template<typename T>
+    void plot_on_axis(
+        PyObject* ax,
+        const std::vector<T>& x, const std::vector<T>& y, const std::vector<T>& z,
+        const std::vector<T>& u, const std::vector<T>& v, const std::vector<T>& w,
+        const std::vector<T>& xGT, const std::vector<T>& yGT, const std::vector<T>& zGT,
+        const std::vector<T>& uGT, const std::vector<T>& vGT, const std::vector<T>& wGT,
+        double s)
+    {   
+
+        // --- IMU quivers ---    
+        std::vector<std::string> rgb = {"red", "green", "blue"};
+        for (size_t i = 0; i < x.size(); i++) {
+            double n = std::sqrt(u[i]*u[i] + v[i]*v[i] + w[i]*w[i]) + 1e-9;
+
+            PyObject* plot3_q = PyObject_GetAttrString(ax, "quiver");
+            PyObject* args = PyTuple_New(6);
+            PyObject* kwargs = PyDict_New();
+
+            PyTuple_SetItem(args, 0, PyFloat_FromDouble(x[i]));
+            PyTuple_SetItem(args, 1, PyFloat_FromDouble(y[i]));
+            PyTuple_SetItem(args, 2, PyFloat_FromDouble(z[i]));
+            PyTuple_SetItem(args, 3, PyFloat_FromDouble(u[i]/n));
+            PyTuple_SetItem(args, 4, PyFloat_FromDouble(v[i]/n));
+            PyTuple_SetItem(args, 5, PyFloat_FromDouble(w[i]/n));
+
+            PyDict_SetItemString(kwargs, "color", PyString_FromString(rgb[i % 3].c_str()));
+            PyDict_SetItemString(kwargs, "length", PyFloat_FromDouble(0.02));
+
+            PyObject* ret = PyObject_Call(plot3_q, args, kwargs);
+            Py_XDECREF(ret);
+
+            Py_DECREF(plot3_q);
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+        }
+
+        //--- IMU translation (scatter) ---
+        if(false)
+        {
+            PyObject* args = PyTuple_New(3);
+            PyTuple_SetItem(args, 0, detail::get_array(x));
+            PyTuple_SetItem(args, 1, detail::get_array(y));
+            PyTuple_SetItem(args, 2, detail::get_array(z));
+
+            PyObject* kwargs = PyDict_New();
+            PyDict_SetItemString(kwargs, "s", PyFloat_FromDouble(s));
+
+            PyObject* scatter = PyObject_GetAttrString(ax, "scatter");
+            PyObject* ret = PyObject_Call(scatter, args, kwargs);
+            Py_XDECREF(ret);
+
+            Py_DECREF(scatter);
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+        }
+
+        // --- Start & End GT points (orange & black) ---
+        std::vector<std::string> c = {"orange", "black"}; //
+        std::vector<std::string> labels = {"Start", "End"};
+        for (size_t i = 0; i < xGT.size(); i+=3) {
+            PyObject* scatter = PyObject_GetAttrString(ax, "scatter");
+
+            PyObject* args = PyTuple_New(3);
+            PyTuple_SetItem(args, 0, PyFloat_FromDouble(xGT[i]));
+            PyTuple_SetItem(args, 1, PyFloat_FromDouble(yGT[i]));
+            PyTuple_SetItem(args, 2, PyFloat_FromDouble(zGT[i]));
+
+            PyObject* kwargs = PyDict_New();
+            PyDict_SetItemString(kwargs, "color", PyString_FromString(c[i % 2].c_str()));
+            PyDict_SetItemString(kwargs, "s", PyFloat_FromDouble(3*s));
+            PyDict_SetItemString(kwargs, "label", PyString_FromString(labels[i % 2].c_str()));
+
+            PyObject* ret = PyObject_Call(scatter, args, kwargs);
+            Py_XDECREF(ret);
+
+            Py_DECREF(scatter);
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+        }
+        
+        for (size_t i = 0; i < xGT.size(); i++) {
+            double n = std::sqrt(uGT[i]*uGT[i] + vGT[i]*vGT[i] + wGT[i]*wGT[i]) + 1e-9;
+
+            PyObject* plot3_q = PyObject_GetAttrString(ax, "quiver");
+            PyObject* args = PyTuple_New(6);
+            PyObject* kwargs = PyDict_New();
+
+            PyTuple_SetItem(args, 0, PyFloat_FromDouble(xGT[i]));
+            PyTuple_SetItem(args, 1, PyFloat_FromDouble(yGT[i]));
+            PyTuple_SetItem(args, 2, PyFloat_FromDouble(zGT[i]));
+            PyTuple_SetItem(args, 3, PyFloat_FromDouble(uGT[i]/n));
+            PyTuple_SetItem(args, 4, PyFloat_FromDouble(vGT[i]/n));
+            PyTuple_SetItem(args, 5, PyFloat_FromDouble(wGT[i]/n));
+
+            PyDict_SetItemString(kwargs, "color", PyString_FromString(rgb[i % 3].c_str()));
+            PyDict_SetItemString(kwargs, "length", PyFloat_FromDouble(0.05));
+
+            PyObject* ret = PyObject_Call(plot3_q, args, kwargs);
+            Py_XDECREF(ret);
+
+            Py_DECREF(plot3_q);
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+        }
+
+        // ---------------------------------------------------------
+        //  Set axis limits (X, Y, Z)
+        // ---------------------------------------------------------
+        double sc = 0.3;
+        int middleIndex = x.size() / 2;
+
+        auto set_lim = [&](const char* func_name, double v1, double v2)
+        {
+            PyObject* list = PyList_New(2);
+            PyList_SetItem(list, 0, PyFloat_FromDouble(v1));
+            PyList_SetItem(list, 1, PyFloat_FromDouble(v2));
+
+            PyObject* args = PyTuple_New(1);
+            PyTuple_SetItem(args, 0, list);
+
+            PyObject* f = PyObject_GetAttrString(ax, func_name);
+            if (!f) throw std::runtime_error(std::string("Missing function: ") + func_name);
+
+            PyObject* res = PyObject_CallObject(f, args);
+            Py_XDECREF(res);
+            Py_DECREF(f);
+            Py_DECREF(args);
+        };
+
+        // X-limits
+        set_lim("set_xlim",
+                (x[middleIndex] - sc),
+                (x[middleIndex] + sc));
+
+        // Y-limits
+        set_lim("set_ylim",
+                (y[middleIndex] - sc),
+                (y[middleIndex] + sc));
+
+        // Z-limits
+        set_lim("set_zlim",
+                (z[middleIndex] - sc),
+                (z[middleIndex] + sc));
+        
+        PyObject* legend = PyObject_GetAttrString(ax, "legend");
+        PyObject* res_leg = PyObject_CallObject(legend, nullptr);
+        Py_DECREF(legend);
+        Py_XDECREF(res_leg);
+    }
+
+    // ================================================================
+    // MAIN FUNCTION user calls
+    // ================================================================
+    template<typename T>
+    void plot_imu_and_gt(
+        const std::vector<T>& x, const std::vector<T>& y, const std::vector<T>& z,
+        const std::vector<T>& u, const std::vector<T>& v, const std::vector<T>& w,
+
+        const std::vector<T>& x2, const std::vector<T>& y2, const std::vector<T>& z2,
+        const std::vector<T>& u2, const std::vector<T>& v2, const std::vector<T>& w2,
+
+        const std::vector<T>& xGT, const std::vector<T>& yGT, const std::vector<T>& zGT,
+        const std::vector<T>& uGT, const std::vector<T>& vGT, const std::vector<T>& wGT,
+        double s=1.0)
+    {
+        if(!initted)
+        {
+            if(use_ion)
+                initted = true;
+            init_figure();
+        }
+        
+
+        clear_axis(ax1);
+        clear_axis(ax2);
+
+        // Plot the same thing on both axes
+        plot_on_axis(ax1, x,  y,   z,  u,  v,  w, xGT, yGT, zGT, uGT, vGT, wGT, s);
+        plot_on_axis(ax2, x2, y2, z2, u2, v2, w2, xGT, yGT, zGT, uGT, vGT, wGT, s);
+
+        draw();
+        pause(0.0001);
+    }
+};
+
+
+
+
 class MyClass {      
   public:   
-    MyClass(){};
+    PyObject* fig = nullptr;
+    PyObject* axis = nullptr;
+
+    MyClass(){ 
+        ion();
+    };
 
     template<typename NumericX, typename NumericY, typename NumericZ, typename NumericU, typename NumericW, typename NumericV>
     bool quiv(const std::vector<NumericX>& x, const std::vector<NumericY>& y, const std::vector<NumericZ>& z, 
@@ -3344,7 +3643,7 @@ class MyClass {
         PyObject *axis = PyObject_Call(
             gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
 
-        if (!axis) throw std::runtime_error("No axis");
+        if (!axis) throw std::runtime_error("No axis at line 3349");
         Py_INCREF(axis);
 
         Py_DECREF(gca);
@@ -3557,6 +3856,12 @@ class MyClass {
         return true;
     };
 
+    void clear_all(){
+        PyObject* cla = PyObject_GetAttrString(this->axis, "cla");
+        PyObject_CallObject(cla, nullptr);
+        Py_DECREF(cla);
+    }
+
     //-------------------------------------------
     template<typename NumericX, typename NumericY, typename NumericZ, typename NumericU, typename NumericW, typename NumericV>
     bool plot_imu_and_gt(
@@ -3572,6 +3877,7 @@ class MyClass {
              const long fig_number=0) 
     {
 
+        std::cout<<"......................plot_imu_and_gt......................fig_number:"<<fig_number<<std::endl;
         detail::_interpreter::get();
         static PyObject *mpl_toolkitsmod = nullptr, *axis3dmod = nullptr;
         if (!mpl_toolkitsmod) {
@@ -3588,33 +3894,88 @@ class MyClass {
             if (!axis3dmod) { throw std::runtime_error("Error loading module mpl_toolkits.mplot3d!"); }
         }
 
-        PyObject *fig_args = PyTuple_New(1);
-        PyObject* fig = nullptr;
-        PyTuple_SetItem(fig_args, 0, PyLong_FromLong(fig_number));
-        PyObject *fig_exists = PyObject_CallObject(detail::_interpreter::get().s_python_function_fignum_exists, fig_args);
-        if (!PyObject_IsTrue(fig_exists)) {
-            fig = PyObject_CallObject(detail::_interpreter::get().s_python_function_figure,detail::_interpreter::get().s_python_empty_tuple);
-        } else {
-            fig = PyObject_CallObject(detail::_interpreter::get().s_python_function_figure,fig_args);
-            std::cout<<"reuse the prev figure"<<std::endl;
+        // PyObject *fig_args = PyTuple_New(1);
+        // PyObject* fig = nullptr;
+        // PyTuple_SetItem(fig_args, 0, PyLong_FromLong(fig_number));
+        // PyObject *fig_exists = PyObject_CallObject(detail::_interpreter::get().s_python_function_fignum_exists, fig_args);
+        // if (!PyObject_IsTrue(fig_exists)) {
+        //     fig = PyObject_CallObject(detail::_interpreter::get().s_python_function_figure,detail::_interpreter::get().s_python_empty_tuple);
+        //     std::cout<<"figure does not exist, create a new one"<<std::endl;
+        // } else {
+        //     fig = PyObject_CallObject(detail::_interpreter::get().s_python_function_figure,fig_args);
+        //     std::cout<<"reuse the prev figure"<<std::endl;
+        // }
+        // Py_DECREF(fig_exists);
+        // if (!fig) throw std::runtime_error("Call to figure() failed.");
+
+
+        if (this->fig == nullptr) {
+            this->fig = PyObject_CallObject(
+                detail::_interpreter::get().s_python_function_figure,
+                detail::_interpreter::get().s_python_empty_tuple);
+
+            if (!this->fig) throw std::runtime_error("Failed to create figure");
         }
-        Py_DECREF(fig_exists);
-        if (!fig) throw std::runtime_error("Call to figure() failed.");
 
-        PyObject *gca_kwargs = PyDict_New();
-        PyDict_SetItemString(gca_kwargs, "projection", PyString_FromString("3d"));
+        {
+        // PyObject *gca_kwargs = PyDict_New();
+        // PyDict_SetItemString(gca_kwargs, "projection", PyString_FromString("3d"));
 
-        PyObject *gca = PyObject_GetAttrString(fig, "gca");
-        if (!gca) throw std::runtime_error("No gca");
-        Py_INCREF(gca);
-        PyObject *axis = PyObject_Call(
-            gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
+        // PyObject *gca = PyObject_GetAttrString(fig, "gca");
+        // if (!gca) throw std::runtime_error("No gca");
+        // Py_INCREF(gca);
+        // PyObject *axis = PyObject_Call(
+        //     gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
 
-        if (!axis) throw std::runtime_error("No axis");
-        Py_INCREF(axis);
+        // if (!axis) throw std::runtime_error("No axis at line 3617");
+        // Py_INCREF(axis);
 
-        Py_DECREF(gca);
-        Py_DECREF(gca_kwargs);
+        // Py_DECREF(gca);
+        // Py_DECREF(gca_kwargs);
+        }
+
+        {
+        // // Create 3D axis using add_subplot(111, projection="3d")
+        // PyObject* add_subplot = PyObject_GetAttrString(fig, "add_subplot");
+        // if (!add_subplot) throw std::runtime_error("No add_subplot");
+
+        // PyObject* args_subplot = PyTuple_New(3);
+        // PyTuple_SetItem(args_subplot, 0, PyLong_FromLong(1));
+        // PyTuple_SetItem(args_subplot, 1, PyLong_FromLong(1));
+        // PyTuple_SetItem(args_subplot, 2, PyLong_FromLong(1));
+
+        // PyObject* kwargs_subplot = PyDict_New();
+        // PyDict_SetItemString(kwargs_subplot, "projection", PyString_FromString("3d"));
+
+        // PyObject* axis = PyObject_Call(add_subplot, args_subplot, kwargs_subplot);
+        // if (!axis) throw std::runtime_error("Failed to create 3D axis");
+
+        // Py_DECREF(add_subplot);
+        // Py_DECREF(args_subplot);
+        // Py_DECREF(kwargs_subplot);
+        // Py_INCREF(axis);
+        }
+        if (this->axis == nullptr) {
+            PyObject* add_subplot = PyObject_GetAttrString(this->fig, "add_subplot");
+            PyObject* args_subplot = PyTuple_New(3);
+            PyTuple_SetItem(args_subplot, 0, PyLong_FromLong(1));
+            PyTuple_SetItem(args_subplot, 1, PyLong_FromLong(1));
+            PyTuple_SetItem(args_subplot, 2, PyLong_FromLong(1));
+
+            PyObject* kwargs_subplot = PyDict_New();
+            PyDict_SetItemString(kwargs_subplot, "projection", PyString_FromString("3d"));
+
+            this->axis = PyObject_Call(add_subplot, args_subplot, kwargs_subplot);
+            if (!this->axis) throw std::runtime_error("Failed to create 3D axis");
+
+            Py_DECREF(add_subplot);
+            Py_DECREF(args_subplot);
+            Py_DECREF(kwargs_subplot);
+        }
+
+        PyObject* cla = PyObject_GetAttrString(this->axis, "cla");
+        PyObject_CallObject(cla, nullptr);
+        Py_DECREF(cla);
 
         assert(x.size() == y.size());
         assert(y.size() == z.size());
@@ -3822,14 +4183,16 @@ class MyClass {
         Py_DECREF(plot3_set_zlim);
         Py_DECREF(res_);
 
-        Py_DECREF(axis);
         //Py_DECREF(axis);
-        //Py_DECREF(fig);
+        Py_DECREF(fig);
 
         return true;
     };
 
     
+
+    
+
      //-------------------------------------------
     template<typename NumericX, typename NumericY, typename NumericZ, typename NumericU, typename NumericW, typename NumericV>
     bool quiv_vs(const std::vector<NumericX>& x, const std::vector<NumericY>& y, const std::vector<NumericZ>& z, 
@@ -4157,7 +4520,7 @@ class MyClass {
         PyObject *axis = PyObject_Call(
             gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
 
-        if (!axis) throw std::runtime_error("No axis");
+        if (!axis) throw std::runtime_error("No axis at line 4225");
         Py_INCREF(axis);
 
         Py_DECREF(gca);

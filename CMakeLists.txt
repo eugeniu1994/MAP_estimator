@@ -134,7 +134,7 @@ catkin_package(
 
 add_definitions(-DWITHOUT_NUMPY) #for matplotlib
 
-# add_definitions(-DSAVE_DATA) #uncomment this to enable saving the data - note it will slow down the execution time
+add_definitions(-DSAVE_DATA) #uncomment this to enable saving the data - note it will slow down the execution time
 
 set(USE_EKF TRUE)
 set(USE_STATIC_KDTREE TRUE) # or FALSE to disable

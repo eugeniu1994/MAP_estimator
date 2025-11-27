@@ -56,7 +56,7 @@ const double G_m_s2 = 9.81; // positive as before z axis up
 // the new system has the z-axis down therefore negative
 //const double G_m_s2 = -9.81; //for new lieksa data - take this as param 
 
-constexpr int NUM_THREADS = 20;// 1;
+constexpr int NUM_THREADS = 8;// 16;// 20;// 1; for deterministm should be 1
 constexpr bool coupled_rotation_translation = false;// true;
 
 

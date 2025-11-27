@@ -62,10 +62,10 @@ publish:
     #save_clouds_path: "/home/eugeniu/z_tighly_coupled/test/"        #put here the path to save the clouds
     #poseSavePath: "/home/eugeniu/z_tighly_coupled/test/"     #where to save the trajectory
 
-    save_clouds_path: "/home/eugeniu/z_tighly_coupled/last2/"
-    poseSavePath: "/home/eugeniu/z_tighly_coupled/last2/"     #where to save the trajectory
+    save_clouds_path: "/home/eugeniu/zz_zx_final/"
+    poseSavePath: "/home/eugeniu/zz_zx_final/"     #where to save the trajectory
 
-    save_poses: false 
+    save_poses: true 
 
 eval:
     tree_file: "/media/eugeniu/T7/_georeferenced_latest/Ref_ALS_Hesai_fused/results/Results/Stem_curves/Found_stem_tree_attributes.txt"
