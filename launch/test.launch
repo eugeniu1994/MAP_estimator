@@ -13,8 +13,8 @@
     <param name="max_iteration" type="int" value="5" /> <!--3 was used so far-->
     <param name="Bag" type="string" value="$(arg bag_file)" />
     
-    <param name="filter_size_surf" type="double" value=".5" /> <!-- .5 -->
-    <param name="filter_size_map" type="double" value=".5" />
+    <param name="filter_size_surf" type="double" value=".4" /> <!-- .5 -->
+    <param name="filter_size_map" type="double" value=".4" />
 
     <param name="cube_side_length" type="double" value="120" /> <!--1000-->
     <node pkg="tf2_ros" type="static_transform_publisher" name="static_transform_vux_to_world" args="0 0 0 0 0 0 world VUX" />

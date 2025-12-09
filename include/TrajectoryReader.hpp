@@ -183,6 +183,11 @@ public:
 
     void read(const std::string &filepath, const Sophus::SE3 &extrinsic, bool use_lc, double vis_map_voxel_leaf_size_)
     {
+        double angle = -M_PI / 2.0; // -90 degrees in radians
+        Rz << cos(angle), -sin(angle), 0,
+            sin(angle), cos(angle), 0,
+            0, 0, 1;
+
         std::cout << "TrajectoryReader: read:" << filepath << std::endl;
         extrinsic_ = extrinsic;
 
@@ -1077,11 +1082,11 @@ public:
         V3D t(m.Easting, m.Northing, m.H_Ell);
 
         auto pose = Sophus::SE3(R, t); // in GNSS
+        out = pose * Sophus::SE3(Rz, V3D(0, 0, 0)); //rotate to MLS standard
 
-        // out = pose * Sophus::SE3(Rz, V3D(0, 0, 0));
-        //out = pose * extrinsic_;
 
-        out = extrinsic_.inverse() * pose * extrinsic_;
+        out = extrinsic_.inverse() * out * extrinsic_; //put in MLS frame 
+        /////// out = extrinsic_ * out * extrinsic_.inverse(); //put in MLS frame 
     }
 
     MeasurementQueryResult queryMeasurement(const double tod)
@@ -1468,7 +1473,8 @@ public:
 
 private:
     std::vector<Measurement> measurements_;
-    //bool use_lc = true;
+    //bool use_lc = true;   
+    M3D Rz;
 
     Eigen::Vector3d leverArms_{0, 0, 0}; // (x, y, z) meters
     Eigen::Vector3d bodyToIMU_{0, 0, 0}; // (xRot, yRot, zRot) degrees

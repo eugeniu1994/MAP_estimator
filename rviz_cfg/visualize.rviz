@@ -70,13 +70,13 @@ Visualization Manager:
       Frames:
         All Enabled: false
         GPSFix:
-          Value: true
+          Value: false
         MLS:
           Value: true
         PPK_GNSS:
           Value: true
         VUX:
-          Value: true
+          Value: false
         world:
           Value: true
       Marker Alpha: 1
@@ -261,7 +261,7 @@ Visualization Manager:
           Position Transformer: XYZ
           Queue Size: 10
           Selectable: true
-          Size (Pixels): 20
+          Size (Pixels): 5
           Size (m): 0.10000000149011612
           Style: Points
           Topic: /cloud_debug
@@ -815,7 +815,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 860.8463134765625
+      Distance: 836.232421875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -823,15 +823,15 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 84.34400177001953
-        Y: -100.5056381225586
-        Z: -662.1245727539062
+        X: 49.93397903442383
+        Y: -106.40615844726562
+        Z: -663.8802490234375
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3347971439361572
+      Pitch: 1.344797134399414
       Target Frame: global
       Yaw: 1.9513037204742432
     Saved: ~
