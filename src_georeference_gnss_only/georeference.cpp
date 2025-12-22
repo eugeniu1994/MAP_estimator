@@ -905,7 +905,7 @@ void DataHandler::Subscribe()
 
                     bool use_als_update = false; // true;
 
-                    use_als = false;
+                    use_als = false;//true;
                     if (use_als)
                     {
                         if (!als_obj->refine_als) // als was not setup
@@ -1308,11 +1308,27 @@ void DataHandler::Subscribe()
                               << std::endl;
 
                     prev_mls = curr_mls;
+                    imu_obj->done_update_ = true;
 #ifdef SAVE_DATA
                     std::cout << "save_poses:" << save_poses << ", save_clouds_path:" << save_clouds_path << std::endl;
 
                     if (als_integrated)
                     {
+
+                        if (!als2mls_saved)
+                        {
+                            // save als_obj->als_to_mls refine transformation
+                            std::ofstream foutG(poseSavePath + "als_to_mls.txt", std::ios::app);
+                            // foutG.setf(std::ios::scientific, std::ios::floatfield);
+                            foutG.setf(std::ios::fixed, std::ios::floatfield);
+                            foutG.precision(20);
+
+                            foutG << als_obj->als_to_mls.translation().transpose() << "\n"; //"Position: " <<
+                            foutG << als_obj->als_to_mls.so3().matrix() << "\n";            //"Rotation (SO3):\n"
+                            foutG.close();
+                            als2mls_saved = true;
+                        }
+
                         if (save_poses) // this will save the MLS estimated SE3 poses
                         {
                             const V3D &t_model = state_point.pos;

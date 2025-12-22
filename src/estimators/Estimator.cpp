@@ -41,6 +41,7 @@ Eigen::Matrix<double, state_size, 1> f(state s, input in)
     for (int i = 0; i < 3; i++)
     {
         result(i + P_ID) = s.vel[i];                  // prev state vel (constant vel model)
+        //result(i + P_ID) = s.vel[i] + a_inertial[i] * dt
         result(i + R_ID) = omega[i];                  // Angular velocity
         result(i + V_ID) = a_inertial[i] + s.grav[i]; // gravity-free acceleration
     }

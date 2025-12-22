@@ -2,7 +2,7 @@
 
 using namespace ekf;
 
-// #define use_p2p
+#define use_p2p
 
 struct landmark
 {
@@ -879,10 +879,10 @@ int RIEKF::update_MLS(double R, PointCloudXYZI::Ptr &feats_down_body, const Poin
     }
 
     // just a test here
-    if (!use_als)
-    {
-        // use_mls = true; //force MLS to be true
-    }
+    // if (!use_als)
+    // {
+    //     // use_mls = true; //force MLS to be true
+    // }
 
     for (int i = -1; i < maximum_iter; i++)
     {
@@ -932,8 +932,8 @@ int RIEKF::update_MLS(double R, PointCloudXYZI::Ptr &feats_down_body, const Poin
         if (use_se3)
         {
             const auto &[JTJ_se3, JTr_se3, se3_cost] = BuildLinearSystem_SE3(x_, gnss_se3, gnss_std_pos_m, gnss_std_rot_deg);
-            double alpha = std::max(da_mls, 1); // ;
-            // double alpha = 1;
+            // double alpha = std::max(da_mls, 1); // ;
+            double alpha = 1;
 
             JTJ += alpha * JTJ_se3;
             JTr += alpha * JTr_se3;
@@ -1033,6 +1033,7 @@ int RIEKF::update_MLS(double R, PointCloudXYZI::Ptr &feats_down_body, const Poin
         // }
         // last_dx = dx_;
 
+        
         // if (i == maximum_iter - 1) // last iteration
         if (converged_times > 1 || i == maximum_iter - 1) // if converged or last iteration
         {

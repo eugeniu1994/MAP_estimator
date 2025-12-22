@@ -50,6 +50,10 @@
 constexpr int MAX_NUM_ITERATIONS_ = 500; // icp
 constexpr double ESTIMATION_THRESHOLD_ = 0.001; //1mm
 
+
+// constexpr double ESTIMATION_THRESHOLD_ = 0.0005; //1mm make this smaller just for better ref trajectory 
+
+
 // 1.0 for no gravity
 const double G_m_s2 = 9.81; // positive as before z axis up
 

@@ -42,6 +42,8 @@ import networkx as nx
 
 max_diff = 0.000001  #s
 
+max_diff = 0.1
+
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -100,9 +102,8 @@ t_origin_to_ENU = -R_origin_to_ENU @ translation_ENU_to_origin
 
 
 bbox_to_anchor=(0.5, -0.12) #bottom
-bbox_to_anchor=(0.5, 1.3)   #top
-
 bbox_to_anchor=(0.5, 1.2)   #top
+bbox_to_anchor=(0.5, 1)   #top
 
 ncol = 3
 # ncol = 4
@@ -130,11 +131,16 @@ class TrajectoryReader(object):
         traj_gt = file_interface.read_custom_trajectory_file2(self.path_gt)
         traj_model = file_interface.read_custom_trajectory_file2(self.path_model)
 
+        # traj_gt = self.clip(traj_gt)
+
+        # self.traj_gt, self.traj_model = traj_gt, traj_model
         self.traj_gt, self.traj_model = sync.associate_trajectories(traj_gt, traj_model, max_diff)
 
         # if align:
         self.traj_model.align(self.traj_gt, correct_scale=False, correct_only_scale=False, n=-1)     
         # self.traj_model.align_origin(traj_ref=self.traj_gt)
+        # self.traj_model.align(self.traj_gt, correct_scale=False, correct_only_scale=False, n=20)     
+
         
         self.T_origin_to_ENU = np.eye(4)
         self.T_origin_to_ENU[:3, :3] = R_origin_to_ENU
@@ -168,6 +174,19 @@ class TrajectoryReader(object):
         return PoseTrajectory3D(
             poses_se3=new_poses_se3[:test_no_fail],
             timestamps=traj.timestamps[:test_no_fail])
+
+    def clip(self, traj: PoseTrajectory3D) -> PoseTrajectory3D:
+        new_poses_se3 = []
+        for pose in traj.poses_se3:
+            new_poses_se3.append(pose)
+
+        test_no_fail = 2400 # 5400  # 9999999
+        
+        return PoseTrajectory3D(
+            poses_se3=new_poses_se3[:test_no_fail],
+            timestamps=traj.timestamps[:test_no_fail])
+
+    
 
     def traveled_distance(self, est_xyz: np.ndarray) -> float:
         # Compute differences between consecutive positions
@@ -240,19 +259,21 @@ class TrajectoryReader(object):
         self.rpe_r_error_vectors = rpe_metric.error
 
 
+path_gt =  "/home/eugeniu/zz_zx_final/ref/MLS_prev.txt"
+path_gt =  "/home/eugeniu/zz_zx_final/ref/MLS_gnss.txt"
 path_gt =  "/home/eugeniu/zz_zx_final/ref/MLS.txt"
-# path_gt =  "/home/eugeniu/zz_zx_final/ref/MLS_gnss.txt"
 
 methods = {
+    #  'rko'             : '/home/eugeniu/zz_zx_final/rko',
+    # 'point-lio'             : '/home/eugeniu/zz_zx_final/point-lio',
+
     ## 'Reference trajectory' : '/home/eugeniu/zz_zx_final/ref',
     # '0_LI'                     : '/home/eugeniu/zz_zx_final/0_LI',
     '1_LI_robust_adaptive' : '/home/eugeniu/zz_zx_final/1_LI_robust_adaptive',
-    '2_LI_robust_adaptive_g' : '/home/eugeniu/zz_zx_final/2_LI_robust_adaptive_g',
-    # '3_LI_robust_adaptive_p2p_p2pl' : '/home/eugeniu/zz_zx_final/3_LI_robust_adaptive_p2p_p2pl',
+    # '2_LI_robust_adaptive_g' : '/home/eugeniu/zz_zx_final/2_LI_robust_adaptive_g',
+    '3_LI_robust_adaptive_p2p_p2pl' : '/home/eugeniu/zz_zx_final/3_LI_robust_adaptive_p2p_p2pl',
     # '4_LI_robust_adaptive_backwardPass' : '/home/eugeniu/zz_zx_final/4_LI_robust_adaptive_backwardPass',
-
-
-
+    # '5_LI_robust_adaptive_backwardPass_p2p_p2pl' : '/home/eugeniu/zz_zx_final/5_LI_robust_adaptive_backwardPass_p2p_p2pl',
 
 
     # 'R-A LI + IMU_g-update'               : '/home/eugeniu/zz_zx_final/prev/li5', #robust adaptive li , + imu gravity update
@@ -260,11 +281,165 @@ methods = {
     # 'R-A LI'                              : '/home/eugeniu/zz_zx_final/prev/li1', #robust adaptive li , no rot-tran coupled
     # 'R-A LI + backwardPass'               : '/home/eugeniu/zz_zx_final/prev/li3',
 
-    'test-prev'             : '/home/eugeniu/zz_zx_final/test-prev',
+    'madgwick_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/madgwick',
+
+    'g_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/g_p2p_p2pl',
+
+
+
+    # 'test-prev'             : '/home/eugeniu/zz_zx_final/test-prev',
+
     'test'             : '/home/eugeniu/zz_zx_final/test',
+
+   
+
 }
 
+# raw_mat = file_interface.read_vel(path_gt)
 
+def funct_debug():
+    file_path = "/home/eugeniu/zz_zx_final/madgwick/debugMLS.txt"
+
+    data = np.loadtxt(file_path)
+    l = len(data)
+    print("data:", np.shape(data))
+
+    data = data[:100000, :]
+
+    time = data[:, 0]
+
+    vel = data[:, 1:4]   # vx, vy, vz
+    ba  = data[:, 4:7]   # bax, bay, baz
+    bw  = data[:, 7:10]  # bwx, bwy, bwz
+    dt  = data[:, 10]
+
+    # Create figure
+    # plt.figure(figsize=(12, 8))
+
+    # --- 1. Time ---
+    # plt.subplot(2, 2, 1)
+    # plt.plot(dt, linewidth=1.5)
+    # plt.xlabel("Index")
+    # plt.ylabel("Time [s]")
+    # plt.title("dt")
+    # plt.grid(True)
+
+    # --- 2. Velocity ---
+    # plt.subplot(2, 2, 2)
+    # vel_vector = np.linalg.norm(vel, axis = 1)
+    # print("vel_vector:", np.shape(vel_vector))
+    # # plt.plot(time, vel[:, 0], 'r', label='v_x')
+    # # plt.plot(time, vel[:, 1], 'g', label='v_y')
+    # # plt.plot(time, vel[:, 2], 'b', label='v_z')
+    # plt.plot(time, vel_vector, 'k', label='vel_vector')
+
+    # max_vel_m_s = 20 / 3.6
+    # vel_line = np.full_like(time, max_vel_m_s)
+    # print("vel_line:", np.shape(vel_line))
+    # plt.plot(time, vel_line, '--', label='20 km/h')
+
+    # plt.xlabel("Time [s]")
+    # plt.ylabel("Velocity [m/s]")
+    # plt.title("Velocity")
+    # plt.legend()
+    # plt.grid(True)
+    # plt.draw()
+
+    vel_vector = np.linalg.norm(vel, axis=1)
+    print("vel_vector:", vel_vector.shape)
+
+    max_vel_m_s = 30.0 / 3.6  # 30 km/h in m/s
+    vel_line = np.full_like(time, max_vel_m_s)
+
+    # --- gain computation ---
+    beta_min = 0.001
+    beta_max = 0.1
+
+    v_n = vel_vector / max_vel_m_s
+    v_n = np.clip(v_n, 0.0, 1.0)
+
+    beta = beta_min + (1.0 - v_n) * (beta_max - beta_min)
+
+    # --- figure ---
+    fig, ax1 = plt.subplots(figsize=(12, 8))
+
+
+    # Differentiate to get acceleration
+    acceleration = np.abs(np.diff(vel_vector) / dt[:-1])
+    print("acceleration:", np.shape(acceleration))
+
+
+
+
+
+    # Left Y-axis: velocity
+    ax1.plot(time, vel_vector, 'k', label='|v| [m/s]')
+    
+
+    ax1.plot(time, vel_line, '--', label='30 km/h')
+    ax1.set_xlabel("Time [s]")
+    ax1.set_ylabel("Velocity [m/s]")
+    ax1.grid(True)
+
+    # Right Y-axis: beta
+    ax2 = ax1.twinx()
+    ax2.plot(time, beta, 'r', label='β (Madgwick gain vel)')
+    ax2.set_ylabel("Gain β")
+
+    # v_n = acceleration / .1 #2 max acceleration
+    # v_n = np.clip(v_n, 0.0, 1.0)
+    # beta = beta_min + (1.0 - v_n) * (beta_max - beta_min)
+    # ax2.plot(time[:-1], beta, 'b', label='β (Madgwick gain acc)')
+
+    # --- combine legends ---
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+
+    plt.title("Velocity and Adaptive Madgwick Gain")
+    plt.tight_layout()
+    plt.draw()
+
+    plt.figure()
+    plt.plot(time[:-1], acceleration, label="acc")
+    plt.legend()
+    plt.grid(True)
+
+    # --- 3. Accelerometer bias ---
+    # plt.subplot(2, 2, 3)
+    # plt.figure(figsize=(12, 8))
+    # beta_min = 0.001
+    # beta_max = 0.1
+    # v_n = vel_vector / max_vel_m_s
+    # v_n = np.clip(v_n, 0.0, 1.0)
+
+    # beta = beta_min + (1.0 - v_n) * (beta_max - beta_min)
+    # plt.plot(time, beta, 'r', label='beta')
+    # plt.plot(time, ba[:, 0], 'r', label='ba_x')
+    # plt.plot(time, ba[:, 1], 'g', label='ba_y')
+    # plt.plot(time, ba[:, 2], 'b', label='ba_z')
+    # plt.xlabel("Time [s]")
+    # plt.ylabel("Accel Bias")
+    # plt.title("Accelerometer Bias (ba)")
+    # plt.legend()
+    # plt.grid(True)
+
+    # --- 4. Gyroscope bias ---
+    # plt.subplot(2, 2, 4)
+    # plt.plot(time, bw[:, 0], 'r', label='bw_x')
+    # plt.plot(time, bw[:, 1], 'g', label='bw_y')
+    # plt.plot(time, bw[:, 2], 'b', label='bw_z')
+    # plt.xlabel("Time [s]")
+    # plt.ylabel("Gyro Bias")
+    # plt.title("Gyroscope Bias (bw)")
+    # plt.legend()
+    # plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+# funct_debug()
+# exit()
 
 methods_data = {
     '0_LI' :  ["#1f77b4",'M'],
@@ -272,13 +447,14 @@ methods_data = {
     '2_LI_robust_adaptive_g'             : ['#2ca02c','A'],
     '3_LI_robust_adaptive_p2p_p2pl'                 : ['#ff7f0e','C'],
     '4_LI_robust_adaptive_backwardPass' : ['#17becf','F'],
+    '5_LI_robust_adaptive_backwardPass_p2p_p2pl' : ['#e377c2','H'],
 
 
 
 
 
     'test' : ["#648099",'Z'],
-    'test-prev' : ['#8c564b','G'],
+    'madgwick_p2p_p2pl' : ['#8c564b','G'],
 
     'Reference trajectory' : ['#d62728','L'],
     
@@ -288,6 +464,8 @@ methods_data = {
     'R-A LI + backwardPass' : ['#bcbd22','E'],
     'R-A LI' : ["#808019",'E'],
 
+    'test-prev'      : ["#651e1e",'D'],
+    'rko' : ["#808019",'E'],
 
 
 
@@ -301,13 +479,12 @@ methods_data = {
 
     
 
-    'LI-VUX + D-ALS (t-coupled)' : ['#e377c2','H'],
 
     
 
-    '*-LI-VUX' : ["#ff7f0e",'N'], #['#04f810','N'],
+    'point-lio' : ["#ff7f0e",'N'], #['#04f810','N'],
 
-    'test2' : ["#26391B",'Z'],
+    'g_p2p_p2pl' : ["#26391B",'Z'],
     'test_now' : ["#a86b40",'S'],
     '*-LI-VUX + D-ALS (t-coupled)' : ["#e377c2",'S'],
 }
@@ -331,6 +508,8 @@ ax_3d.set_zlabel("Height [m]")
 
 data_ape_t = {}
 data_rpe_t = {}
+data_ape_r = {}
+data_rpe_r = {}
 data_time = {}
 data_iterations = {}
 
@@ -365,10 +544,15 @@ for idx, (label, path) in enumerate(methods.items()):
 
     obj.APE_translation()
     obj.RPE_translation()
+    # obj.APE_rotation()
+    # obj.RPE_rotation()
     all_traj.append(obj.traj_model)
 
     data_ape_t[label] = obj.ape_t_error_vectors
     data_rpe_t[label] = obj.rpe_t_error_vectors
+
+    # data_ape_r[label] = obj.ape_r_error_vectors
+    # data_rpe_r[label] = obj.rpe_r_error_vectors
 
     data_time[label] = obj.time
     data_iterations[label] = obj.iterations
@@ -542,6 +726,10 @@ def plot_lines(data, metric = '',  show_legend = True):
 
 plot_box(data_ape_t, 'ATE translation (m)', show_legend = True, add_arrows = False)
 plot_box(data_rpe_t, 'RTE translation (%)', show_legend = True)
+
+# plot_box(data_ape_r, 'ATE rotation (m)', show_legend = True, add_arrows = False)
+# plot_box(data_rpe_r, 'RTE rotation (%)', show_legend = True)
+
 
 # plot_lines(data_time, 'Time (ms)', show_legend = True)
 # plot_lines(data_iterations, 'Iterations', show_legend = True)
