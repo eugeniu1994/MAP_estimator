@@ -284,15 +284,13 @@ methods = {
     'madgwick_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/madgwick',
 
     'g_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/g_p2p_p2pl',
+    'g_p2p_p2pl_backwardPass'             : '/home/eugeniu/zz_zx_final/g_p2p_p2pl_backwardPass',
 
 
 
     # 'test-prev'             : '/home/eugeniu/zz_zx_final/test-prev',
 
-    'test'             : '/home/eugeniu/zz_zx_final/test',
-
-   
-
+    # 'test'             : '/home/eugeniu/zz_zx_final/test',
 }
 
 # raw_mat = file_interface.read_vel(path_gt)
@@ -486,7 +484,7 @@ methods_data = {
 
     'g_p2p_p2pl' : ["#26391B",'Z'],
     'test_now' : ["#a86b40",'S'],
-    '*-LI-VUX + D-ALS (t-coupled)' : ["#e377c2",'S'],
+    'g_p2p_p2pl_backwardPass' : ["#e377c2",'S'],
 }
 
 colors = ['tab:brown', 'tab:red', 'tab:blue', 'tab:green', 'tab:purple', 'tab:orange', 'cyan', 'lime','orange','gray']

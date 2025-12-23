@@ -15,8 +15,6 @@
 
 #define MIN_INIT_COUNT (10)
 
-#include "DCM_IMU_C.h"
-
 struct AccelNoiseEstimator
 {
     const double min_std_ = 0.001;
@@ -46,7 +44,7 @@ struct AccelNoiseEstimator
 
     M3D covariance() const
     {
-        V3D stdv = stddev();
+        V3D stdv = 3*stddev();
         return stdv.array().square().matrix().asDiagonal();
     }
 };
@@ -195,9 +193,6 @@ class IMU_Class
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
-    // Create DCM_IMU with default parameters
-    DCM_IMU_C imu_filt;
 
     // Madgwick's IMU and AHRS------------------------------------------
     float gain_ = 0.05; // 0.1; // algorithm gain
@@ -397,7 +392,7 @@ public:
     AccelNoiseEstimator accelNoiseEstimator;
 
     bool done_update_ = false;
-    
+
     void set_param(const V3D &tran, const M3D &rot, const V3D &gyr, const V3D &acc, const V3D &gyr_bias, const V3D &acc_bias);
     virtual void Process(const MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_un_);
 

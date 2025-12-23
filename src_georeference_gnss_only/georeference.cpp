@@ -1075,19 +1075,19 @@ void DataHandler::Subscribe()
                     als_integrated = true; // to save the poses
 
                      
-                    // if(imu_obj->backwardPass(Measures, estimator_, *feats_undistort))
-                    // {
-                    //     std::cout<<"enough smoothing has been done, downsample and update..."<<std::endl;
-                    //     downSizeFilterSurf.setInputCloud(feats_undistort);
-                    //     downSizeFilterSurf.filter(*feats_down_body);
-                    //     feats_down_size = feats_down_body->points.size();
+                    if(imu_obj->backwardPass(Measures, estimator_, *feats_undistort))
+                    {
+                        std::cout<<"enough smoothing has been done, downsample and update..."<<std::endl;
+                        downSizeFilterSurf.setInputCloud(feats_undistort);
+                        downSizeFilterSurf.filter(*feats_down_body);
+                        feats_down_size = feats_down_body->points.size();
 
-                    //     //update NOT USED 
-                    //     // estimator_.update_MLS(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, 1, extrinsic_est_en,
-                    //     //                   use_als_update, als_obj->als_cloud, als_obj->localKdTree_map_als,
-                    //     //                   use_se3_update, se3, std_pos_m, std_rot_deg,
-                    //     //                   have_lc_ref, reader.lc_map, reader.lc_tree);
-                    // }
+                        //update NOT USED 
+                        // estimator_.update_MLS(LASER_POINT_COV, feats_down_body, laserCloudSurfMap, 1, extrinsic_est_en,
+                        //                   use_als_update, als_obj->als_cloud, als_obj->localKdTree_map_als,
+                        //                   use_se3_update, se3, std_pos_m, std_rot_deg,
+                        //                   have_lc_ref, reader.lc_map, reader.lc_tree);
+                    }
 
                     if (false)
                     {

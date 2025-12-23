@@ -592,17 +592,6 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
     M3D R_imu;
 
     input in;
-
-    // M3D _orientation = imu_state.rot.matrix();
-    // double last_row[3];
-    // for (int i = 0; i < 3; ++i)
-    // {
-    //     last_row[i] = _orientation(2, i);
-    // }
-    // imu_filt.set_state(last_row);
-
-    
-
     for (auto it_imu = v_imu.begin(); it_imu < (v_imu.end() - 1); it_imu++)
     {
         auto &&head = *(it_imu);
@@ -632,7 +621,7 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
         in.acc = acc_avr;
         in.gyro = angvel_avr;
 
-        R_imu = imu_state.rot.matrix(); //rotation before the prediction 
+        R_imu = imu_state.rot.matrix(); // rotation before the prediction
 
         kf_state.predict(dt, Q, in);
         imu_state = kf_state.get_x();
@@ -642,38 +631,37 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
 
         if (true && done_update_) // we keep this one (compare estimated gravity with actual one) g_p2p_p2pl
         {
-            //a_m ​= R.T * g + (a_lin​)
-            //when (a_lin​) = 0 -> a_m = R.T * g
+            // a_m ​= R.T * g + (a_lin​)
+            // when (a_lin​) = 0 -> a_m = R.T * g
             V3D g_world(0.0, 0.0, G_m_s2);
             M3D R = imu_state.rot.matrix();
 
             V3D a_lin1 = imu_state.rot * (acc_s_last - imu_state.ba) + imu_state.grav; //
-            //V3D a_lin2 = (imu_state.vel - vel_prev) / dt; // approximate linear acceleration from velocity
-            V3D a_lin_body = (acc_s_last - imu_state.ba) - R.transpose() * (-imu_state.grav);
+
+            V3D a_lin_body = (acc_s_last - imu_state.ba) - R.transpose() * (-imu_state.grav); //prev
+            // V3D a_lin_body = R.transpose() * ((imu_state.vel - vel_prev) / dt);  //acc from velocity
 
             // Normalize BIAS-FREE accelerometer to gravity magnitude
-            V3D z = acc_avr;// - imu_state.ba; // acc.normalized() * GRAVITY;
-            
+            V3D z = acc_avr; // - imu_state.ba; // acc.normalized() * GRAVITY;
+
             // Expected measurement
-            V3D z_hat = R.transpose() * g_world; //predicted local gravity
+            V3D z_hat = R.transpose() * g_world; // predicted local gravity
             // Innovation
             V3D y = z - z_hat;
 
-            // std::cout<<"\na_lin1:"<<a_lin1.transpose()<<", magnitude:"<<a_lin1.norm()<<std::endl;
-            //std::cout<<"a_lin2:"<<a_lin2.transpose()<<", magnitude:"<<a_lin2.norm()<<std::endl;
-            std::cout<<"a_lin_body:"<<a_lin_body.transpose()<<", magnitude:"<<a_lin_body.norm()<<std::endl;
+            std::cout << "a_lin_body:" << a_lin_body.transpose() << ", magnitude:" << a_lin_body.norm() << std::endl;
 
-            std::cout<<"imu_state.grav:"<<imu_state.grav.transpose()<<std::endl;
+            std::cout << "imu_state.grav:" << imu_state.grav.transpose() << std::endl;
 
-
-            std::cout<<"z     :"<<z.transpose()<<std::endl;
-            std::cout<<"z_hat :"<<z_hat.transpose()<<std::endl;
-            std::cout<<"y     :"<<y.transpose()<<", y norm:"<<y.norm()<<std::endl;
+            std::cout << "z     :" << z.transpose() << std::endl;
+            std::cout << "z_hat :" << z_hat.transpose() << std::endl;
+            std::cout << "y     :" << y.transpose() << ", y norm:" << y.norm() << std::endl;
 
             Eigen::Matrix<double, 3, state_size> H;
             H.setZero();
-    
-            if (true)
+            H.block<3,3>(0,R_ID) = -Sophus::SO3::hat(z_hat);
+
+            if (false)
             {
                 Eigen::Matrix<double, 3, state_size> H_num;
                 H_num.setZero();
@@ -682,7 +670,7 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
                 {
                     M3D R = s.rot.matrix();
                     V3D z_hat = R.transpose() * g_world;
-                    V3D z = acc_avr;// - imu_state.ba;
+                    V3D z = acc_avr; // - imu_state.ba;
 
                     return z - z_hat;
                 };
@@ -703,9 +691,9 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
                     H_num.col(i) = (r1 - r0) / eps;
                 }
 
-                // std::cout << "||H_num - H_analytic|| = " << (H_num - H).norm() << std::endl;
-                // std::cout<<"H_num     :\n"<<H_num<<std::endl;
-                // std::cout<<"H_analytic:\n"<<H<<std::endl;
+                std::cout << "||H_num - H_analytic|| = " << (H_num - H).norm() << std::endl;
+                std::cout<<"H_num     :\n"<<H_num<<std::endl;
+                std::cout<<"H_analytic:\n"<<H<<std::endl;
 
                 H = H_num;
             }
@@ -713,29 +701,12 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
 
             M3D Rm_motion = a_lin_body * a_lin_body.transpose();
             double a_lin_norm = a_lin_body.norm();
-            auto acc_std = Q.block<3, 3>(A_VAR_ID, A_VAR_ID).diagonal().cwiseSqrt();
-            double sigma_accel = std::fabs(0.1 * G_m_s2); // accelerometer noise
-            // M3D Rm = Rm_motion + sigma_accel * sigma_accel * M3D::Identity();    //the prev best so far
-            M3D Rm = Rm_motion + Q.block<3, 3>(A_VAR_ID, A_VAR_ID); //THE BEST SO FAR
-        
-            // double eps = 1e-6 * G_m_s2 * G_m_s2;
-            //Rm = y * y.transpose() + eps * M3D::Identity(); - worse
-            // Rm = y * y.transpose() + a_lin_norm * M3D::Identity(); //worse
+            M3D Rm = Rm_motion + Q.block<3, 3>(A_VAR_ID, A_VAR_ID); // THE BEST SO FAR
 
-            // M3D Rm = y * y.transpose() + sigma_accel * sigma_accel * M3D::Identity();
-            Rm = y * y.transpose() + Q.block<3, 3>(A_VAR_ID, A_VAR_ID); // test now
-
-            
-
-            // auto motion_stdev = Rm_motion.diagonal().cwiseSqrt();
             auto motion_stdev = Rm.diagonal().cwiseSqrt();
 
-            std::cout<<"motion_stdev:"<<motion_stdev.transpose()<<", sigma_accel:"<<sigma_accel<<std::endl;
-            // std::cout<<"eps:"<<eps<<", sigma_accel:"<<sigma_accel<<std::endl;
+            std::cout << "motion_stdev:" << motion_stdev.transpose() << std::endl;
 
-            std::cout<<"acc_std:"<<acc_std.transpose()<<std::endl;
-
-            
             M3D S = H * P * H.transpose() + Rm;
             auto K = P * H.transpose() * S.inverse();
             auto dx = -K * y;
@@ -757,188 +728,26 @@ void IMU_Class::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCl
             // }
         }
 
-        if (false) // to be tested
-        {
-            const V3D g_w(0, 0, -G_m_s2);
-
-            // Rotation matrix
-            M3D R = imu_state.rot.matrix();
-            V3D acc_m = acc_avr;
-
-            // Gravity expressed in local frame
-            V3D predicted_gravity = R.transpose() * g_w;
-            // V3D local_gravity_estimate = R.transpose() * imu_state.grav;
-            // acceleration body in world frame
-            V3D a_world = (imu_state.vel - vel_prev) / dt; // approximate body acceleration from velocity
-
-            // local gravity estimate (body frame)
-            V3D local_gravity_estimate = acc_m - imu_state.ba - R.transpose() * a_world;
-
-
-            // Normalize (MANDATORY for dot product)
-            predicted_gravity.normalize();
-            local_gravity_estimate.normalize();
-
-            // Scalar residual (angular misalignment)
-            double r = 1.0 - predicted_gravity.dot(local_gravity_estimate);
-
-            std::cout << "\npredicted_gravity     : " << predicted_gravity.transpose() << std::endl;
-            std::cout << "local_gravity_estimate: " << local_gravity_estimate.transpose() << std::endl;
-            std::cout << "r (before): " << r << std::endl;
-
-            
-            Eigen::Matrix<double, 1, state_size> H;
-            H.setZero();
-
-            double eps = 1e-7;
-
-            // Scalar residual function
-            auto residual_fn = [&](const state &s) -> double
-            {
-                M3D R = s.rot.matrix();
-
-                V3D pg = R.transpose() * g_w;
-                // V3D lg = R.transpose() * s.grav;
-                V3D a_world = (s.vel - vel_prev) / dt; // approximate body acceleration from velocity
-                // local gravity estimate (body frame)
-                V3D lg = acc_m - s.ba - R.transpose() * a_world;
-
-                pg.normalize();
-                lg.normalize();
-
-                return 1.0 - pg.dot(lg);
-            };
-
-            double r0 = residual_fn(imu_state);
-
-            // Finite-difference Jacobian in tangent space
-            for (int i = 0; i < state_size; ++i)
-            {
-                Eigen::Matrix<double, state_size, 1> dx;
-                dx.setZero();
-                dx(i) = eps;
-
-                state x_perturbed = kf_state.boxplus(imu_state, dx);
-                double r1 = residual_fn(x_perturbed);
-
-                H(0, i) = (r1 - r0) / eps;
-            }
-
-        
-            // Measurement noise (scalar)
-            double sigma_accel = 0.1;
-            double Rm = sigma_accel * sigma_accel;
-            auto P = kf_state.get_P();
-            // Innovation covariance
-            double S = (H * P * H.transpose())(0, 0) + Rm;
-            // Kalman gain
-            Eigen::Matrix<double, state_size, 1> K =
-                P * H.transpose() / S;
-            // State correction
-            Eigen::Matrix<double, state_size, 1> dx = -K * r;
-            imu_state = kf_state.boxplus(imu_state, dx);
-            // Covariance update
-            P -= K * H * P;
-            // Write back
-            kf_state.set_x(imu_state);
-            kf_state.set_P(P);
-
-            
-            R = imu_state.rot.matrix();
-            predicted_gravity = R.transpose() * g_w;
-            // local_gravity_estimate = R.transpose() * imu_state.grav;
-            a_world = (imu_state.vel - vel_prev) / dt; // approximate body acceleration from velocity
-            local_gravity_estimate = acc_m - imu_state.ba - R.transpose() * a_world;
-
-            predicted_gravity.normalize();
-            local_gravity_estimate.normalize();
-
-            double r_after = 1.0 - predicted_gravity.dot(local_gravity_estimate);
-
-            std::cout << "r  (after): " << r_after << std::endl;
-        }
-
-        if (false) // Heikki's method - roll, pitch based on the last rotation matrix row
-        {
-            double ypr[3];
-
-            V3D ang_vel = angvel_avr - imu_state.bg; // bias free gyroscope
-            V3D lin_acc = acc_avr - imu_state.ba;    // bias free acceleration
-
-            // update one iteration
-            imu_filt.updateIMU(ang_vel, lin_acc, dt);
-
-            ypr[0] = imu_filt.getYaw();
-
-            // Use only these 2
-            ypr[1] = imu_filt.getPitch(); // pitch
-            ypr[2] = imu_filt.getRoll();  // roll
-
-            double yaw = ypr[0];
-            double pitch = ypr[1];
-            double roll = ypr[2];
-
-            V3D init_rot = V3D(yaw, pitch, roll) * 180.0 / M_PI;
-
-            // M3D R_;
-
-            // R_ =Eigen::AngleAxisd(yaw,   Eigen::Vector3d::UnitZ()) *
-            //     Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
-            //     Eigen::AngleAxisd(roll,  Eigen::Vector3d::UnitX());
-
-            // V3D ypr_ = R_.eulerAngles(2, 1, 0)* 180.0 / M_PI ; // yaw, pitch, roll (deg)
-            V3D ypr_my = imu_state.rot.matrix().eulerAngles(2, 1, 0) * 180.0 / M_PI; // yaw, pitch, roll (deg)
-
-            std::cout << "ypr my   :" << ypr_my.transpose() << std::endl;
-            std::cout << "init_rot :" << init_rot.transpose() << std::endl;
-
-            //---INJECT THE ROLL AND PITCH INTO ROTATION
-            //---AFTER UPDATE - CHANGE THE FILTER STATE BASED ON THE LIDAR UPDATED STATE
-
-            Eigen::Matrix3d curr_R = imu_state.rot.matrix(); // current rotation matrix
-            double roll_new = roll;                          // new roll (rad)
-            double pitch_new = pitch;                        // new pitch (rad)
-
-            // 1. Extract yaw from current R
-            yaw = std::atan2(curr_R(1, 0), curr_R(0, 0)); // yaw = atan2(R21, R11)
-
-            // 2. Build new rotation matrix from roll, pitch, yaw
-            Eigen::Matrix3d R_new;
-            double cr = cos(roll_new), sr = sin(roll_new);
-            double cp = cos(pitch_new), sp = sin(pitch_new);
-            double cy = cos(yaw), sy = sin(yaw);
-
-            // Using ZYX convention (yaw-pitch-roll)
-            R_new << cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr,
-                sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr,
-                -sp, cp * sr, cp * cr;
-
-            // imu_state.rot = Sophus::SO3(R_new);
-
-            // ypr_my = imu_state.rot.matrix().eulerAngles(2, 1, 0) * 180.0 / M_PI ;
-            // std::cout<<"after :"<<ypr_my.transpose()<<std::endl;
-        }
-
-        if (false) // madgwickAHRSupdateIMU - GOOD DO NOT CHANGE IT 
+        if (false) // madgwickAHRSupdateIMU - GOOD DO NOT CHANGE IT
         {
             V3D ang_vel = angvel_avr - imu_state.bg; // bias free gyroscope
             V3D lin_acc = acc_avr - imu_state.ba;    // bias free acceleration
 
-            Eigen::Quaterniond init_q(R_imu); //prev rotation 
+            Eigen::Quaterniond init_q(R_imu); // prev rotation
             setOrientation(init_q.w(), init_q.x(), init_q.y(), init_q.z());
 
             gain_ = 0.05;
             if (true)
             {
                 const double beta_min = 0.001;
-                const double beta_max = 0.05;// 0.1;
+                const double beta_max = 0.05; // 0.1;
 
-                const double v_max = 30. / 3.6;  // 30 km/h in m/s
+                const double v_max = 30. / 3.6; // 30 km/h in m/s
 
                 double v_n = std::clamp(imu_state.vel.norm() / v_max, 0.0, 1.0);
 
                 gain_ = beta_min + (1.0 - v_n) * (beta_max - beta_min);
-                std::cout<<"gain_:"<<gain_<<std::endl;
+                std::cout << "gain_:" << gain_ << std::endl;
 
                 // std::ofstream foutMLS("/home/eugeniu/zz_zx_final/test/debugMLS.txt", std::ios::app);
                 // foutMLS.setf(std::ios::fixed, std::ios::floatfield);
@@ -1714,28 +1523,6 @@ void IMU_Class::Process(const MeasureGroup &meas, Estimator &kf_state, PointClou
             Eigen::Quaterniond init_q(imu_state.rot.matrix());
             setOrientation(init_q.w(), init_q.x(), init_q.y(), init_q.z());
         }
-
-        // imu_filt = DCM_IMU_C();  // default constructor
-
-        imu_state = kf_state.get_x();
-        M3D init_orientation = imu_state.rot.matrix();
-        double last_row[3];
-        for (int i = 0; i < 3; ++i)
-        {
-            last_row[i] = init_orientation(2, i);
-        }
-        imu_filt = DCM_IMU_C(
-            DEFAULT_g0,     // 9.8189
-            last_row,       //                                 State
-            NULL,           //                                  Covariance
-            DEFAULT_q_dcm2, // 0.01 * 0.01,                      // DCM variance
-            // DEFAULT_q_gyro_bias2,            //0.0001 * 0.0001,                     // gyro bias variance
-            DEFAULT_q_dcm2_init, // 1.0 * 1.0,                        // initial DCM variance
-            // DEFAULT_q_gyro_bias2_init,      //(0.1*0.1),                        // initial bias variance
-            DEFAULT_r_acc2, // 0.5 * 0.5,                      // measurement variance
-            DEFAULT_r_a2    // 10.0 * 10.0                     // variable gain
-        );
-
         return;
     }
 
