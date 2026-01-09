@@ -37,7 +37,7 @@ Eigen::Matrix<double, state_size, 1> f(state s, input in)
 
     // bias free acceleration transform to the world frame
     V3D a_inertial = s.rot.matrix() * (in.acc - s.ba);
-    // gravity is the average, negative acceleration,  when added it cancel the earth gravity
+    // gravity is the average, negative acceleration,  when added it to cancel the earth gravity
     for (int i = 0; i < 3; i++)
     {
         result(i + P_ID) = s.vel[i];                  // prev state vel (constant vel model)
@@ -55,8 +55,8 @@ Eigen::Matrix<double, state_size, state_size> df_dx(state s, input in)
 
     // d_position/d_vel
     cov.block<3, 3>(P_ID, V_ID) = Eye3d;
-    cov.template block<3, 3>(R_ID, BG_ID) = -Eye3d; // simplified to -I try -s.rot.matrix()
-    Eigen::Vector3d acc_ = in.acc - s.ba;           //  acceleration = a_m - bias
+    cov.template block<3, 3>(R_ID, BG_ID) = -Eye3d; // simplified to -I should be -A(w dt)^T*dt
+    V3D acc_ = in.acc - s.ba;           //  acceleration = a_m - bias
     cov.block<3, 3>(V_ID, R_ID) = -s.rot.matrix() * Sophus::SO3::hat(acc_);
     cov.block<3, 3>(V_ID, BA_ID) = -s.rot.matrix();
     cov.template block<3, 3>(V_ID, G_ID) = Eye3d;
@@ -68,7 +68,7 @@ Eigen::Matrix<double, state_size, noise_size> df_dw(state s, input in)
     // Fw matrix is not multiplied by dt
     Eigen::Matrix<double, state_size, noise_size> cov = Eigen::Matrix<double, state_size, noise_size>::Zero();
 
-    cov.block<3, 3>(R_ID, G_VAR_ID) = -Eye3d; // simplified to -I
+    cov.block<3, 3>(R_ID, G_VAR_ID) = -Eye3d; // simplified to -I,  should be -A(w-b_g, t).T
     cov.block<3, 3>(V_ID, A_VAR_ID) = -s.rot.matrix();
     cov.block<3, 3>(BG_ID, BG_VAR_ID) = Eye3d;
     cov.block<3, 3>(BA_ID, BA_VAR_ID) = Eye3d;
@@ -178,40 +178,20 @@ void Estimator::predict(double &dt, Eigen::Matrix<double, noise_size, noise_size
 
     x_ = boxplus(x_, f_ * dt);
     Fx = cov::Identity() + Fx * dt; // add the missing identity and dt
+    
     {
-        // inspect this
-        //  was I3,  wrong,  should be exp((w-bw) * dt)
-        // Fx.block<3, 3>(R_ID, R_ID) = Sophus::SO3::exp((i_in.gyro - x_.bg) * dt).matrix();
+        // was I3,  wrong,  should be exp((w-b_w) * -dt)
+        V3D seg_SO3 = f_.block<3,1>(R_ID,0) * dt;
+        Fx.block<3, 3>(R_ID, R_ID) = Sophus::SO3::exp(-1 * seg_SO3).matrix(); 
+
+        M3D A = A_matrix(seg_SO3);
+        Fx.block<3, 3>(R_ID, BG_ID) = -A.transpose() * dt; //-Eye3d*dt; // simplified to -I should be -A((w-b_g) * dt)^T*dt
+        //same as Fx.block<3, 3>(R_ID, BG_ID) = A_matrix(-1 * seg_SO3) * (-Eye3d*dt);
+
+        Fw.block<3, 3>(R_ID, G_VAR_ID) = -A.transpose(); //-Eye3d; // simplified to -I,  should be -A((w-b_g)* dt).T
     }
-    P_ = (Fx)*P_ * (Fx).transpose() + (dt * Fw) * Q * (dt * Fw).transpose();
 
-    // to be tested
-    //  Rotation derivatives: ∂Log(R)/∂ω
-    //  Using the right Jacobian of SO(3) for the exponential map
-    // Eigen::Matrix3d J_r = computeRightJacobian(ang_vel_ * dt);
-    // F.block<3, 3>(rot_idx_, ang_vel_idx_) = J_r * dt;
-
-    /*
-    Eigen::Matrix3d computeRightJacobian(const Eigen::Vector3d& phi) {
-        // Right Jacobian of SO(3) for the exponential map
-        double phi_norm = phi.norm();
-
-        if (phi_norm < 1e-8) {
-            return Eigen::Matrix3d::Identity();
-        }
-
-        Eigen::Vector3d axis = phi / phi_norm;
-        double sin_phi = std::sin(phi_norm);
-        double cos_phi = std::cos(phi_norm);
-
-        Eigen::Matrix3d axis_hat = Sophus::SO3d::hat(axis);
-        Eigen::Matrix3d J_r = Eigen::Matrix3d::Identity()
-                            - ((1 - cos_phi) / (phi_norm)) * axis_hat
-                            + ((phi_norm - sin_phi) / (phi_norm)) * axis_hat * axis_hat;
-
-        return J_r;
-    }
-    */
+    P_ = (Fx) * P_ * (Fx).transpose() + (dt * Fw) * Q * (dt * Fw).transpose();
 }
 
 state Estimator::propagete_NO_gravity(const double &dt, const input &i_in)

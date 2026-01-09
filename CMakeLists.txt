@@ -244,7 +244,7 @@ set(SOURCE_FILES_VUX ${MAIN_SOURCE_FILES3} src2/DataHandler_vux.cpp src2/clean_D
 
 #THE ONE ON CURRENTLY USE
 set(SOURCE_FILES_TEST ${MAIN_SOURCE_FILES3} src_georeference_gnss_only/georeference.cpp src/estimators/RIEKF_better.cpp 
-src2/clean_DataHandler_vux.cpp src_georeference_gnss_only/DCM_IMU_C.cpp ) #src_georeference_gnss_only/simple_loop_closured_node.cpp
+src2/clean_DataHandler_vux.cpp ) #src_georeference_gnss_only/simple_loop_closured_node.cpp
 add_executable(georeference src2/main.cpp ${SOURCE_FILES_TEST} src/Batch.cpp)
 target_link_libraries(georeference ${TARGET_LINK_LIBS3} ${CERES_LIBRARIES} ) #${OpenCV_LIBRARIES}
 

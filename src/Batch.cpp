@@ -474,7 +474,7 @@ void Batch::IMU_init(const MeasureGroup &meas, Estimator &kf_state, int &N)
 void Batch::Process(MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr &pcl_un_)
 {
     // transform points to IMU frame
-    //TransformPoints(Lidar_R_wrt_IMU, Lidar_T_wrt_IMU, meas.lidar);
+    TransformPoints(Lidar_R_wrt_IMU, Lidar_T_wrt_IMU, meas.lidar);
     if (meas.imu.empty())
     {
         std::cout << "Batch::Process IMU list is empty" << std::endl;
@@ -508,6 +508,7 @@ void Batch::Process(MeasureGroup &meas, Estimator &kf_state, PointCloudXYZI::Ptr
         {
             std::cout << "\n\n Not enough IMU,  only:" << init_iter_num << std::endl;
         }
+        *pcl_un_ = *meas.lidar;
 
         return;
     }
@@ -538,13 +539,12 @@ void Batch::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCloudX
     V3D pos_imu, vel_imu, angvel_avr, acc_avr, acc_imu;
     M3D R_imu;
 
-    state imu_state = kf_state.get_x();
+    imu_state = kf_state.get_x();
     imu_state.pos = prevState_.pose().translation();
     imu_state.rot = Sophus::SO3(prevState_.pose().rotation().matrix());
     imu_state.vel = prevState_.v();
     imu_state.bg = prevBias_.gyroscope();
     imu_state.ba = prevBias_.accelerometer();
-
     IMU_Buffer.clear();
     IMU_Buffer.push_back(set_pose6d(0.0, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.matrix()));
 
@@ -618,7 +618,6 @@ void Batch::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCloudX
     imu_state.rot = Sophus::SO3(currentState.pose().rotation().matrix());
     imu_state.vel = currentState.v();
     kf_state.set_x(imu_state);
-
     auto it_pcl = pcl_out.points.end() - 1;
     auto begin_pcl = pcl_out.points.begin();
 
@@ -661,9 +660,8 @@ void Batch::Propagate(const MeasureGroup &meas, Estimator &kf_state, PointCloudX
                 M3D R_i(R_imu * Sophus::SO3::exp(angvel_avr * dt).matrix());
                 V3D P_i(it_pcl->x, it_pcl->y, it_pcl->z);
                 V3D T_ei(pos_imu + vel_imu * dt + 0.5 * acc_imu * dt * dt - imu_state.pos);
-                //V3D P_compensate = end_R_T * (R_i * P_i + T_ei);
-                V3D P_compensate = R_I2L * (end_R_T * (R_i * (R_L2I * P_i + imu_state.offset_T_L_I) + T_ei) - imu_state.offset_T_L_I);
-
+                V3D P_compensate = end_R_T * (R_i * P_i + T_ei);
+                // V3D P_compensate = R_I2L * (end_R_T * (R_i * (R_L2I * P_i + imu_state.offset_T_L_I) + T_ei) - imu_state.offset_T_L_I);
 
                 // just a test to skip the motion distortion
                 // P_compensate = P_i; // use the original point
@@ -1361,3 +1359,317 @@ void Batch::update_all(state &_state, const double &lidar_beg_time, const double
     ++key;
     doneFirstOpt = true;
 }
+
+
+
+void Batch::test(state &_state, const double &lidar_beg_time, const double &lidar_end_time, const PointCloudXYZI::Ptr &pcl_un_,
+                const pcl::PointCloud<PointType>::Ptr &mls_map, const pcl::KdTreeFLANN<PointType>::Ptr &mls_tree, bool use_mls,
+                const pcl::PointCloud<PointType>::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree, bool use_als,
+                gtsam::Matrix6 &out_cov_pose, const ros::Publisher &normals_pub, bool debug)
+{
+    std::cout << "Batch test" << std::endl;
+    if (imuQueOpt.empty())
+    {
+        std::cout << "No imuQueOpt messages" << std::endl;
+        return; // no imu msgs
+    }
+    
+    gtsam::Pose3 measuredPose = prevState_.pose(); //from IMU prediction 
+
+    if (!systemInitialized)
+    {
+        resetOptimization();
+
+        while (!imuQueOpt.empty())
+        {
+            if (ROS_TIME(&imuQueOpt.front()) < lidar_end_time)
+            {
+                lastImuT_opt = ROS_TIME(&imuQueOpt.front());
+                imuQueOpt.pop_front();
+                imuQueImu.pop_front();
+            }
+            else
+                break;
+        }
+
+        // initial pose
+        prevPose_ = measuredPose; // this should contain the init rotation that was passed to registration
+        gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, priorPoseNoise);
+        graphFactors.add(priorPose);
+        // initial velocity
+        prevVel_ = gtsam::Vector3(0, 0, 0);
+        gtsam::PriorFactor<gtsam::Vector3> priorVel(V(0), prevVel_, priorVelNoise);
+        graphFactors.add(priorVel);
+        // initial bias
+        prevBias_ = gtsam::imuBias::ConstantBias();
+        gtsam::PriorFactor<gtsam::imuBias::ConstantBias> priorBias(B(0), prevBias_, priorBiasNoise);
+        graphFactors.add(priorBias);
+        // add values
+        graphValues.insert(X(0), prevPose_);
+        graphValues.insert(V(0), prevVel_);
+        graphValues.insert(B(0), prevBias_);
+
+        // optimize once
+        optimizer.update(graphFactors, graphValues);
+        graphFactors.resize(0);
+        graphValues.clear();
+
+        imuIntegratorImu_->resetIntegrationAndSetBias(prevBias_);
+        imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
+
+        key = 1;
+        systemInitialized = true;
+        return;
+    }
+
+    if (key == max_key) // reset graph for speed
+    {
+        std::cout << "============================= reset graph =============================" << std::endl;
+        // get updated noise before reset
+        gtsam::noiseModel::Gaussian::shared_ptr updatedPoseNoise = gtsam::noiseModel::Gaussian::Covariance(optimizer.marginalCovariance(X(key - 1)));
+        gtsam::noiseModel::Gaussian::shared_ptr updatedVelNoise = gtsam::noiseModel::Gaussian::Covariance(optimizer.marginalCovariance(V(key - 1)));
+        gtsam::noiseModel::Gaussian::shared_ptr updatedBiasNoise = gtsam::noiseModel::Gaussian::Covariance(optimizer.marginalCovariance(B(key - 1)));
+
+        resetOptimization();
+        // add pose
+        gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, updatedPoseNoise);
+        graphFactors.add(priorPose);
+        // add velocity
+        gtsam::PriorFactor<gtsam::Vector3> priorVel(V(0), prevVel_, updatedVelNoise);
+        graphFactors.add(priorVel);
+        // add bias
+        gtsam::PriorFactor<gtsam::imuBias::ConstantBias> priorBias(B(0), prevBias_, updatedBiasNoise);
+        graphFactors.add(priorBias);
+        // add values
+        graphValues.insert(X(0), prevPose_);
+        graphValues.insert(V(0), prevVel_);
+        graphValues.insert(B(0), prevBias_);
+
+        // optimize once
+        optimizer.update(graphFactors, graphValues);
+        graphFactors.resize(0);
+        graphValues.clear();
+
+        key = 1;
+    }
+
+    // 1. integrate imu data and optimize
+    while (!imuQueOpt.empty())
+    {
+        // pop and integrate imu data that is between two optimizations
+        sensor_msgs::Imu *thisImu = &imuQueOpt.front();
+        double imuTime = ROS_TIME(thisImu);
+        if (imuTime < lidar_end_time)
+        {
+            double dt = (lastImuT_opt < 0) ? (1.0 / imuRate) : (imuTime - lastImuT_opt);
+            imuIntegratorOpt_->integrateMeasurement(
+                gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
+                gtsam::Vector3(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z), dt);
+
+            lastImuT_opt = imuTime;
+            imuQueOpt.pop_front();
+        }
+        else
+            break;
+    }
+
+    // add imu factor to graph
+    const gtsam::PreintegratedImuMeasurements &preint_imu = dynamic_cast<const gtsam::PreintegratedImuMeasurements &>(*imuIntegratorOpt_);
+    gtsam::ImuFactor imu_factor(X(key - 1), V(key - 1), X(key), V(key), B(key - 1), preint_imu);
+    graphFactors.add(imu_factor);
+    // add imu bias between factor
+    graphFactors.add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(key - 1), B(key), gtsam::imuBias::ConstantBias(),
+                                                                        gtsam::noiseModel::Diagonal::Sigmas(sqrt(imuIntegratorOpt_->deltaTij()) * noiseModelBetweenBias)));
+    // add pose factor
+    //gtsam::PriorFactor<gtsam::Pose3> pose_factor(X(key), measuredPose, correctionNoise3); //the pose predicted from imu
+    //graphFactors.add(pose_factor);
+
+    // insert predicted values
+    gtsam::NavState propState_ = imuIntegratorOpt_->predict(prevState_, prevBias_);
+    graphValues.insert(X(key), propState_.pose());
+    graphValues.insert(V(key), propState_.v());
+    graphValues.insert(B(key), prevBias_);
+
+    Sophus::SE3 curr_position = GtsamToSophus(propState_.pose());
+
+    // if (key > 1 && key < max_key)
+    //if(false)
+    {
+        size_t N = pcl_un_->size();
+        if (use_mls)
+        {
+            std::cout << "establish MLS measurements..." << std::endl;
+            establishCorrespondences(pcl_un_, curr_position, mls_map, mls_tree);
+            int added_planes = 0;
+            bool deb = (normals_pub.getNumSubscribers() != 0) && debug;
+            if (deb)
+            {
+                cloud_with_normals->clear();
+            }
+
+            for (int i = 0; i < N; i++) // for each point
+            {
+                if (global_valid[i])
+                {
+                    const auto &lm = global_landmarks[i];
+
+                    Point3 plane_norm(lm.norm.x(), lm.norm.y(), lm.norm.z());
+                    Point3 measured_point(pcl_un_->points[i].x, pcl_un_->points[i].y, pcl_un_->points[i].z); // measured_landmar_in_sensor_frame
+                    Point3 target_point(mls_map->points[lm.map_point_index].x, mls_map->points[lm.map_point_index].y, mls_map->points[lm.map_point_index].z);
+                    // Point3 target_point(0, 0, 0);
+                    // if (use_alternative_method_)
+                    //     error = (p_transformed - target_point_).dot(plane_normal_);
+                    // else
+                    //     error = plane_normal_.dot(p_transformed) + d_;
+                    // if(global_valid[i])
+                    // {
+                    //     std::cout<<"\nmeasured_point:"<<measured_point.transpose()<<std::endl;
+                    //     std::cout<<"plane_norm:"<<plane_norm.transpose()<<std::endl;
+                    //     std::cout<<"target_point:"<<target_point.transpose()<<std::endl;
+
+
+                    // }
+                    // bool use_alternative_method = true;
+                    bool use_alternative_method = false;
+
+                    auto robust_noise = gtsam::noiseModel::Robust::Create(
+                        gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel),
+                        gtsam::noiseModel::Isotropic::Sigma(1, sqrt(lm.var)));
+
+                    // auto robust_noise = gtsam::noiseModel::Isotropic::Sigma(1, 0.1); // Start with fixed noise
+
+                    // planes
+                    graphFactors.emplace_shared<PointToPlaneFactor>(X(key), measured_point, plane_norm, target_point, lm.d,
+                                                                    use_alternative_method, robust_noise);
+                    added_planes++;
+                    // p2p
+                    // auto point_noise_cauchy = gtsam::noiseModel::Robust::Create(
+                    // gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel), // Robust kernel for outliers
+                    // gtsam::noiseModel::Isotropic::Sigma(3, sigma_point));
+                    // auto point_noise = gtsam::noiseModel::Robust::Create(
+                    //     gtsam::noiseModel::mEstimator::Cauchy::Create(robust_kernel), // Robust kernel for outliers 10cm
+                    //     gtsam::noiseModel::Isotropic::Sigma(3, .5));
+                    // this_Graph.emplace_shared<PointToPointFactor>(X(pose_key), measured_point, target_point, point_noise);
+                    if (deb)
+                    {
+                        pcl::PointXYZINormal pt;
+                        pt.curvature = 1; // <0 plotted as blue
+
+                        pt.x = mls_map->points[lm.map_point_index].x;
+                        pt.y = mls_map->points[lm.map_point_index].y;
+                        pt.z = mls_map->points[lm.map_point_index].z;
+
+                        pt.normal_x = lm.norm.x();
+                        pt.normal_y = lm.norm.y();
+                        pt.normal_z = lm.norm.z();
+
+                        pt.intensity = lm.var; // just for test
+
+                        cloud_with_normals->push_back(pt);
+                    }
+                }
+            }
+
+            if (deb)
+            {
+                debug_CloudWithNormals(normals_pub);
+            }
+            std::cout << "added_planes:" << added_planes << std::endl;
+        }
+        if (use_als)
+        {
+            std::cout << "establish ALS measurements..." << std::endl;
+            // establishCorrespondences(pcl_un_, curr_position, als_map, als_tree);
+            //  todo copy the code from MLS to ALS
+        }
+    }
+
+    // optimize
+    optimizer.update(graphFactors, graphValues);
+    optimizer.update();
+
+
+    graphFactors.resize(0);
+    graphValues.clear();
+    // Overwrite the beginning of the preintegration for the next step.
+    gtsam::Values result = optimizer.calculateEstimate();
+
+    // double total_error = optimizer.getFactorsUnsafe().error(result);
+    // std::cout << "Total error: " << total_error << std::endl;
+    
+    
+    
+    prevPose_ = result.at<gtsam::Pose3>(X(key));
+    prevVel_ = result.at<gtsam::Vector3>(V(key));
+    prevState_ = gtsam::NavState(prevPose_, prevVel_);
+    prevBias_ = result.at<gtsam::imuBias::ConstantBias>(B(key));
+
+    // save the latest estimate on _state - call the update function on this
+    _state.pos = prevState_.pose().translation();
+    _state.rot = Sophus::SO3(prevState_.pose().rotation().matrix());
+    _state.vel = prevState_.v();
+    _state.bg = prevBias_.gyroscope();
+    _state.ba = prevBias_.accelerometer();
+
+    // Calculate the marginal covariances for all variables
+    gtsam::Marginals marginals(optimizer.getFactorsUnsafe(), result);
+    // full 6x6 covariance of the pose (position + rotation)
+    out_cov_pose = marginals.marginalCovariance(X(key)); //
+    // std::cout<<"system_cov:\n"<<out_cov_pose<<std::endl;
+
+    // Reset the optimization preintegration object.
+    imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
+    // check optimization
+    if (failureDetection(prevVel_, prevBias_))
+    {
+        resetParams();
+        return;
+    }
+
+    // 2. after optiization, re-propagate imu odometry preintegration
+    gtsam::NavState tmp_state = prevStateOdom;
+    prevStateOdom = prevState_;
+    prevBiasOdom = prevBias_;
+
+    // first pop imu message older than current correction data
+    double lastImuQT = -1;
+    while (!imuQueImu.empty() && ROS_TIME(&imuQueImu.front()) < lidar_beg_time)
+    {
+        lastImuQT = ROS_TIME(&imuQueImu.front());
+        imuQueImu.pop_front();
+    }
+
+    if (!imuQueImu.empty())
+    {
+        // reset bias use the newly optimized bias
+        imuIntegratorImu_->resetIntegrationAndSetBias(prevBiasOdom);
+        // integrate imu message from the beginning of this optimization
+        for (int i = 0; i < (int)imuQueImu.size(); ++i)
+        {
+            sensor_msgs::Imu *thisImu = &imuQueImu[i];
+            double imuTime = ROS_TIME(thisImu);
+            double dt = (lastImuQT < 0) ? (1.0 / imuRate) : (imuTime - lastImuQT);
+
+            // this should always be reset before undistor starts
+            // imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
+            //                                         gtsam::Vector3(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z), dt);
+            lastImuQT = imuTime;
+
+            // predict odometry
+            // gtsam::NavState currentState = imuIntegratorImu_->predict(tmp_state, prevBiasOdom);
+            // gtsam::Pose3 imuPose = gtsam::Pose3(currentState.quaternion(), currentState.position());
+
+            // Eigen::Matrix3d r = imuPose.rotation().matrix();
+            // Eigen::Vector3d t = imuPose.translation();
+
+            // TODO - use the above to perform re-deskew with better estimation
+        }
+    }
+
+    // std::cout << "update key:" << key << std::endl;
+    // std::cout<<"imuQueImu:"<<imuQueImu.size()<<", imuQueOpt:"<<imuQueOpt.size()<<std::endl;
+
+    ++key;
+    doneFirstOpt = true;
+}
+

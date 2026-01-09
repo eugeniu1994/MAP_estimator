@@ -36,10 +36,10 @@ mapping:
 
 als: 
     closest_N_files: 4
-    downsample: false # true 
+    downsample: false #true 
     # als_path: "/media/eugeniu/T7/Evo_drone24_from_Jesse_cropped2/"   # this is reference from Jesse
-    # als_path: "/media/eugeniu/T7/NLS_las/"   # this is the ALS from NlS
-    als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS
+    als_path: "/media/eugeniu/T7/NLS_las/"   # this is the ALS from NlS
+    # als_path: "/media/eugeniu/T7/EVO_las/"   # dense ALS
 
     use_gnss: false 
     #if this is not empty we'll use the postprocessed GNSS solution 

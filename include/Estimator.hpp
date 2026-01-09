@@ -17,7 +17,7 @@
 // pos, rot, extrinsic_R, extrinsic_t, vel, bg, ba, grav
 enum StateID
 {
-    P_ID = 0,
+    P_ID = 0, 
     R_ID = 3,
     Re_ID = 6,
     Te_ID = 9,

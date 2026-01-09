@@ -26,9 +26,11 @@
 #define INIT_TIME (0.1)
 
 //#define LASER_POINT_COV (0.01)
-#define LASER_POINT_COV (0.05) //  5 cm used with gps
+// #define LASER_POINT_COV (0.05) //  5 cm used with gps
 #define GNSS_VAR (0.05)
 #define very_good_gnss_var (0.05) //this is for measurements from the postprocessed gnss-imu file
+
+#define LASER_POINT_COV     (0.001)
 
 class DataHandler
 {

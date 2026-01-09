@@ -9,7 +9,6 @@ Panels:
         - /mapping1
         - /mapping1/Georeferenced1/Autocompute Value Bounds1
         - /mapping1/Georeferenced-Hesai1/Autocompute Value Bounds1
-        - /mapping1/ALS1
         - /Odometry1
         - /Odometry1/Odometry1/Shape1
         - /Odometry1/Odometry1/Covariance1/Position1
@@ -36,7 +35,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: LiDAR
+    SyncSource: ""
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -69,12 +68,6 @@ Visualization Manager:
       Frame Timeout: 500
       Frames:
         All Enabled: false
-        GPSFix:
-          Value: false
-        MLS:
-          Value: true
-        PPK_GNSS:
-          Value: true
         VUX:
           Value: false
         world:
@@ -87,12 +80,6 @@ Visualization Manager:
       Show Names: true
       Tree:
         world:
-          GPSFix:
-            {}
-          MLS:
-            {}
-          PPK_GNSS:
-            {}
           VUX:
             {}
       Update Interval: 0
@@ -748,7 +735,7 @@ Visualization Manager:
       Marker Topic: /trajectory_points
       Name: Prior-traj
       Namespaces:
-        trajectory_points: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/Marker

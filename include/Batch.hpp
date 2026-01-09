@@ -38,10 +38,16 @@ public:
                     const pcl::PointCloud<PointType>::Ptr &mls_map, const pcl::KdTreeFLANN<PointType>::Ptr &mls_tree, bool use_mls,
                     const pcl::PointCloud<PointType>::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree, bool use_als,
                     gtsam::Matrix6 &out_cov_pose, const ros::Publisher &normals_pub, bool debug = false);
+
+    void test(state &_state, const double &lidar_beg_time, const double &lidar_end_time, const PointCloudXYZI::Ptr &pcl_un_,
+                    const pcl::PointCloud<PointType>::Ptr &mls_map, const pcl::KdTreeFLANN<PointType>::Ptr &mls_tree, bool use_mls,
+                    const pcl::PointCloud<PointType>::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree, bool use_als,
+                    gtsam::Matrix6 &out_cov_pose, const ros::Publisher &normals_pub, bool debug = false);
     
     gtsam::Pose3 prevPose_;
     bool doneFirstOpt = false;
-    
+    state imu_state;
+
     private:
         gtsam::noiseModel::Diagonal::shared_ptr priorPoseNoise;
         gtsam::noiseModel::Diagonal::shared_ptr priorVelNoise;

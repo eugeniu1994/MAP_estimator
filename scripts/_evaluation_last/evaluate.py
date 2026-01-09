@@ -152,11 +152,11 @@ class TrajectoryReader(object):
         print("Reference trajectory:", self.traj_gt.positions_xyz.shape)
         print("Model:", self.traj_model.positions_xyz.shape)
 
-        if path_time != '':
-            self.time = np.loadtxt(path_time)[:,2]
+        # if path_time != '':
+        #     self.time = np.loadtxt(path_time)[:,2]
 
-        if path_iterations != '':
-            self.iterations = np.loadtxt(path_iterations)[:,2]
+        # if path_iterations != '':
+        #     self.iterations = np.loadtxt(path_iterations)[:,2]
 
     def transform_trajectory_to_ENU(self, traj: PoseTrajectory3D, T_origin_to_ENU: np.ndarray) -> PoseTrajectory3D:
         new_poses_se3 = []
@@ -180,8 +180,11 @@ class TrajectoryReader(object):
         for pose in traj.poses_se3:
             new_poses_se3.append(pose)
 
-        test_no_fail = 2400 # 5400  # 9999999
+        test_no_fail = 4700 # 5400  # 9999999
         
+        # test_no_fail = 1300
+        test_no_fail = 196
+
         return PoseTrajectory3D(
             poses_se3=new_poses_se3[:test_no_fail],
             timestamps=traj.timestamps[:test_no_fail])
@@ -228,8 +231,8 @@ class TrajectoryReader(object):
         all_pairs = True
         delta_unit = metrics.Unit.meters
         delta = 100
-        rpe_metric = metrics.RPE(metrics.PoseRelation.translation_part, delta=delta, delta_unit=delta_unit, all_pairs=all_pairs)
-        # rpe_metric = metrics.RPE(metrics.PoseRelation.point_distance, delta=delta, delta_unit=delta_unit, all_pairs=all_pairs)
+        # rpe_metric = metrics.RPE(metrics.PoseRelation.translation_part, delta=delta, delta_unit=delta_unit, all_pairs=all_pairs)
+        rpe_metric = metrics.RPE(metrics.PoseRelation.point_distance, delta=delta, delta_unit=delta_unit, all_pairs=all_pairs)
 
         # rpe_metric = metrics.RPE(metrics.PoseRelation.full_transformation, delta=delta, delta_unit=delta_unit, all_pairs=all_pairs)
 
@@ -239,7 +242,7 @@ class TrajectoryReader(object):
         rpe_metric.process_data((self.traj_gt, self.traj_model))
         self.rpe_statistics_t = rpe_metric.get_all_statistics()
         print("Model rpe_statistics_t:", self.rpe_statistics_t)
-
+        print("RPE shape:", np.shape(rpe_metric.error))
         self.rpe_t_error_vectors = rpe_metric.error  # shape (N, 3)
 
     def RPE_rotation(self):
@@ -263,34 +266,48 @@ path_gt =  "/home/eugeniu/zz_zx_final/ref/MLS_prev.txt"
 path_gt =  "/home/eugeniu/zz_zx_final/ref/MLS_gnss.txt"
 path_gt =  "/home/eugeniu/zz_zx_final/ref/MLS.txt"
 
+
+# todo compare the prev results with the current one se which ones are better 
+
 methods = {
     #  'rko'             : '/home/eugeniu/zz_zx_final/rko',
     # 'point-lio'             : '/home/eugeniu/zz_zx_final/point-lio',
 
+    'fast_lio2'             : '/home/eugeniu/zz_zx_final/fast_lio2', 
+    'dlo'             : '/home/eugeniu/zz_zx_final/dlo', 
+
     ## 'Reference trajectory' : '/home/eugeniu/zz_zx_final/ref',
     # '0_LI'                     : '/home/eugeniu/zz_zx_final/0_LI',
-    '1_LI_robust_adaptive' : '/home/eugeniu/zz_zx_final/1_LI_robust_adaptive',
-    # '2_LI_robust_adaptive_g' : '/home/eugeniu/zz_zx_final/2_LI_robust_adaptive_g',
-    '3_LI_robust_adaptive_p2p_p2pl' : '/home/eugeniu/zz_zx_final/3_LI_robust_adaptive_p2p_p2pl',
-    # '4_LI_robust_adaptive_backwardPass' : '/home/eugeniu/zz_zx_final/4_LI_robust_adaptive_backwardPass',
-    # '5_LI_robust_adaptive_backwardPass_p2p_p2pl' : '/home/eugeniu/zz_zx_final/5_LI_robust_adaptive_backwardPass_p2p_p2pl',
+    # '1_LI_robust_adaptive' : '/home/eugeniu/zz_zx_final/1_LI_robust_adaptive',
+    # '3_LI_robust_adaptive_p2p_p2pl' : '/home/eugeniu/zz_zx_final/3_LI_robust_adaptive_p2p_p2pl',
+    # 'madgwick_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/madgwick',
+    # 'g_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/g_p2p_p2pl',
+    # 'g_p2p_p2pl_backwardPass'             : '/home/eugeniu/zz_zx_final/g_p2p_p2pl_backwardPass',
+
+    # # 'LC_fixed'             : '/home/eugeniu/zz_zx_final/1.0',
+    # 'GNSS_'             : '/home/eugeniu/zz_zx_final/GNSS_',
+
+    # 'GNSS_LC'             : '/home/eugeniu/zz_zx_final/GNSS_LC',
+    # 'HeliALS'             : '/home/eugeniu/zz_zx_final/3.0',
+
+    # 'prev_t_coupled_s'             : '/home/eugeniu/zz_zx_final/prev_t_coupled_s',
+
+    # 'Sparse ALS'             : '/home/eugeniu/zz_zx_final/4.0',
+    # 'Sparse ALS_LC'             : '/home/eugeniu/zz_zx_final/4.1',
+    # 'Sparse ALS_LC_GNSS'             : '/home/eugeniu/zz_zx_final/4.2',
+
+    'test'             : '/home/eugeniu/zz_zx_final/test', 
+
+    'a0'             : '/home/eugeniu/zz_zx_final/a0',    #our implementation with no robust no cov, with fixed Fx and Fw 
+    'a1'             : '/home/eugeniu/zz_zx_final/a1',    #prev a0 with robust kernel only 
+    'a2'             : '/home/eugeniu/zz_zx_final/a2',    #our best with fixed prediction and robust & adaptive 
+    'a2_bar'             : '/home/eugeniu/zz_zx_final/a2_bar',    #a2 with update using original iekf code 
+    'a3'             : '/home/eugeniu/zz_zx_final/a3',    #a2 with gravity
 
 
-    # 'R-A LI + IMU_g-update'               : '/home/eugeniu/zz_zx_final/prev/li5', #robust adaptive li , + imu gravity update
-    # # 'R-A LI + (planes + p2p)'             : '/home/eugeniu/zz_zx_final/prev/li2',
-    # 'R-A LI'                              : '/home/eugeniu/zz_zx_final/prev/li1', #robust adaptive li , no rot-tran coupled
-    # 'R-A LI + backwardPass'               : '/home/eugeniu/zz_zx_final/prev/li3',
+    # 'test-prev'             : '/home/eugeniu/zz_zx_final/test-prev',    #our with iekf proper update 
+      
 
-    'madgwick_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/madgwick',
-
-    'g_p2p_p2pl'             : '/home/eugeniu/zz_zx_final/g_p2p_p2pl',
-    'g_p2p_p2pl_backwardPass'             : '/home/eugeniu/zz_zx_final/g_p2p_p2pl_backwardPass',
-
-
-
-    # 'test-prev'             : '/home/eugeniu/zz_zx_final/test-prev',
-
-    # 'test'             : '/home/eugeniu/zz_zx_final/test',
 }
 
 # raw_mat = file_interface.read_vel(path_gt)
@@ -444,9 +461,10 @@ methods_data = {
     '1_LI_robust_adaptive'      : ['#9467bd','D'],
     '2_LI_robust_adaptive_g'             : ['#2ca02c','A'],
     '3_LI_robust_adaptive_p2p_p2pl'                 : ['#ff7f0e','C'],
-    '4_LI_robust_adaptive_backwardPass' : ['#17becf','F'],
+    'HeliALS' : ['#17becf','F'],
     '5_LI_robust_adaptive_backwardPass_p2p_p2pl' : ['#e377c2','H'],
 
+        'LC_fixed'      : ['#9467bd','D'],
 
 
 
@@ -457,21 +475,21 @@ methods_data = {
     'Reference trajectory' : ['#d62728','L'],
     
 
-    'R-A LI + IMU_g-update'      : ['#9467bd','D'],
 
-    'R-A LI + backwardPass' : ['#bcbd22','E'],
-    'R-A LI' : ["#808019",'E'],
+    'GNSS_LC' : ['#bcbd22','E'],
+    'Sparse ALS' : ["#808019",'E'],
+    'Sparse ALS_LC': ["#194280",'E'],
 
     'test-prev'      : ["#651e1e",'D'],
     'rko' : ["#808019",'E'],
+    'fast_lio2': ["#194280",'E'],
 
+    'a0' : ["#808019",'E'],
+    'a1' : ["#e377c2",'S'],
+    'a2' : ["#ff7f0e",'N'],
+    'a3' : ['#2ca02c','A'],
 
-
-
-
-
-
-    # 'GNSS-INS'             : ['#2ca02c','A'],
+    'GNSS_'             : ['#2ca02c','A'],
 
     # # # 'LI-VUX-(raw)GNSS'      : ['#7f7f7f','D'],
 
@@ -483,8 +501,12 @@ methods_data = {
     'point-lio' : ["#ff7f0e",'N'], #['#04f810','N'],
 
     'g_p2p_p2pl' : ["#26391B",'Z'],
+
+    'prev_t_coupled_s' : ["#26391B",'Z'],
     'test_now' : ["#a86b40",'S'],
-    'g_p2p_p2pl_backwardPass' : ["#e377c2",'S'],
+    'Sparse ALS_LC_GNSS' : ["#433123",'S'],
+     'dlo' : ["#433123",'S'],
+    'a2_bar' : ["#e377c2",'S'],
 }
 
 colors = ['tab:brown', 'tab:red', 'tab:blue', 'tab:green', 'tab:purple', 'tab:orange', 'cyan', 'lime','orange','gray']
@@ -534,7 +556,7 @@ ax_3d.set_zlim(z_center - max_range/2, z_center + max_range/2)
 
 for idx, (label, path) in enumerate(methods.items()):
     #for label, path in methods.items():
-    print('\n Model ',label)
+    print('\n\n Model ',label," ==============================================================")
     path_model=path+"/MLS.txt"
     path_time=path+"/MLS_time.txt"
     path_iterations=path+"/MLS_iter.txt"

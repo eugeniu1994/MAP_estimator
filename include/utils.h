@@ -84,6 +84,33 @@ extern V3F Zero3f;
 
 typedef std::vector<PointType, Eigen::aligned_allocator<PointType>> PointVector;
 
+
+inline double tolerance() { return 1e-11; }
+inline M3D hat(const V3D& v)
+{
+    M3D m;
+    m <<  0.0, -v.z(),  v.y(),
+          v.z(),     0.0, -v.x(),
+         -v.y(),  v.x(),     0.0;
+    return m;
+}
+
+inline M3D A_matrix(const V3D& v)
+{
+    M3D I = M3D::Identity();
+    const double squaredNorm = v.squaredNorm();
+    const double norm = std::sqrt(squaredNorm);
+
+    if (norm < tolerance()) {
+        return I;
+    }
+    
+    const M3D v_hat = hat(v);
+    return I
+        + (1.0 - std::cos(norm)) / squaredNorm * v_hat
+        + (1.0 - std::sin(norm) / norm) / squaredNorm * (v_hat * v_hat);
+}
+
 namespace ekf
 {
     float calc_dist(PointType p1, PointType p2);
