@@ -6,7 +6,6 @@
 
     <!--robot car display -->
         <arg name="gui" default="False"/>
-        <!--<arg name="gui" default="True" />-->
         <param name="use_gui" value="$(arg gui)"/>
         <param name="robot_description" textfile="$(find s_mls)/launch/car/default_car_model.urdf"/>
         <node pkg="joint_state_publisher" type="joint_state_publisher" name="joint_state_publisher"/>

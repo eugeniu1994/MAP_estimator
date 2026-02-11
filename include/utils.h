@@ -34,35 +34,25 @@
 #include <sophus/se3.h>
 #include <sophus/so3.h>
 
-
 #include <tbb/global_control.h>
 #include <tbb/tbb.h>
 #include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+
+
 #include <thread>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 
+#define LASER_POINT_COV (0.001) 
+#define INIT_TIME (0.1)
 
+constexpr double ESTIMATION_THRESHOLD_ = 0.001;
+const double G_m_s2 = 9.81; // positive z axis up
 
-
-constexpr int MAX_NUM_ITERATIONS_ = 500; // icp
-constexpr double ESTIMATION_THRESHOLD_ = 0.001; //1mm
-
-
-// constexpr double ESTIMATION_THRESHOLD_ = 0.0005; //1mm make this smaller just for better ref trajectory 
-
-
-// 1.0 for no gravity
-const double G_m_s2 = 9.81; // positive as before z axis up
-
-// the new system has the z-axis down therefore negative
-//const double G_m_s2 = -9.81; //for new lieksa data - take this as param 
-
-constexpr int NUM_THREADS = 8;// 1
-constexpr bool coupled_rotation_translation = false;// true;
-
+inline int NUM_THREADS = 16;
 
 #define NUM_MATCH_POINTS (5)
 
@@ -83,35 +73,34 @@ extern V3D Zero3d;
 extern V3F Zero3f;
 
 typedef std::vector<PointType, Eigen::aligned_allocator<PointType>> PointVector;
+using Vector6d = Eigen::Matrix<double, 6, 1>;
+using Matrix6d = Eigen::Matrix<double, 6, 6>;
 
-
-inline double tolerance() { return 1e-11; }
-inline M3D hat(const V3D& v)
+inline double tolerance() { return 1e-5; }
+inline M3D hat(const V3D &v)
 {
     M3D m;
-    m <<  0.0, -v.z(),  v.y(),
-          v.z(),     0.0, -v.x(),
-         -v.y(),  v.x(),     0.0;
+    m << 0.0, -v.z(), v.y(),
+        v.z(), 0.0, -v.x(),
+        -v.y(), v.x(), 0.0;
     return m;
 }
 
-//right jacobian 
-inline M3D J_right(const V3D& v)
+// right jacobian
+inline M3D J_right(const V3D &v)
 {
     M3D I = M3D::Identity();
     const double squaredNorm = v.squaredNorm();
     const double norm = std::sqrt(squaredNorm);
 
-    if (norm < tolerance()) {
+    if (norm < tolerance())
+    {
         return I;
     }
-    
-    const M3D v_hat = hat(v);
-    
-    return (I 
-         - (1.0 - std::cos(norm)) / squaredNorm * v_hat
-         + (1.0 - std::sin(norm) / norm) / squaredNorm * (v_hat * v_hat));
 
+    const M3D v_hat = hat(v);
+
+    return (I - (1.0 - std::cos(norm)) / squaredNorm * v_hat + (1.0 - std::sin(norm) / norm) / squaredNorm * (v_hat * v_hat));
 }
 
 inline M3D Jr_inv(const Eigen::Vector3d &phi)
@@ -119,7 +108,7 @@ inline M3D Jr_inv(const Eigen::Vector3d &phi)
     double theta = phi.norm();
     M3D I = M3D::Identity();
 
-    if (theta < 1e-5)
+    if (theta < tolerance())
     {
         M3D phi_hat = hat(phi);
         return I + 0.5 * phi_hat + (1.0 / 12.0) * phi_hat * phi_hat;
@@ -136,342 +125,54 @@ inline M3D Jr_inv(const Eigen::Vector3d &phi)
     }
 }
 
-//this returns left jacobian transpose
-inline M3D A_matrix(const V3D& v)
+// this returns left jacobian
+inline M3D A_matrix(const V3D &v)
 {
     M3D I = M3D::Identity();
     const double squaredNorm = v.squaredNorm();
     const double norm = std::sqrt(squaredNorm);
 
-    if (norm < tolerance()) {
+    if (norm < tolerance())
+    {
         return I;
     }
-    
+
     const M3D v_hat = hat(v);
-    
-    
+    return I + (1.0 - std::cos(norm)) / squaredNorm * v_hat + (1.0 - std::sin(norm) / norm) / squaredNorm * (v_hat * v_hat);
+}
 
-    //to be tested - this should be the correct one 
-    //it should be Jr - test this and add transpose, since it is added later 
-    // return (I 
-    //     - (1.0 - std::cos(norm)) / squaredNorm * v_hat
-    //     + (1.0 - std::sin(norm) / norm) / squaredNorm * (v_hat * v_hat)).transpose();
+inline M3D Jl_inv(const V3D &phi)
+{
+    const double eps = 1e-8;
+    double theta = phi.norm();
 
-    //tests were done with this  left jacobian SO(3)
-    return I 
-        + (1.0 - std::cos(norm)) / squaredNorm * v_hat
-        + (1.0 - std::sin(norm) / norm) / squaredNorm * (v_hat * v_hat);
+    M3D I = M3D::Identity();
+    M3D phi_hat = hat(phi);
+    M3D phi_hat2 = phi_hat * phi_hat;
 
+    if (theta < tolerance())
+    {
+        // Taylor expansion around theta = 0
+        return I + 0.5 * phi_hat + (1.0 / 12.0) * phi_hat2;
+    }
+    else
+    {
+        double half_theta = 0.5 * theta;
+        double cot_half_theta = 1.0 / std::tan(half_theta);
 
-    // auto part = (1.0 - std::cos(norm)) / squaredNorm * v_hat + (1.0 - std::sin(norm) / norm) / squaredNorm * (v_hat * v_hat);
-    
-    //left
-    //res = Eigen::Matrix<typename Base::scalar, 3, 3>::Identity() + (1 - std::cos(norm)) / squaredNorm * hat(v) + (1 - std::sin(norm) / norm) / squaredNorm * hat(v) * hat(v);
-    //right
-    //res = Eigen::Matrix<typename Base::scalar, 3, 3>::Identity() - (1 - std::cos(norm)) / squaredNorm * hat(v) + (1 - std::sin(norm) / norm) / squaredNorm * hat(v) * hat(v);
+        double A = 1.0 / (theta * theta) - (1.0 + std::cos(theta)) / (2.0 * theta * std::sin(theta));
 
-
-    //I - part => Right jacobian
-    //I + part => Left jacobian -> J_r(-angle)
+        return I + 0.5 * phi_hat + A * phi_hat2;
+    }
 }
 
 namespace ekf
 {
-    float calc_dist(PointType p1, PointType p2);
-
-    template <typename T>
-    inline bool esti_plane(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &threshold)
-    {
-        Eigen::Matrix<T, NUM_MATCH_POINTS, 3> A;
-        Eigen::Matrix<T, NUM_MATCH_POINTS, 1> b;
-        A.setZero();
-        b.setOnes();
-        b *= -1.0f;
-
-        // A/Dx + B/Dy + C/Dz + 1 = 0
-        for (int j = 0; j < NUM_MATCH_POINTS; j++)
-        {
-            A(j, 0) = point[j].x;
-            A(j, 1) = point[j].y;
-            A(j, 2) = point[j].z;
-        }
-
-        Eigen::Matrix<T, 3, 1> normvec = A.colPivHouseholderQr().solve(b);
-
-        T n = normvec.norm();
-        // pca_result
-        pca_result(0) = normvec(0) / n;
-        pca_result(1) = normvec(1) / n;
-        pca_result(2) = normvec(2) / n;
-        pca_result(3) = 1.0 / n;
-
-        for (int j = 0; j < NUM_MATCH_POINTS; j++)
-        {
-            if (fabs(pca_result(0) * point[j].x + pca_result(1) * point[j].y + pca_result(2) * point[j].z + pca_result(3)) > threshold)
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    template <typename T>
-    inline bool esti_plane(Eigen::Matrix<T, 4, 1> &pca_result, const std::vector<PointType> &point, const T &threshold)
-    {
-        Eigen::Matrix<T, NUM_MATCH_POINTS, 3> A;
-        Eigen::Matrix<T, NUM_MATCH_POINTS, 1> b;
-        A.setZero();
-        b.setOnes();
-        b *= -1.0f;
-
-        // A/Dx + B/Dy + C/Dz + 1 = 0
-        for (int j = 0; j < NUM_MATCH_POINTS; j++)
-        {
-            A(j, 0) = point[j].x;
-            A(j, 1) = point[j].y;
-            A(j, 2) = point[j].z;
-        }
-
-        Eigen::Matrix<T, 3, 1> normvec = A.colPivHouseholderQr().solve(b);
-
-        T n = normvec.norm();
-        // pca_result
-        pca_result(0) = normvec(0) / n;
-        pca_result(1) = normvec(1) / n;
-        pca_result(2) = normvec(2) / n;
-        pca_result(3) = 1.0 / n;
-
-        for (int j = 0; j < NUM_MATCH_POINTS; j++)
-        {
-            if (fabs(pca_result(0) * point[j].x + pca_result(1) * point[j].y + pca_result(2) * point[j].z + pca_result(3)) > threshold)
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    template <typename T>
-    inline bool esti_plane2(Eigen::Matrix<T, 4, 1> &pca_result, const std::vector<PointType> &points, const T &threshold)
-    {
-        const size_t N = points.size();
-        if (N < 3)
-            return false; // Not enough points to estimate a plane
-
-        Eigen::Matrix<T, Eigen::Dynamic, 3> A(N, 3);
-        Eigen::Matrix<T, Eigen::Dynamic, 1> b(N);
-        b.setConstant(-1.0);
-
-        for (size_t j = 0; j < N; ++j)
-        {
-            A(j, 0) = static_cast<T>(points[j].x);
-            A(j, 1) = static_cast<T>(points[j].y);
-            A(j, 2) = static_cast<T>(points[j].z);
-        }
-
-        Eigen::Matrix<T, 3, 1> normvec = A.colPivHouseholderQr().solve(b);
-        T norm = normvec.norm();
-        if (norm < T(1e-6))
-            return false; // Avoid division by zero
-
-        // Normalized plane coefficients A, B, C, D (where D = 1/norm)
-        pca_result.template head<3>() = normvec / norm;
-        pca_result(3) = T(1.0) / norm;
-
-        // Validate all points lie within threshold distance from the plane
-        for (size_t j = 0; j < N; ++j)
-        {
-            T dist = pca_result(0) * static_cast<T>(points[j].x) +
-                     pca_result(1) * static_cast<T>(points[j].y) +
-                     pca_result(2) * static_cast<T>(points[j].z) +
-                     pca_result(3);
-            if (std::abs(dist) > threshold)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    template <typename T>
-    inline bool esti_plane2(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &points, const T &threshold)
-    {
-        const size_t N = points.size();
-        // std::cout<<"N:"<<N<<std::endl;
-        if (N < 3)
-            return false; // Need at least 3 points to define a plane
-
-        Eigen::Matrix<T, Eigen::Dynamic, 3> A(N, 3);
-        Eigen::Matrix<T, Eigen::Dynamic, 1> b(N);
-        b.setConstant(T(-1.0));
-
-        // Fill matrix A with point coordinates
-        for (size_t j = 0; j < N; ++j)
-        {
-            A(j, 0) = static_cast<T>(points[j].x);
-            A(j, 1) = static_cast<T>(points[j].y);
-            A(j, 2) = static_cast<T>(points[j].z);
-        }
-
-        // Solve for normal vector components
-        Eigen::Matrix<T, 3, 1> normvec = A.colPivHouseholderQr().solve(b);
-        T norm = normvec.norm();
-        if (norm < T(1e-6))
-            return false; // Avoid division by zero or near-singular result
-
-        // Normalize and fill output
-        pca_result.template head<3>() = normvec / norm;
-        pca_result(3) = T(1.0) / norm;
-
-        // Validate all points lie close to the plane
-        for (size_t j = 0; j < N; ++j)
-        {
-            T dist = pca_result(0) * static_cast<T>(points[j].x) +
-                     pca_result(1) * static_cast<T>(points[j].y) +
-                     pca_result(2) * static_cast<T>(points[j].z) +
-                     pca_result(3);
-            if (std::abs(dist) > threshold)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    template <typename T>
-    inline bool esti_plane_pca(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &points, const double &threshold, const std::vector<double> &point_weights, bool weighted_mean = false)
-    {
-        const size_t neighbours = points.size();
-        // std::cout<<"N:"<<N<<std::endl;
-        if (neighbours < 3)
-            return false; // Need at least 3 points to define a plane
-
-        // Compute the centroid
-        V3D centroid(0, 0, 0);
-        // Compute covariance matrix
-        M3D covariance;
-        covariance.setZero();
-
-        // Regularize
-        //  double lambda_reg = 1e-6;
-        //  covariance = covariance + lambda_reg * Eye3d;
-
-        if (weighted_mean)
-        {
-            // if (weighted_mean && point_weights.size() < neighbours) {
-            //     std::cerr << "Error: point_weights has fewer elements than points." << std::endl;
-            //     std::cout<<"neighbours:"<<neighbours<<", point_weights.size():"<<point_weights.size()<<std::endl;
-            //     throw std::runtime_error("Error: point_weights has fewer elements than points.");
-            //     return false;
-            // }
-
-            // std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
-
-            double weight_sum = 0.0;
-
-            // Compute weighted centroid
-            for (int j = 0; j < neighbours; j++)
-            {
-                const double &w = point_weights[j];
-
-                centroid(0) += w * points[j].x;
-                centroid(1) += w * points[j].y;
-                centroid(2) += w * points[j].z;
-
-                weight_sum += w;
-            }
-            // std::cout<<"weight_sum:"<<weight_sum<<std::endl;
-            centroid /= weight_sum;
-
-            // Compute weighted covariance matrix
-            for (int j = 0; j < neighbours; j++)
-            {
-                const double &w = point_weights[j];
-                const auto &p = points[j];
-                V3D diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
-                covariance += w * diff * diff.transpose();
-            }
-            covariance /= weight_sum;
-        }
-        else
-        {
-            for (int j = 0; j < neighbours; j++)
-            {
-                centroid(0) += points[j].x;
-                centroid(1) += points[j].y;
-                centroid(2) += points[j].z;
-            }
-            centroid /= neighbours;
-
-            for (int j = 0; j < neighbours; j++)
-            {
-                const auto &p = points[j];
-                V3D diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
-                covariance += diff * diff.transpose();
-            }
-            covariance /= neighbours;
-        }
-
-        // Compute Eigenvalues and Eigenvectors
-        Eigen::SelfAdjointEigenSolver<M3D> solver(covariance);
-
-        if (solver.info() != Eigen::Success)
-        {
-            std::cerr << "Eigen solver failed!" << std::endl;
-            throw std::runtime_error("Error: Eigen solver failed!");
-            return false;
-        }
-
-        V3D norm = solver.eigenvectors().col(0); // Smallest eigenvector
-        norm.normalize();
-
-        // Compute plane offset: d = - (n * centroid)
-        double d = -norm.dot(centroid);
-
-        // Compute eigenvalue ratios to assess planarity
-        const auto &eigenvalues = solver.eigenvalues();
-        double lambda0 = eigenvalues(0); // smallest
-        double lambda1 = eigenvalues(1);
-        double lambda2 = eigenvalues(2);
-
-        double curvature = lambda0 / (lambda0 + lambda1 + lambda2);
-
-        // Colinear: if the two smallest eigenvalues are close to zero
-        // if ((lambda1 / lambda2) < 1e-3)
-        // {
-        //     std::cerr << "Colinear structure detected. Skipping...\n";
-        //     std::cout<<"eigenvalues:"<<eigenvalues<<std::endl;
-        //     throw std::runtime_error("Colinear structure detected. Skipping ...");
-        //     continue;
-        // }
-
-        // this can be done in the visualization
-        //  Flip normal to point consistently toward viewpoint
-        //  V3D point_on_the_plane(reference_localMap_cloud->points[point_idx[0]].x, reference_localMap_cloud->points[point_idx[0]].y, reference_localMap_cloud->points[point_idx[0]].z);
-        //  if (norm.dot(T.translation() - point_on_the_plane) < 0)
-        //  {
-        //      norm = -norm;
-        //  }
-
-        if (curvature > .0001 && curvature <= threshold)
-        {
-            pca_result.template head<3>() = norm.template cast<T>();
-            pca_result(3) = static_cast<T>(d);
-
-            return true;
-        }
-
-        return false;
-    }
-
     template <typename T>
     inline bool esti_plane_pca(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &points,
                                const double &threshold, const std::vector<double> &point_weights, double &plane_var, bool weighted_mean = false)
     {
         const size_t neighbours = points.size();
-        // std::cout<<"N:"<<neighbours<<std::endl;
         if (neighbours < 3)
             return false; // Need at least 3 points to define a plane
 
@@ -480,20 +181,11 @@ namespace ekf
         covariance.setZero();
 
         // Regularize
-        double lambda_reg = 1e-9;
+        double lambda_reg = 1e-6;
         covariance = covariance + lambda_reg * Eye3d;
 
         if (weighted_mean)
         {
-            // if (weighted_mean && point_weights.size() != neighbours) {
-            //     std::cerr << "Error: point_weights has fewer elements than points." << std::endl;
-            //     std::cout<<"neighbours:"<<neighbours<<", point_weights.size():"<<point_weights.size()<<std::endl;
-            //     throw std::runtime_error("Error: point_weights has fewer elements than points.");
-            //     return false;
-            // }
-
-            // std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
-
             double weight_sum = 0.0;
 
             // Compute weighted centroid
@@ -552,130 +244,35 @@ namespace ekf
         V3D norm = solver.eigenvectors().col(0); // Smallest eigenvector
         norm.normalize();
 
-        // Compute plane offset: d = - (n * centroid)
-        double d = -norm.dot(centroid);
+        // Compute plane offset: d = -(n * centroid)
+        double d = -norm.dot(centroid); // plane offset
 
-        // Compute eigenvalue ratios to assess planarity
         const auto &eigenvalues = solver.eigenvalues();
         double lambda0 = eigenvalues(0); // smallest
         double lambda1 = eigenvalues(1);
         double lambda2 = eigenvalues(2);
 
-        double curvature = lambda0 / (lambda0 + lambda1 + lambda2);
+        double c = lambda0 / (lambda0 + lambda1 + lambda2);
 
-        if (curvature > .0001 && curvature <= threshold)
+        double eps = .00001; //to avoid some degenerate planes 
+        if(c > eps && c <= 0.04)
         {
             pca_result.template head<3>() = norm.template cast<T>();
             pca_result(3) = static_cast<T>(d);
 
-            plane_var = 9. * lambda0; // from 3-sigma rule,  plane_var = sigma ^ 2
-            // plane_var = lambda0;
+            // These are independent, so variances add
+            plane_var = lambda0 + LASER_POINT_COV;
 
             return true;
         }
 
         return false;
     }
-
-    inline bool esti_cov(const PointVector &points,
-                         const std::vector<double> &point_weights,
-                         M3D &out_cov, V3D &out_center, bool weighted_mean = false)
-    {
-        const size_t neighbours = points.size();
-        // std::cout<<"N:"<<N<<std::endl;
-        if (neighbours < 5)
-            return false; // Need at least 5 points
-
-        // Compute the centroid
-        V3D centroid(0, 0, 0);
-        // Compute covariance matrix
-        M3D covariance;
-        covariance.setZero();
-
-        // Regularize
-        //  double lambda_reg = 1e-6;
-        //  covariance = covariance + lambda_reg * Eye3d;
-
-        if (weighted_mean)
-        {
-            // if (weighted_mean && point_weights.size() < neighbours) {
-            //     std::cerr << "Error: point_weights has fewer elements than points." << std::endl;
-            //     std::cout<<"neighbours:"<<neighbours<<", point_weights.size():"<<point_weights.size()<<std::endl;
-            //     throw std::runtime_error("Error: point_weights has fewer elements than points.");
-            //     return false;
-            // }
-
-            // std::cout<<"\nPerformed weighted..."<<"point_weights[0]:"<<point_weights[0]<<", point_weights[last]:"<<point_weights[neighbours-1]<<std::endl;
-
-            double weight_sum = 0.0;
-
-            // Compute weighted centroid
-            for (int j = 0; j < neighbours; j++)
-            {
-                const double &w = point_weights[j];
-
-                centroid(0) += w * points[j].x;
-                centroid(1) += w * points[j].y;
-                centroid(2) += w * points[j].z;
-
-                weight_sum += w;
-            }
-            // std::cout<<"weight_sum:"<<weight_sum<<std::endl;
-            centroid /= weight_sum;
-
-            // Compute weighted covariance matrix
-            for (int j = 0; j < neighbours; j++)
-            {
-                const double &w = point_weights[j];
-                const auto &p = points[j];
-                V3D diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
-                covariance += w * diff * diff.transpose();
-            }
-            covariance /= weight_sum;
-        }
-        else
-        {
-            for (int j = 0; j < neighbours; j++)
-            {
-                centroid(0) += points[j].x;
-                centroid(1) += points[j].y;
-                centroid(2) += points[j].z;
-            }
-            centroid /= neighbours;
-
-            for (int j = 0; j < neighbours; j++)
-            {
-                const auto &p = points[j];
-                V3D diff(p.x - centroid(0), p.y - centroid(1), p.z - centroid(2));
-                covariance += diff * diff.transpose();
-            }
-            covariance /= neighbours;
-        }
-
-        out_cov = covariance;
-        out_center = centroid;
-
-        return true;
-    }
 };
 
 namespace gnss
 {
     V3D computeWeightedAverage(const std::vector<V3D> &measurements, const std::vector<V3D> &covariances);
-    double findAngle(const V3D &gps0, const V3D &gps1, const V3D &imu0, const V3D &imu1);
-    double checkAlignment(const Eigen::Vector2d &vec1, const Eigen::Vector2d &vec2);
-    Eigen::Vector2d rotateVector(const Eigen::Vector2d &vec, double angle_deg);
-    double verifyAngle(const double &theta_degrees, const V3D &gps0, const V3D &gps1, const V3D &imu0, const V3D &imu1);
-
-    struct LineModel
-    {
-        double m; // Slope
-        double b; // Intercept
-    };
-
-    LineModel fitLine(const std::pair<double, double> &p1, const std::pair<double, double> &p2);
-    double pointToLineDistance(double x, double y, const LineModel &model);
-    LineModel ransacFitLine(const std::vector<double> &x, const std::vector<double> &y, int iterations = 100, double threshold = 5.0);
 };
 
 void computeTransformation(const std::vector<V3D> &gnss_points, const std::vector<V3D> &mls_points, M3D &R, V3D &t);
@@ -693,25 +290,8 @@ struct MeasureGroup // Lidar data and imu measurements for the current process
     double lidar_end_time;
     PointCloudXYZI::Ptr lidar;
     std::deque<sensor_msgs::Imu::ConstPtr> imu;
-#ifdef SAVE_DATA
-    sensor_msgs::PointCloud2::ConstPtr lidar_msg;
-#endif
 };
 
-struct Config // used for ICP
-{
-    // map params
-    double voxel_size = 1.0;
-    double max_range = 100.0;
-    double min_range = 1.0;
-    int max_points_per_voxel = 25;
-
-    // th parms
-    double min_motion_th = 0.1;
-    double initial_threshold = 2.0;
-};
-
-// Define a fixed-size queue class
 template <typename T>
 class FixedSizeQueue
 {
@@ -771,24 +351,6 @@ double calculateMean(const std::vector<double> &values);
 double calculateMedian(std::vector<double> values);
 
 void TransformPoints(const M3D &R, const V3D &T, PointCloudXYZI::Ptr &points);
-
-void TransformPoints(const Sophus::SE3 &T, std::vector<V3D> &points);
-
-void TransformPoints(const Sophus::SE3 &T, std::vector<V3D_4> &points);
-
-void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D> &eigen_cloud);
-
-void Eigen2PCL(PointCloudXYZI::Ptr &pcl_cloud, const std::vector<V3D_4> &eigen_cloud);
-
-void PCL2EIGEN(const PointCloudXYZI::Ptr &pcl_cloud, std::vector<V3D> &eigen_cloud);
-
-sensor_msgs::PointField GetTimestampField(const sensor_msgs::PointCloud2::ConstPtr &msg);
-
-std::vector<double> NormalizeTimestamps(const std::vector<double> &timestamps);
-
-Sophus::SE3 registerClouds(pcl::PointCloud<PointType>::Ptr &src, pcl::PointCloud<PointType>::Ptr &tgt, pcl::PointCloud<PointType>::Ptr &cloud_aligned);
-
-void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<VUX_PointType>::Ptr &cloud);
 
 void TransformPoints(const Sophus::SE3 &T, pcl::PointCloud<PointType>::Ptr &cloud);
 

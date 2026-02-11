@@ -12,7 +12,6 @@
 #include <Eigen/Sparse>
 
 #include <utils.h>
-// #include <tbb/tbb.h>
 
 // pos, rot, extrinsic_R, extrinsic_t, vel, bg, ba, grav
 enum StateID
@@ -37,10 +36,10 @@ enum NoiseID
 
 constexpr int state_size = 24;
 constexpr int noise_size = 12;
-constexpr int used_state_size = 12;// 6;// 12;
-
 typedef Eigen::Matrix<double, state_size, state_size> cov;     // 24X24 covariance matrix
 typedef Eigen::Matrix<double, state_size, 1> vectorized_state; // 24X1 vector
+using Jacobian_plane = Eigen::Matrix<double, 1, state_size>;
+using Vector4d = Eigen::Matrix<double, 4, 1>;
 
 typedef Eigen::Matrix<double, 6, 6> Matrix6d;
 typedef Eigen::Matrix<double, 6, 1> Vector6d;
@@ -70,6 +69,14 @@ Eigen::Matrix<double, state_size, 1> f(state s, input in);
 Eigen::Matrix<double, state_size, state_size> df_dx(state s, input in);
 Eigen::Matrix<double, state_size, noise_size> df_dw(state s, input in);
 
+using namespace ekf;
+
+struct obj_struct
+{
+    bool valid;                                               
+    bool converge;                                             
+};
+
 class Estimator
 {
 public:
@@ -85,8 +92,6 @@ public:
     void set_P(cov &input_cov);
 
     void predict(double &dt, Eigen::Matrix<double, noise_size, noise_size> &Q, const input &i_in);
-
-    state propagete_NO_gravity(const double &dt, const input &i_in);
     
     state boxplus(state x, vectorized_state f_);
     vectorized_state boxminus(state x1, state x2);
@@ -96,6 +101,33 @@ protected:
     cov P_ = cov::Identity(); // 24X24
     cov Fx = cov::Identity(); // 24X24
 };
+
+class MAP_ : public Estimator
+{
+public:
+    
+
+    MAP_()
+    {
+        localKdTree_map.reset(new pcl::KdTreeFLANN<PointType>());
+    };
+
+    ~MAP_() {};
+
+    int update(int maximum_iter, bool extrinsic_est, PointCloudXYZI::Ptr &feats_down_body, const PointCloudXYZI::Ptr &map, 
+                const bool use_als, const PointCloudXYZI::Ptr &als_map, const pcl::KdTreeFLANN<PointType>::Ptr &als_tree,       //prior ALS map
+                const bool use_se3, const Sophus::SE3 &gnss_se3, const V3D &se3_std_pos_m, const V3D &se3_std_rot_deg,          //absolute SE3 meas,
+                bool use_se3_rel, const Sophus::SE3 &se3_rel, const V3D &se3_rel_std_pos_m, const V3D &se3_rel_std_rot_deg,     //relative SE3 meas,
+                const Sophus::SE3 &prev_X);
+    
+    
+    int update(int maximum_iter, bool extrinsic_est, PointCloudXYZI::Ptr &feats_down_body, const PointCloudXYZI::Ptr &map);
+
+private:
+    int effct_feat_num;
+    pcl::KdTreeFLANN<PointType>::Ptr localKdTree_map;
+};
+
 
 #endif
 

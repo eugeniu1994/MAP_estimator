@@ -1,4 +1,0 @@
-<launch>
-    <node pkg="s_mls" type="vux_publisher" name="vux_publisher" output="screen" />
-    <node pkg="tf2_ros" type="static_transform_publisher" name="static_transform_vux_to_world" args="0 0 0 0 0 0 world VUX" />
-</launch>

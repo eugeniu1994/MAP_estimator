@@ -7,15 +7,10 @@ Panels:
         - /Global Options1
         - /TF1/Frames1
         - /mapping1
-        - /mapping1/Georeferenced1/Autocompute Value Bounds1
         - /mapping1/Georeferenced-Hesai1/Autocompute Value Bounds1
-        - /Odometry1
         - /Odometry1/Odometry1/Shape1
         - /Odometry1/Odometry1/Covariance1/Position1
         - /Odometry1/Odometry1/Covariance1/Orientation1
-        - /Refined-vux1/Shape1
-        - /Refined-vux1/Covariance1
-        - /Refined-vux21/Shape1
       Splitter Ratio: 0.6140127182006836
     Tree Height: 1800
   - Class: rviz/Selection
@@ -69,17 +64,13 @@ Visualization Manager:
       Frames:
         All Enabled: false
         GPSFix:
-          Value: true
+          Value: false
         MLS:
           Value: true
-        PPK_GNSS:
-          Value: true
-        VUX:
-          Value: false
         world:
           Value: true
       Marker Alpha: 1
-      Marker Scale: 40
+      Marker Scale: 20
       Name: TF
       Show Arrows: false
       Show Axes: true
@@ -89,10 +80,6 @@ Visualization Manager:
           GPSFix:
             {}
           MLS:
-            {}
-          PPK_GNSS:
-            {}
-          VUX:
             {}
       Update Interval: 0
       Value: true
@@ -113,7 +100,7 @@ Visualization Manager:
           Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
-          Min Color: 238; 238; 236
+          Min Color: 239; 41; 41
           Name: LiDAR
           Position Transformer: XYZ
           Queue Size: 1
@@ -126,34 +113,6 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-        - Alpha: 0.5
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 84.3318862915039
-            Min Value: 31.113290786743164
-            Value: true
-          Axis: Z
-          Channel Name: intensity
-          Class: rviz/PointCloud2
-          Color: 255; 255; 255
-          Color Transformer: AxisColor
-          Decay Time: 500
-          Enabled: false
-          Invert Rainbow: true
-          Max Color: 255; 255; 255
-          Min Color: 0; 0; 0
-          Name: Georeferenced
-          Position Transformer: XYZ
-          Queue Size: 100000
-          Selectable: true
-          Size (Pixels): 2
-          Size (m): 0.009999999776482582
-          Style: Points
-          Topic: /cloud_registered
-          Unreliable: false
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: false
         - Alpha: 0.30000001192092896
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -240,114 +199,6 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-        - Alpha: 1
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 0.29077625274658203
-            Min Value: -0.27327761054039
-            Value: true
-          Axis: Z
-          Channel Name: intensity
-          Class: rviz/PointCloud2
-          Color: 255; 255; 255
-          Color Transformer: AxisColor
-          Decay Time: 0
-          Enabled: true
-          Invert Rainbow: false
-          Max Color: 255; 255; 255
-          Min Color: 0; 0; 0
-          Name: cloud_
-          Position Transformer: XYZ
-          Queue Size: 10
-          Selectable: true
-          Size (Pixels): 5
-          Size (m): 0.10000000149011612
-          Style: Points
-          Topic: /cloud_debug
-          Unreliable: false
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: true
-        - Class: rviz/Marker
-          Enabled: false
-          Marker Topic: /normals
-          Name: norms_
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: false
-        - Alpha: 0.5
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 17.074674606323242
-            Min Value: -2.7451725006103516
-            Value: true
-          Axis: Z
-          Channel Name: z
-          Class: rviz/PointCloud2
-          Color: 255; 255; 255
-          Color Transformer: AxisColor
-          Decay Time: 1000
-          Enabled: false
-          Invert Rainbow: true
-          Max Color: 255; 255; 255
-          Min Color: 0; 0; 0
-          Name: Full-VUX-Georeferenced
-          Position Transformer: XYZ
-          Queue Size: 100000
-          Selectable: true
-          Size (Pixels): 2
-          Size (m): 0.009999999776482582
-          Style: Points
-          Topic: /vux_optimized2
-          Unreliable: false
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: false
-        - Class: rviz/MarkerArray
-          Enabled: false
-          Marker Topic: /src_covariance_markers
-          Name: src_covs
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: false
-        - Class: rviz/MarkerArray
-          Enabled: false
-          Marker Topic: /tgt_covariance_markers
-          Name: tgt_covs
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: false
-        - Alpha: 0.5
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 32.330284118652344
-            Min Value: -2.875417470932007
-            Value: true
-          Axis: Z
-          Channel Name: z
-          Class: rviz/PointCloud2
-          Color: 255; 255; 255
-          Color Transformer: Intensity
-          Decay Time: 0
-          Enabled: true
-          Invert Rainbow: false
-          Max Color: 255; 255; 255
-          Min Color: 238; 238; 236
-          Name: Debug_cloud
-          Position Transformer: XYZ
-          Queue Size: 1
-          Selectable: false
-          Size (Pixels): 3
-          Size (m): 0.8999999761581421
-          Style: Points
-          Topic: /cloud_debug
-          Unreliable: false
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: true
       Enabled: true
       Name: mapping
     - Class: rviz/Group
@@ -423,7 +274,7 @@ Visualization Manager:
       Length: 0.30000001192092896
       Line Style: Billboards
       Line Width: 0.20000000298023224
-      Name: GNSS-Path
+      Name: raw-GNSS-Path
       Offset:
         X: 0
         Y: 0
@@ -436,62 +287,6 @@ Visualization Manager:
       Shaft Length: 0.10000000149011612
       Topic: /GPSFix/trajectory
       Unreliable: false
-      Value: false
-    - Alpha: 0.699999988079071
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 114; 159; 207
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.10000000149011612
-      Name: PPK-GNSS
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Queue Size: 10
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic: /PPK_GNSS/trajectory
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 255; 0; 0
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.30000001192092896
-      Name: Refined_VUX
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Queue Size: 10
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic: /VUX_B/trajectory
-      Unreliable: false
-      Value: true
-    - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /acceleration_marker
-      Name: Acceleration
-      Namespaces:
-        {}
-      Queue Size: 100
       Value: false
     - Alpha: 1
       Class: rviz/RobotModel
@@ -514,278 +309,6 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 27.22014045715332
-        Min Value: -2.7572970390319824
-        Value: true
-      Axis: Z
-      Channel Name: reflectance
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: Intensity
-      Decay Time: 0
-      Enabled: true
-      Invert Rainbow: true
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: VUX
-      Position Transformer: XYZ
-      Queue Size: 100
-      Selectable: true
-      Size (Pixels): 6
-      Size (m): 0.10000000149011612
-      Style: Points
-      Topic: /vux_data
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Alpha: 0.5
-      Autocompute Intensity Bounds: false
-      Autocompute Value Bounds:
-        Max Value: 34.68010711669922
-        Min Value: -39.61165237426758
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 0; 0
-      Color Transformer: AxisColor
-      Decay Time: 0
-      Enabled: false
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Max Intensity: 83
-      Min Color: 0; 0; 0
-      Min Intensity: 9
-      Name: Ref-ALS
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 1
-      Size (m): 0.10000000149011612
-      Style: Points
-      Topic: /vux_data_ref
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: false
-    - Angle Tolerance: 0.0010000000474974513
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 0.5
-          Value: true
-        Position:
-          Alpha: 0.4000000059604645
-          Color: 204; 51; 204
-          Scale: 0.5
-          Value: true
-        Value: true
-      Enabled: false
-      Keep: 1000
-      Name: Refined-vux
-      Position Tolerance: 9.999999747378752e-05
-      Queue Size: 1000
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.004999999888241291
-        Color: 255; 85; 0
-        Head Length: 0
-        Head Radius: 0
-        Shaft Length: 0.05000000074505806
-        Shaft Radius: 0.05000000074505806
-        Value: Axes
-      Topic: /se3_pose
-      Unreliable: false
-      Value: false
-    - Angle Tolerance: 0.009999999776482582
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
-          Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 1
-          Value: true
-        Value: false
-      Enabled: true
-      Keep: 1
-      Name: Refined-vux2
-      Position Tolerance: 0.0010000000474974513
-      Queue Size: 1
-      Shape:
-        Alpha: 1
-        Axes Length: 10
-        Axes Radius: 0.10000000149011612
-        Color: 255; 85; 0
-        Head Length: 0
-        Head Radius: 0
-        Shaft Length: 0.05000000074505806
-        Shaft Radius: 0.05000000074505806
-        Value: Axes
-      Topic: /se3_pose2
-      Unreliable: false
-      Value: true
-    - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /tree_markers
-      Name: Trees
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: false
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 28.05698013305664
-        Min Value: -3.1334476470947266
-        Value: true
-      Axis: Z
-      Channel Name: z
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: FlatColor
-      Decay Time: 0
-      Enabled: false
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 238; 238; 236
-      Name: Tree-centers
-      Position Transformer: XYZ
-      Queue Size: 1
-      Selectable: false
-      Size (Pixels): 10
-      Size (m): 0.8999999761581421
-      Style: Points
-      Topic: /tree_center
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: false
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 28.05698013305664
-        Min Value: -3.1334476470947266
-        Value: true
-      Axis: Z
-      Channel Name: z
-      Class: rviz/PointCloud2
-      Color: 52; 101; 164
-      Color Transformer: FlatColor
-      Decay Time: 300
-      Enabled: false
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 238; 238; 236
-      Name: Prev-BA
-      Position Transformer: XYZ
-      Queue Size: 1000
-      Selectable: false
-      Size (Pixels): 10
-      Size (m): 0.4000000059604645
-      Style: Points
-      Topic: /prev_graph_cloud
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: false
-    - Alpha: 0.699999988079071
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 28.05698013305664
-        Min Value: -3.1334476470947266
-        Value: true
-      Axis: Z
-      Channel Name: z
-      Class: rviz/PointCloud2
-      Color: 115; 210; 22
-      Color Transformer: FlatColor
-      Decay Time: 300
-      Enabled: false
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 238; 238; 236
-      Name: Curr-BA
-      Position Transformer: XYZ
-      Queue Size: 1000
-      Selectable: false
-      Size (Pixels): 10
-      Size (m): 0.10000000149011612
-      Style: Points
-      Topic: /curr_graph_cloud
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: false
-    - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /acceleration_marker
-      Name: Gravity
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: false
-    - Class: rviz/Marker
-      Enabled: true
-      Marker Topic: /trajectory_points
-      Name: Prior-traj
-      Namespaces:
-        trajectory_points: true
-      Queue Size: 100
-      Value: true
-    - Class: rviz/Marker
-      Enabled: true
-      Marker Topic: /loop_closure_edges
-      Name: LC
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: FlatColor
-      Decay Time: 0
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: loop_closure_map
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.10000000149011612
-      Style: Points
-      Topic: loop_closure_map
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -814,7 +337,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 176.68997192382812
+      Distance: 234.36117553710938
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -822,17 +345,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 8.533182144165039
-        Y: 3.927180528640747
-        Z: 3.5237648487091064
+        X: -8.143118858337402
+        Y: 14.809317588806152
+        Z: 42.36191177368164
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8503981232643127
+      Pitch: 1.085398554801941
       Target Frame: global
-      Yaw: 1.8803976774215698
+      Yaw: 1.7603979110717773
     Saved: ~
 Window Geometry:
   Displays:
