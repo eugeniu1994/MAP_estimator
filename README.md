@@ -57,7 +57,8 @@ roslaunch map_lio hesai.launch bag_file:=bag_file_path
 🛠️ TODO
 
 -Add support for different LiDARs (currently only Hesai is supported)
-Note: In the paper, the Riegl VUX LiDAR was used, which requires proprietary software API to read the data. Therefore, this implementation has been omitted from public access
+
+-Note: In the paper, the Riegl VUX LiDAR was used, which requires proprietary software API to read the data. Therefore, this implementation has been omitted from public access
 
 
 ##  License
