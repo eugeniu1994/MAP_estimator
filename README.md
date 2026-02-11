@@ -5,8 +5,7 @@ This code was developed as part of the work for the paper:
 
 **Robust Tightly Coupled MLS-ALS Fusion with 2D/3D LiDAR Using Data-Driven Covariances for Accurate 3D Mapping**, submitted to the *ISPRS Journal of Photogrammetry and Remote Sensing*.
 
-![Fast Point Ranking](https://github.com/eugeniu1994/FPR/blob/c896008b1138366255c03d361d6a3ca314d78f84/paper-teaser.png)
-
+![MAP_LIO]([https://github.com/eugeniu1994/FPR/blob/c896008b1138366255c03d361d6a3ca314d78f84/paper-teaser.png](https://github.com/eugeniu1994/MAP_LIO/blob/master/demo.png))
 ---
 ## ✨ Features
 
