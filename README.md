@@ -34,7 +34,7 @@ For prior map usage with ALS data (`.las` files), the [LASTools](https://lastool
 
 ```sh
 cd ~/catkin_ws/src/ #change this according to your system
-git clone https://github.com/eugeniu1994/FPR.git
+git clone https://github.com/eugeniu1994/MAP_LIO.git
 cd ..
 ```
 
